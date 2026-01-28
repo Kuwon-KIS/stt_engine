@@ -10,6 +10,46 @@ from typing import Optional, Dict
 import torch
 import torchaudio
 from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
+import tarfile
+
+
+def auto_extract_model_if_needed(models_dir: str = "models") -> Path:
+    """
+    필요시 모델 자동 압축 해제
+    
+    Args:
+        models_dir: 모델 디렉토리
+    
+    Returns:
+        모델 폴더 경로
+    """
+    models_path = Path(models_dir)
+    model_folder = models_path / "openai_whisper-large-v3-turbo"
+    tar_file = models_path / "whisper-model.tar.gz"
+    
+    # 이미 해제되어 있으면 반환
+    if model_folder.exists():
+        return model_folder
+    
+    # 압축 파일이 있으면 자동 해제
+    if tar_file.exists():
+        print("📦 모델 압축 파일 감지, 자동 해제 중...")
+        try:
+            with tarfile.open(tar_file, "r:gz") as tar:
+                tar.extractall(path=models_path)
+            print("✅ 모델 압축 해제 완료")
+            
+            # 압축 파일 삭제 (선택사항)
+            tar_file.unlink()
+            print("🗑️  압축 파일 삭제")
+            
+            return model_folder
+        except Exception as e:
+            print(f"❌ 모델 압축 해제 실패: {e}")
+            raise
+    
+    # 둘 다 없으면 경로 반환 (다운로드 프롬프트)
+    return model_folder
 
 
 class WhisperSTT:
@@ -23,6 +63,11 @@ class WhisperSTT:
             model_path: 모델 경로
             device: 사용할 디바이스 ('cpu' 또는 'cuda')
         """
+        # 모델이 압축되어 있으면 자동 해제
+        model_path = str(auto_extract_model_if_needed(
+            Path(model_path).parent
+        ))
+        
         self.device = device
         self.model_path = model_path
         
