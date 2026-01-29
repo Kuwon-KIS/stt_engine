@@ -18,10 +18,14 @@ def auto_extract_model_if_needed(models_dir: str = "models") -> Path:
     필요시 모델 자동 압축 해제
     
     Args:
-        models_dir: 모델 디렉토리
+        models_dir: 모델 디렉토리 (예: "models")
     
     Returns:
-        모델 폴더 경로
+        모델 폴더 경로 (models/openai_whisper-large-v3-turbo)
+    
+    Raises:
+        RuntimeError: 모델 압축 해제 실패
+        FileNotFoundError: 모델을 찾을 수 없음
     """
     models_path = Path(models_dir)
     model_folder = models_path / "openai_whisper-large-v3-turbo"
@@ -36,6 +40,10 @@ def auto_extract_model_if_needed(models_dir: str = "models") -> Path:
         print("📦 모델 압축 파일 감지, 자동 해제 중...")
         try:
             with tarfile.open(tar_file, "r:gz") as tar:
+                # 안전성 검사: tar 멤버 검증
+                for member in tar.getmembers():
+                    if member.name.startswith('/') or '..' in member.name:
+                        raise RuntimeError(f"보안 위험: 잘못된 경로 {member.name}")
                 tar.extractall(path=models_path)
             print("✅ 모델 압축 해제 완료")
             
@@ -44,6 +52,9 @@ def auto_extract_model_if_needed(models_dir: str = "models") -> Path:
             print("🗑️  압축 파일 삭제")
             
             return model_folder
+        except tarfile.TarError as e:
+            print(f"❌ 유효하지 않은 tar 파일: {e}")
+            raise RuntimeError(f"모델 압축 해제 실패: {e}") from e
         except Exception as e:
             print(f"❌ 모델 압축 해제 실패: {e}")
             raise
@@ -60,13 +71,17 @@ class WhisperSTT:
         Whisper STT 초기화
         
         Args:
-            model_path: 모델 경로
+            model_path: 모델 경로 (예: "models/openai_whisper-large-v3-turbo")
             device: 사용할 디바이스 ('cpu' 또는 'cuda')
+        
+        Raises:
+            FileNotFoundError: 모델을 찾을 수 없음
+            RuntimeError: 모델 로드 실패
         """
         # 모델이 압축되어 있으면 자동 해제
-        model_path = str(auto_extract_model_if_needed(
-            Path(model_path).parent
-        ))
+        # models_dir = "models"를 전달
+        models_dir = str(Path(model_path).parent)
+        model_path = str(auto_extract_model_if_needed(models_dir))
         
         self.device = device
         self.model_path = model_path
@@ -100,16 +115,20 @@ class WhisperSTT:
             # 샘플링 레이트가 16kHz가 아니면 리샘플링
             if sr != 16000:
                 print(f"🔄 샘플링 레이트 변환: {sr}Hz -> 16000Hz")
-                resampler = torchaudio.transforms.Resample(sr, 16000)
-                audio = resampler(audio)
+                resampler = torchaudio.transforms.Resample(sr, 16000).to(self.device)
+                audio = resampler(audio.to(self.device))
+            else:
+                audio = audio.to(self.device)
             
             # 모노로 변환
             if audio.shape[0] > 1:
                 audio = audio.mean(dim=0, keepdim=True)
             
             # 프로세서로 입력 처리
+            # GPU Tensor를 CPU로 이동 후 numpy 변환 (메모리 누수 방지)
+            audio_np = audio.squeeze().cpu().numpy()
             inputs = self.processor(
-                audio.squeeze().numpy(),
+                audio_np,
                 sampling_rate=16000,
                 return_tensors="pt"
             )
@@ -118,7 +137,8 @@ class WhisperSTT:
             with torch.no_grad():
                 predicted_ids = self.model.generate(
                     inputs["input_features"].to(self.device),
-                    language=language
+                    language=language,
+                    max_length=448
                 )
             
             # 결과 디코딩

@@ -13,6 +13,13 @@ from typing import Optional
 import argparse
 import sys
 
+# 선택적 의존성: boto3는 S3 기능이 필요할 때만 import
+try:
+    import boto3
+    HAS_BOTO3 = True
+except ImportError:
+    HAS_BOTO3 = False
+
 
 class ModelManager:
     """모델 관리 클래스"""
@@ -189,10 +196,17 @@ class ModelManager:
         
         Returns:
             성공 여부
+        
+        Raises:
+            ImportError: boto3가 설치되지 않음
+            Exception: S3 다운로드 실패
         """
+        if not HAS_BOTO3:
+            print("❌ boto3가 설치되지 않았습니다")
+            print("   설치: pip install boto3")
+            return False
+        
         try:
-            import boto3
-            
             s3 = boto3.client('s3', region_name=region)
             
             if verbose:
@@ -208,10 +222,6 @@ class ModelManager:
             
             return True
         
-        except ImportError:
-            print("❌ boto3가 설치되지 않았습니다")
-            print("   설치: pip install boto3")
-            return False
         except Exception as e:
             print(f"❌ S3 다운로드 실패: {e}")
             return False
