@@ -1,0 +1,129 @@
+version: '3.8'
+
+services:
+  # vLLM 서버 (LLM 추론)
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: vllm-server
+    ports:
+      - "8000:8000"
+    
+    environment:
+      # GPU 설정
+      - CUDA_VISIBLE_DEVICES=0
+      
+      # vLLM 설정
+      - VLLM_LOGGING_LEVEL=INFO
+    
+    volumes:
+      # 모델 캐시 (로컬 머신의 캐시 사용)
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    
+    command: >
+      --model meta-llama/Llama-2-7b-hf
+      --dtype float16
+      --max-model-len 4096
+      --gpu-memory-utilization 0.9
+      --tensor-parallel-size 1
+    
+    # GPU 사용 설정
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    
+    # 헬스 체크
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    
+    networks:
+      - stt_network
+    
+    restart: unless-stopped
+
+  # STT Engine (음성 인식)
+  whisper-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+    
+    container_name: whisper-stt
+    
+    ports:
+      - "8001:8001"
+    
+    environment:
+      # Whisper 설정
+      - WHISPER_DEVICE=cuda
+      
+      # vLLM 설정 (Docker 네트워크 사용)
+      - VLLM_API_URL=http://vllm:8000
+      - VLLM_MODEL_NAME=meta-llama/Llama-2-7b-hf
+      - VLLM_TIMEOUT=120
+      - VLLM_MAX_TOKENS=512
+      
+      # 서버 설정
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8001
+      - DEBUG=False
+    
+    volumes:
+      # 모델 디렉토리
+      - ./models:/app/models
+      
+      # 오디오 샘플 디렉토리
+      - ./audio_samples:/app/audio_samples
+      
+      # 로그 디렉토리
+      - ./logs:/app/logs
+    
+    # GPU 사용 설정
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    
+    # vLLM이 먼저 시작될 때까지 대기
+    depends_on:
+      vllm:
+        condition: service_healthy
+    
+    # 헬스 체크
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    
+    networks:
+      - stt_network
+    
+    restart: unless-stopped
+    
+    command: python api_server.py
+
+networks:
+  stt_network:
+    driver: bridge
+
+# 사용법:
+# 1. docker-compose up -d          (백그라운드 시작)
+# 2. docker-compose logs -f        (로그 보기)
+# 3. docker-compose down           (중지)
+#
+# 테스트:
+# curl http://localhost:8001/health
+# curl -X POST "http://localhost:8001/transcribe" \
+#      -F "file=@audio.mp3" \
+#      -F "language=ko"
