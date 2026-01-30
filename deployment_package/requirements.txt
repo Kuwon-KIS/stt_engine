@@ -1,0 +1,26 @@
+# STT Engine 의존성
+# 이 파일은 wheel 설치 후 참조용입니다
+
+# PyTorch (CUDA 12.1 호환 - PyTorch 공식 인덱스에서 설치 필요)
+# 설치 시: pip install torch==2.1.2 torchaudio==2.1.2 --index-url https://download.pytorch.org/whl/cu121
+
+# Transformers
+transformers==4.37.2
+huggingface-hub==0.21.4
+
+# 오디오 처리
+librosa==0.10.0
+scipy==1.12.0
+
+# 기본 패키지
+numpy==1.24.3
+python-dotenv==1.0.0
+pydantic==2.5.3
+
+# 웹 프레임워크
+fastapi==0.109.0
+uvicorn==0.27.0
+requests==2.31.0
+
+# 설정
+pyyaml==6.0.1

@@ -1,0 +1,24 @@
+# PyTorch with CUDA 12.9 support
+torch==2.1.2+cu129
+torchaudio==2.1.2+cu129
+
+# Transformers and dependencies
+transformers==4.37.2
+huggingface-hub==0.21.4
+
+# Audio processing
+librosa==0.10.0
+scipy==1.12.0
+
+# Core dependencies
+numpy==1.24.3
+python-dotenv==1.0.0
+pydantic==2.5.3
+
+# Web framework
+fastapi==0.109.0
+uvicorn==0.27.0
+requests==2.31.0
+
+# Configuration
+pyyaml==6.0.1
