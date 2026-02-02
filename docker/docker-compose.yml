@@ -3,9 +3,9 @@ version: '3.8'
 services:
   whisper-api:
     build:
-      context: .
-      dockerfile: Dockerfile.gpu  # GPU 최적화 버전
-      # dockerfile: Dockerfile    # CPU 버전 (더 가볍지만 느림)
+      context: ..
+      dockerfile: docker/Dockerfile.gpu  # GPU 최적화 버전
+      # dockerfile: docker/Dockerfile    # CPU 버전 (더 가볍지만 느림)
     image: whisper-stt:latest
     container_name: whisper-stt
     
@@ -13,9 +13,9 @@ services:
       - "8003:8003"
     
     volumes:
-      - ./models:/app/models              # 로컬 모델 마운트
-      - ./audio:/app/audio                # 음성 파일
-      - ./logs:/app/logs                  # 로그
+      - ../models:/app/models              # 로컬 모델 마운트
+      - ../audio:/app/audio                # 음성 파일
+      - ../logs:/app/logs                  # 로그
     
     environment:
       - WHISPER_DEVICE=cuda               # GPU 사용
@@ -44,15 +44,4 @@ services:
 networks:
   default:
     name: stt-network
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
-
-volumes:
-  vllm-cache:
-
-networks:
-  stt-network:
     driver: bridge

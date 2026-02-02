@@ -66,6 +66,8 @@ Whisper Large Turbo v3 모델 (가중치 로드)
 
 ## 🚀 빠른 시작 (Docker)
 
+### Docker Compose 사용 (권장)
+
 ### 1단계: 이미지 빌드
 ```bash
 docker build -f docker/Dockerfile.gpu -t whisper-stt:latest .
@@ -81,7 +83,37 @@ docker-compose -f docker/docker-compose.yml up -d
 curl http://localhost:8003/health
 ```
 
-### 4단계: 음성 인식
+### Docker 직접 사용 (docker-compose 없이)
+
+```bash
+# 이미지 빌드
+docker build -f docker/Dockerfile.gpu -t whisper-stt:latest .
+
+# 컨테이너 실행 (GPU 사용)
+docker run -d \
+  --name whisper-stt \
+  --gpus all \
+  -p 8003:8003 \
+  -v $(pwd)/models:/app/models \
+  -v $(pwd)/audio:/app/audio \
+  -v $(pwd)/logs:/app/logs \
+  -e WHISPER_DEVICE=cuda \
+  -e SERVER_HOST=0.0.0.0 \
+  -e SERVER_PORT=8003 \
+  whisper-stt:latest
+
+# 상태 확인
+curl http://localhost:8003/health
+
+# 로그 확인
+docker logs -f whisper-stt
+
+# 컨테이너 중지
+docker stop whisper-stt
+docker rm whisper-stt
+```
+
+### 4단계: 음성 인식 테스트
 ```bash
 curl -X POST -F "file=@audio.wav" -F "language=ko" \
   http://localhost:8003/transcribe
