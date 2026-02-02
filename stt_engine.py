@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 """
-STT 테스트 모듈
-음성 파일을 받아서 텍스트로 변환하는 기능을 제공합니다.
+STT 모듈 - faster-whisper를 사용한 음성-텍스트 변환
+더 빠른 추론 속도와 낮은 메모리 사용량으로 최적화됨
 """
 
 import os
 from pathlib import Path
 from typing import Optional, Dict
-import torch
-import torchaudio
-from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
 import tarfile
+from faster_whisper import WhisperModel
 
 
 def auto_extract_model_if_needed(models_dir: str = "models") -> Path:
@@ -64,76 +62,84 @@ def auto_extract_model_if_needed(models_dir: str = "models") -> Path:
 
 
 class WhisperSTT:
-    """Whisper 모델을 사용한 STT 클래스"""
+    """faster-whisper를 사용한 STT 클래스 (3-4배 빠른 추론)"""
     
-    def __init__(self, model_path: str, device: str = "cpu"):
+    def __init__(self, model_path: str, device: str = "cpu", compute_type: str = "float16"):
         """
         Whisper STT 초기화
         
         Args:
             model_path: 모델 경로 (예: "models/openai_whisper-large-v3-turbo")
-            device: 사용할 디바이스 ('cpu' 또는 'cuda')
+            device: 사용할 디바이스 ('cpu', 'cuda', 또는 'auto')
+            compute_type: 계산 타입 ('float32', 'float16', 'int8')
+                        - float16: 빠르고 메모리 효율적 (권장)
+                        - float32: 더 정확하지만 느림
+                        - int8: 가장 빠르고 메모리 효율적 (VRAM <2GB)
         
         Raises:
             FileNotFoundError: 모델을 찾을 수 없음
             RuntimeError: 모델 로드 실패
         """
         # 모델이 압축되어 있으면 자동 해제
-        # models_dir = "models"를 전달
         models_dir = str(Path(model_path).parent)
-        model_path = str(auto_extract_model_if_needed(models_dir))
+        self.model_path = str(auto_extract_model_if_needed(models_dir))
         
-        self.device = device
-        self.model_path = model_path
+        self.device = device if device != "auto" else ("cuda" if self._is_cuda_available() else "cpu")
+        self.compute_type = compute_type
         
-        print(f"🔄 모델 로드 중... (디바이스: {device})")
+        print(f"🔄 faster-whisper 모델 로드 중... (디바이스: {self.device}, compute: {compute_type})")
         
-        # 모델과 프로세서 로드
-        self.processor = AutoProcessor.from_pretrained(model_path)
-        self.model = AutoModelForSpeechSeq2Seq.from_pretrained(model_path)
-        self.model.to(device)
-        self.model.eval()
-        
-        print("✅ 모델 로드 완료")
-    
-    def transcribe(self, audio_path: str, language: Optional[str] = None) -> Dict:
+        # faster-whisper 모델 로드
+        # model_size_or_path: 모델 폴더 경로 (로컬) 또는 모델 이름 (tiny, base, small, medium, large)
+        try:
+            self.model = WhisperModel(
+                self.model_path,
+                device=self.device,, **kwargs) -> Dict:
         """
         음성 파일을 텍스트로 변환합니다.
         
         Args:
             audio_path: 음성 파일 경로
             language: 음성 언어 코드 (예: 'ko' for Korean, 'en' for English)
+                     None이면 자동 감지
+            **kwargs: 추가 옵션
+                - beam_size: 빔 서치 크기 (기본값: 5, 범위: 1-30)
+                - best_of: 샘플링 최적화 (기본값: 5)
+                - patience: 조기 종료 patience (기본값: 1)
+                - temperature: 온도 (기본값: 0)
         
         Returns:
             변환 결과 딕셔너리
         """
         try:
-            # 음성 파일 로드
             print(f"📂 음성 파일 로드: {audio_path}")
-            audio, sr = torchaudio.load(audio_path)
             
-            # 샘플링 레이트가 16kHz가 아니면 리샘플링
-            if sr != 16000:
-                print(f"🔄 샘플링 레이트 변환: {sr}Hz -> 16000Hz")
-                resampler = torchaudio.transforms.Resample(sr, 16000).to(self.device)
-                audio = resampler(audio.to(self.device))
-            else:
-                audio = audio.to(self.device)
+            # 파일 존재 확인
+            if not Path(audio_path).exists():
+                raise FileNotFoundError(f"파일을 찾을 수 없습니다: {audio_path}")
             
-            # 모노로 변환
-            if audio.shape[0] > 1:
-                audio = audio.mean(dim=0, keepdim=True)
-            
-            # 프로세서로 입력 처리
-            # GPU Tensor를 CPU로 이동 후 numpy 변환 (메모리 누수 방지)
-            audio_np = audio.squeeze().cpu().numpy()
-            inputs = self.processor(
-                audio_np,
-                sampling_rate=16000,
-                return_tensors="pt"
+            # faster-whisper transcribe (자동으로 오디오 로드 및 처리)
+            # language: 언어 토큰 설정 (명시하면 더 빠름)
+            segments, info = self.model.transcribe(
+                audio_path,
+                language=language,
+                beam_size=kwargs.get("beam_size", 5),
+                best_of=kwargs.get("best_of", 5),
+                patience=kwargs.get("patience", 1),
+                temperature=kwargs.get("temperature", 0),
+                verbose=False
             )
             
-            # 모델로 추론
+            # 모든 세그먼트 수집
+            text = "".join([segment.text for segment in segments])
+            detected_language = info.language if info else language or "unknown"
+            
+            return {
+                "success": True,
+                "text": text.strip(),
+                "audio_path": audio_path,
+                "language": detected_language,
+                "duration": info.duration if info else Non
             with torch.no_grad():
                 predicted_ids = self.model.generate(
                     inputs["input_features"].to(self.device),
@@ -173,7 +179,21 @@ def test_stt(model_path: str, audio_dir: str = "audio", device: str = "cpu"):
         device: 사용할 디바이스
     """
     # STT 초기화
-    stt = WhisperSTT(model_path, device=device)
+    stt = WhisperSTT(model_path, device=device)uda"):
+    """
+    STT 테스트 함수
+    
+    Args:
+        model_path: 모델 경로
+        audio_dir: 테스트할 음성 파일 디렉토리
+        device: 사용할 디바이스
+    """
+    # STT 초기화 (float16으로 최적화, VRAM 3-4GB)
+    stt = WhisperSTT(
+        model_path,
+        device=device,
+        compute_type="float16"  # 빠르고 효율적
+    )
     
     # 음성 파일 디렉토리 확인
     audio_path = Path(audio_dir)
@@ -182,7 +202,7 @@ def test_stt(model_path: str, audio_dir: str = "audio", device: str = "cpu"):
         return
     
     # 지원하는 음성 파일 형식
-    supported_formats = ("*.wav", "*.mp3", "*.flac", "*.ogg")
+    supported_formats = ("*.wav", "*.mp3", "*.flac", "*.ogg", "*.m4a")
     audio_files = []
     for fmt in supported_formats:
         audio_files.extend(audio_path.glob(fmt))
@@ -204,18 +224,10 @@ def test_stt(model_path: str, audio_dir: str = "audio", device: str = "cpu"):
         if result["success"]:
             print(f"✅ 파일: {audio_file.name}")
             print(f"📝 결과:\n{result['text']}")
-        else:
-            print(f"❌ 파일: {audio_file.name}")
-            print(f"오류: {result['error']}")
-
-
-if __name__ == "__main__":
-    # 모델 경로 설정
-    model_path = Path(__file__).parent / "models" / "openai_whisper-large-v3-turbo"
-    
-    # GPU 사용 가능 확인
+            if result["duration"]:
+                print(f"⏱️  음성 길이: {result['duration']:.1f}초
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"🖥️  사용 디바이스: {device}")
     
-    # STT 테스트 실행
-    test_stt(str(model_path), device=device)
+    # STT/CPU 디바이스 설정
+    device = "cuda"  # faster-whisper는 CUDA 자동으로 인식

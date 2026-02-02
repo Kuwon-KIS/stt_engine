@@ -1,79 +1,87 @@
 #!/usr/bin/env python3
 """
 FastAPI를 사용한 STT(Speech-to-Text) 서버
-Whisper 모델을 사용하여 음성을 텍스트로 변환합니다.
+faster-whisper 모델을 사용하여 음성을 텍스트로 변환합니다.
+더 빠른 추론 속도와 낮은 메모리 사용량으로 최적화됨
 """
 
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from pathlib import Path
 import tempfile
-import torch
 from stt_engine import WhisperSTT
 
 app = FastAPI(
     title="Whisper STT API",
     version="1.0.0",
-    description="OpenAI Whisper를 사용한 음성 인식 API"
+    description="faster-whisper를 사용한 고속 음성 인식 API"
 )
 
 # 모델 초기화
-device = "cuda" if torch.cuda.is_available() else "cpu"
-model_path = Path(__file__).parent / "models" / "openai_whisper-large-v3-turbo"
-
+# faster-whisper는 자동으로 CUDA 감지
 try:
-    stt = WhisperSTT(str(model_path), device=device)
-    print(f"✅ STT 모델 로드 완료 (Device: {device})")
+    model_path = Path(__file__).parent / "models" / "openai_whisper-large-v3-turbo"
+    stt = WhisperSTT(
+        str(model_path),
+        device="cuda",
+        compute_type="float16"  # VRAM 효율적, 빠른 추론
+    )
+    print("✅ faster-whisper 모델 로드 완료 (Device: cuda, compute: float16)")
 except Exception as e:
     print(f"❌ 모델 로드 실패: {e}")
     stt = None
 
 
 @app.get("/health")
-async def health_check():
-    """헬스 체크 엔드포인트"""
-    return {
-        "status": "healthy",
-        "device": device,
-        "models_loaded": stt is not None
-    }
+async def health():
+    """헬스 체크"""
+    if stt is None:
+        return {"status": "error", "message": "STT 모델을 로드할 수 없음"}
+    return {"status": "ok", "version": "1.0.0", "engine": "faster-whisper"}
 
 
 @app.post("/transcribe")
-async def transcribe(
-    file: UploadFile = File(...),
-    language: str = None
-):
+async def transcribe(file: UploadFile = File(...), language: str = None):
     """
-    음성 파일을 텍스트로 변환합니다.
+    음성 파일을 받아 텍스트로 변환
     
     Parameters:
-        file: 음성 파일 (WAV, MP3, FLAC, OGG)
-        language: 음성 언어 코드 (예: 'ko', 'en', None은 자동 감지)
+    - file: 음성 파일 (WAV, MP3, M4A, FLAC 등)
+    - language: 언어 코드 (선택사항, 예: "en", "ko", "ja")
     
     Returns:
-        {"success": bool, "text": str, "language": str}
+    - text: 인식된 텍스트
+    - language: 감지된 언어
+    - duration: 오디오 길이 (초)
     """
     if stt is None:
-        raise HTTPException(status_code=503, detail="STT 모델이 로드되지 않았습니다.")
+        raise HTTPException(status_code=503, detail="STT 모델이 로드되지 않음")
     
     try:
-        # 임시 파일로 저장
-        with tempfile.NamedTemporaryFile(delete=False, suffix=Path(file.filename).suffix) as tmp:
-            tmp.write(await file.read())
+        # 임시 파일에 저장
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+            content = await file.read()
+            tmp.write(content)
             tmp_path = tmp.name
         
         # STT 처리
         result = stt.transcribe(tmp_path, language=language)
         
-        # 임시 파일 삭제
-        Path(tmp_path).unlink()
-        
-        return result
+        return {
+            "success": result.get("success", False),
+            "text": result.get("text", ""),
+            "language": result.get("language", "unknown"),
+            "duration": result.get("duration", None)
+        }
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+    finally:
+        # 임시 파일 삭제
+        if Path(tmp_path).exists():
+            Path(tmp_path).unlink()
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    uvicorn.run(app, host="0.0.0.0", port=8003)
