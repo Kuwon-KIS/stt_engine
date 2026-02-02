@@ -2,6 +2,45 @@
 
 Whisper 모델을 사용한 음성 인식(STT) API 서버를 배포하는 가이드입니다.
 
+## 🔍 faster-whisper와 Whisper 모델의 관계
+
+### 개념 정리
+
+**Whisper Large Turbo v3** (모델)
+- OpenAI에서 훈련한 AI 모델 파일
+- 약 1.5B 파라미터 (2.7GB 용량)
+- `models/openai_whisper-large-v3-turbo/` 디렉토리에 저장
+
+**faster-whisper** (추론 엔진)
+- Whisper 모델을 더 빠르게 실행하는 최적화 엔진
+- CTranslate2 + ONNX Runtime 기반
+- **모델 자동 최적화**: Whisper 모델을 ONNX 형식으로 변환하여 실행
+
+### 실행 구조
+```
+음성 입력
+   ↓
+faster-whisper 엔진
+   ↓
+Whisper Large Turbo v3 모델 (자동 최적화)
+   ↓
+텍스트 출력
+```
+
+### 성능 비교
+
+| 지표 | 기존 OpenAI Whisper | faster-whisper |
+|------|---|---|
+| 추론 속도 (10초 음성) | ~15-30초 | ~5-7초 (3-4배 빠름) |
+| VRAM 사용량 | 4-6GB | 2.5-3.5GB |
+| 정확도 | 100% | 100% (동일) |
+| 배포 환경 | 제약 있음 | RHEL 8.9에 최적화 |
+
+### 배포 시 자동 최적화
+- 첫 실행 시 Whisper 모델이 자동으로 ONNX 형식으로 변환됨
+- 변환된 모델은 캐시되어 다음 실행은 더 빠름
+- 추가 모델 다운로드 불필요
+
 ## 📋 시스템 요구사항
 
 ### 필수 사항
