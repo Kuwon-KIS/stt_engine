@@ -38,11 +38,20 @@ venv/
 ENV/
 env/
 
+# Deployment packages (large binary files)
+deployment_package/wheels/*.whl
+deployment_package/wheels/*.tar.gz
+*.tar.gz
+stt_engine_deployment_*.tar.gz
+
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+
+# macOS
+.DS_Store
 
 # Environment variables
 .env
