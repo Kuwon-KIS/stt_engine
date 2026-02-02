@@ -1,53 +1,49 @@
 version: '3.8'
 
 services:
-  stt-engine:
+  whisper-api:
     build:
       context: .
-      dockerfile: Dockerfile.gpu  # GPU 최적화 버전 (모델 사전 다운로드됨)
+      dockerfile: Dockerfile.gpu  # GPU 최적화 버전
       # dockerfile: Dockerfile    # CPU 버전 (더 가볍지만 느림)
-    image: stt-engine:latest
-    container_name: stt-engine
+    image: whisper-stt:latest
+    container_name: whisper-stt
+    
     ports:
       - "8001:8001"
+    
     volumes:
-      - ./models:/app/models              # 로컬 모델 마운트 (이미 다운로드된 경우)
+      - ./models:/app/models              # 로컬 모델 마운트
       - ./audio:/app/audio                # 음성 파일
       - ./logs:/app/logs                  # 로그
+    
     environment:
-      - WHISPER_DEVICE=cuda               # GPU: cuda / CPU: cpu로 변경
-      - VLLM_API_URL=http://vllm-server:8000
-    depends_on:
-      - vllm-server
-    networks:
-      - stt-network
+      - WHISPER_DEVICE=cuda               # GPU 사용
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8001
+    
     restart: unless-stopped
-    # GPU 사용 설정 (주석 해제하여 활성화)
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
+    
+    # GPU 사용 설정 (NVIDIA Docker)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    
+    # 헬스 체크
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
-  vllm-server:
-    image: vllm/vllm-openai:latest
-    container_name: vllm-server
-    ports:
-      - "8000:8000"
-    volumes:
-      - vllm-cache:/root/.cache
-    environment:
-      - MODEL_NAME=meta-llama/Llama-2-7b-hf
-      - CUDA_VISIBLE_DEVICES=0
-    command: vllm serve meta-llama/Llama-2-7b-hf --host 0.0.0.0 --port 8000
-    networks:
-      - stt-network
-    restart: unless-stopped
-    # GPU를 사용하려면 다음 주석을 해제하세요:
-    # deploy:
-    #   resources:
+networks:
+  default:
+    name: stt-network
     #     reservations:
     #       devices:
     #         - driver: nvidia

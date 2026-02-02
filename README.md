@@ -1,89 +1,45 @@
-# STT Engine - Speech-to-Text 엔진
+# Whisper STT API - 음성 인식 엔진
 
-음성 파일을 텍스트로 변환하고, vLLM을 사용하여 추가 처리를 수행하는 엔진입니다.
+OpenAI의 Whisper 모델을 사용하여 음성을 텍스트로 변환하는 REST API 서버입니다.
 
 ## 🎯 주요 기능
 
 - **Whisper 기반 STT**: OpenAI의 whisper-large-v3-turbo 모델 사용
-- **다국어 지원**: 한국어, 영어 등 다양한 언어 지원
-- **vLLM 통합**: STT 결과를 대규모 언어 모델로 추가 처리
-- **Docker 환경**: 컨테이너화된 배포 환경
+- **다국어 지원**: 한국어, 영어, 중국어 등 다양한 언어 지원
+- **GPU 최적화**: CUDA GPU를 활용한 빠른 처리
+- **Docker 환경**: 컨테이너화된 간단한 배포
 - **FastAPI 서버**: REST API를 통한 쉬운 접근
+
+**참고**: vLLM 텍스트 처리는 별도로 배포된 서버에서 담당합니다.
 
 ## 📋 준비 사항
 
 - Python 3.11+
-- CUDA 11.0+ (GPU 사용 시)
-- Docker & Docker Compose (컨테이너 사용 시)
+- CUDA 12.4+ (GPU 사용 시, CUDA 11.8 호환도 가능)
+- Docker & Docker Compose
+- 최소 4GB VRAM (권장 8GB 이상)
 
-## 🚀 빠른 시작
+## 🚀 빠른 시작 (Docker)
 
-### 1. 로컬 환경 설정
-
+### 1단계: 이미지 빌드
 ```bash
-# 가상 환경 생성
-python3 -m venv venv
-source venv/bin/activate  # macOS/Linux
-# Windows의 경우: venv\Scripts\activate
-
-# 의존성 설치
-pip install -r requirements.txt
+docker build -f docker/Dockerfile.gpu -t whisper-stt:latest .
 ```
 
-### 2. Whisper 모델 다운로드
-
+### 2단계: 컨테이너 실행
 ```bash
-python download_model.py
+docker-compose -f docker/docker-compose.yml up -d
 ```
 
-이 스크립트는 Hugging Face에서 `openai/whisper-large-v3-turbo` 모델을 다운로드합니다.
-
-### 3. 환경 변수 설정
-
+### 3단계: 상태 확인
 ```bash
-cp .env.example .env
-# .env 파일을 필요에 따라 수정
+curl http://localhost:8001/health
 ```
 
-### 4. STT 테스트
-
+### 4단계: 음성 인식
 ```bash
-# audio/ 디렉토리에 음성 파일을 추가한 후
-python stt_engine.py
-```
-
-### 5. API 서버 실행
-
-```bash
-python api_server.py
-```
-
-API 서버가 `http://localhost:8001`에서 실행됩니다.
-
-## 🐳 Docker 환경 설정
-
-### 1. Docker 이미지 빌드
-
-```bash
-docker build -t stt-engine:latest .
-```
-
-### 2. Docker Compose로 실행
-
-```bash
-docker-compose up -d
-```
-
-이 명령어로 STT 엔진과 vLLM 서버가 동시에 실행됩니다.
-
-### 3. 서버 상태 확인
-
-```bash
-# STT 엔진 로그 확인
-docker-compose logs -f stt-engine
-
-# vLLM 서버 로그 확인
-docker-compose logs -f vllm-server
+curl -X POST -F "file=@audio.wav" -F "language=ko" \
+  http://localhost:8001/transcribe
 ```
 
 ## 📡 API 엔드포인트
@@ -93,9 +49,36 @@ docker-compose logs -f vllm-server
 curl http://localhost:8001/health
 ```
 
-### 음성 파일 변환 (STT만)
+### 음성 인식 (STT)
 ```bash
-curl -X POST -F "file=@audio.wav" http://localhost:8001/transcribe
+curl -X POST \
+  -F "file=@audio.wav" \
+  -F "language=ko" \
+  http://localhost:8001/transcribe
+```
+
+**응답 예시**:
+```json
+{
+  "success": true,
+  "text": "안녕하세요, 저는 인공지능 음성인식 시스템입니다.",
+  "language": "ko"
+}
+```
+
+## 🔄 텍스트 처리 (vLLM)
+
+STT로 변환한 텍스트를 별도로 배포된 vLLM 서버로 보내서 처리합니다:
+
+```bash
+# vLLM API 호출 예시
+curl -X POST http://your-vllm-server:8000/v1/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "meta-llama/Llama-2-7b-hf",
+    "prompt": "안녕하세요, 저는 인공지능 음성인식 시스템입니다.",
+    "max_tokens": 100
+  }'
 ```
 
 ### 음성 파일 변환 및 vLLM 처리
