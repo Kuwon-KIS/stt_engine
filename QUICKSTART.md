@@ -101,7 +101,7 @@ print(result["text"])
 #### 2. vLLM과 함께 사용
 ```python
 from stt_engine import WhisperSTT
-from vllm_client import VLLMClient, VLLMConfig
+from stt_engine import WhisperSTT
 
 stt = WhisperSTT("models/openai_whisper-large-v3-turbo")
 vllm = VLLMClient(VLLMConfig())
@@ -287,7 +287,7 @@ docker-compose restart vllm-server
 |------|------|
 | `download_model.py` | Hugging Face에서 Whisper 모델 다운로드 |
 | `stt_engine.py` | Whisper STT 핵심 모듈 |
-| `vllm_client.py` | vLLM 서버 통신 클라이언트 |
+| `stt_engine.py` | Whisper STT 엔진 (faster-whisper) |
 | `api_server.py` | FastAPI REST API 서버 |
 | `api_client.py` | CLI 테스트 클라이언트 |
 | `Dockerfile` | 기본 Docker 이미지 (CPU) |

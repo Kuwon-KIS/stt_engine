@@ -137,13 +137,13 @@ docker ps
 
 ```bash
 # 헬스 체크
-curl http://localhost:8001/health
+curl http://localhost:8003/health
 
 # 응답 예시
 # {
-#   "status": "healthy",
-#   "device": "cuda",
-#   "models_loaded": true
+#   "status": "ok",
+#   "version": "1.0.0",
+#   "engine": "faster-whisper"
 # }
 ```
 
@@ -153,7 +153,7 @@ curl http://localhost:8001/health
 
 #### 요청
 ```bash
-curl -X POST http://localhost:8001/transcribe \
+curl -X POST http://localhost:8003/transcribe \
   -F "file=@audio.wav" \
   -F "language=ko"
 ```

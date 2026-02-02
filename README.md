@@ -78,20 +78,20 @@ docker-compose -f docker/docker-compose.yml up -d
 
 ### 3단계: 상태 확인
 ```bash
-curl http://localhost:8001/health
+curl http://localhost:8003/health
 ```
 
 ### 4단계: 음성 인식
 ```bash
 curl -X POST -F "file=@audio.wav" -F "language=ko" \
-  http://localhost:8001/transcribe
+  http://localhost:8003/transcribe
 ```
 
 ## 📡 API 엔드포인트
 
 ### 헬스 체크
 ```bash
-curl http://localhost:8001/health
+curl http://localhost:8003/health
 ```
 
 ### 음성 인식 (STT)
@@ -99,7 +99,7 @@ curl http://localhost:8001/health
 curl -X POST \
   -F "file=@audio.wav" \
   -F "language=ko" \
-  http://localhost:8001/transcribe
+  http://localhost:8003/transcribe
 ```
 
 **응답 예시**:
@@ -113,24 +113,24 @@ curl -X POST \
 
 ## 🔄 텍스트 처리 (vLLM)
 
-STT로 변환한 텍스트를 별도로 배포된 vLLM 서버로 보내서 처리합니다:
+**참고**: STT로 변환한 텍스트를 별도로 배포된 vLLM 서버로 보내서 처리합니다.
 
 ```bash
-# vLLM API 호출 예시
+# 1단계: Whisper STT로 음성 인식
+curl -X POST http://localhost:8003/transcribe \
+  -F "file=@audio.wav" \
+  -F "language=ko"
+
+# 응답: {"success": true, "text": "...", "language": "ko"}
+
+# 2단계: 텍스트를 vLLM 서버로 전송
 curl -X POST http://your-vllm-server:8000/v1/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "meta-llama/Llama-2-7b-hf",
-    "prompt": "안녕하세요, 저는 인공지능 음성인식 시스템입니다.",
+    "prompt": "음성에서 변환된 텍스트",
     "max_tokens": 100
   }'
-```
-
-### 음성 파일 변환 및 vLLM 처리
-```bash
-curl -X POST -F "file=@audio.wav" \
-  -F "instruction=다음 텍스트를 요약해주세요:" \
-  http://localhost:8001/transcribe-and-process
 ```
 
 ## 📁 프로젝트 구조
