@@ -1,0 +1,48 @@
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+
+RUN apt-get update && apt-get install -y python3.11 python3-pip python3.11-dev && rm -rf /var/lib/apt/lists/*
+RUN python3.11 -m pip install --upgrade pip setuptools wheel
+RUN mkdir -p /wheels
+
+# 모든 패키지를 wheel로 다운로드
+RUN python3.11 -m pip install \
+    torch==2.5.1 \
+    torchaudio==2.5.1 \
+    --index-url https://download.pytorch.org/whl/cu124
+
+RUN python3.11 -m pip install \
+    faster-whisper==1.0.3 \
+    librosa==0.10.0 \
+    scipy==1.12.0 \
+    huggingface-hub==0.21.4 \
+    fastapi==0.109.0 \
+    uvicorn==0.27.0 \
+    requests==2.31.0 \
+    pydantic==2.5.3 \
+    python-dotenv==1.0.0 \
+    pyyaml==6.0.1
+
+# 설치된 패키지들을 wheel로 저장
+RUN python3.11 -m pip download \
+    torch==2.5.1 \
+    torchaudio==2.5.1 \
+    --index-url https://download.pytorch.org/whl/cu124 \
+    -d /wheels
+
+RUN python3.11 -m pip download \
+    faster-whisper==1.0.3 \
+    librosa==0.10.0 \
+    scipy==1.12.0 \
+    huggingface-hub==0.21.4 \
+    fastapi==0.109.0 \
+    uvicorn==0.27.0 \
+    requests==2.31.0 \
+    pydantic==2.5.3 \
+    python-dotenv==1.0.0 \
+    pyyaml==6.0.1 \
+    -d /wheels
+
+# wheels 디렉토리 확인
+RUN echo "Total wheels:" && ls -1 /wheels/*.whl | wc -l && echo && ls -lh /wheels/ | tail -20
+
+CMD ["bash"]

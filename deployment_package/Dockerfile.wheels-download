@@ -1,0 +1,52 @@
+FROM python:3.11-slim-bullseye
+
+# 필수 도구 설치
+RUN apt-get update && apt-get install -y \
+    wget \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# pip 업그레이드 및 SSL 증명서 업데이트
+RUN python -m pip install --upgrade pip setuptools wheel && \
+    python -m pip install --upgrade certifi
+
+# wheels 디렉토리 생성
+RUN mkdir -p /wheels
+
+# ============================================================================
+# PyTorch를 먼저 다운로드 (PyTorch 공식 인덱스 사용)
+# ============================================================================
+RUN python -m pip download \
+    torch==2.1.2 \
+    torchaudio==2.1.2 \
+    --index-url https://download.pytorch.org/whl/cpu \
+    --trusted-host download.pytorch.org \
+    -d /wheels
+
+# ============================================================================
+# 기타 패키지 다운로드 (PyPI 사용)
+# ============================================================================
+RUN python -m pip download \
+    faster-whisper==1.0.3 \
+    librosa==0.10.0 \
+    numpy==1.24.3 \
+    scipy==1.12.0 \
+    huggingface-hub==0.21.4 \
+    python-dotenv==1.0.0 \
+    pydantic==2.5.3 \
+    fastapi==0.109.0 \
+    uvicorn==0.27.0 \
+    requests==2.31.0 \
+    pyyaml==6.0.1 \
+    -d /wheels || true
+
+# 다운로드 완료 메시지
+RUN echo "✅ 모든 wheels 다운로드 완료!" && \
+    ls -1 /wheels/*.whl | wc -l > /wheels/COUNT.txt && \
+    du -sh /wheels > /wheels/SIZE.txt
+
+# wheels 디렉토리를 볼륨으로 설정하여 호스트에서 접근 가능하도록
+VOLUME /wheels
+
+# 스크립트 실행 시 분할 압축
+CMD ["bash", "-c", "echo '✅ wheels 다운로드 완료' && ls -1 /wheels/*.whl && echo '' && echo '총 파일 수:' && ls -1 /wheels/*.whl | wc -l && echo '총 크기:' && du -sh /wheels"]

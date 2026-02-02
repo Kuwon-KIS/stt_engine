@@ -1,0 +1,45 @@
+FROM python:3.11-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    libsndfile1 \
+    ffmpeg \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Copy wheel files
+COPY deployment_package/wheels/ /wheels/
+
+# Install packages from wheels (offline)
+RUN python3.11 -m pip install --no-index --find-links=/wheels/ \
+    torch torchaudio faster-whisper \
+    librosa scipy numpy \
+    fastapi uvicorn requests pydantic \
+    huggingface-hub python-dotenv pyyaml && \
+    rm -rf /wheels/
+
+# Copy application files
+COPY stt_engine.py /app/
+COPY api_server.py /app/
+COPY requirements.txt /app/
+
+# Create directories for models and logs
+RUN mkdir -p /app/models /app/logs /app/audio
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV HF_HOME=/app/models
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8003/health || exit 1
+
+# Expose API port
+EXPOSE 8003
+
+# Start the API server
+CMD ["python3.11", "api_server.py"]

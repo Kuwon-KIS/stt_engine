@@ -1,284 +1,280 @@
-# Whisper STT API - 음성 인식 엔진
+# 🎙️ STT Engine (Speech-to-Text)
 
-OpenAI의 Whisper 모델을 사용하여 음성을 텍스트로 변환하는 REST API 서버입니다.
+**Language**: English | [한국어](README_KO.md)
 
-## 🎯 주요 기능
+OpenAI Whisper 기반 실시간 음성-텍스트 변환 엔진
 
-- **Whisper 기반 STT**: OpenAI의 whisper-large-v3-turbo 모델 사용
-- **다국어 지원**: 한국어, 영어, 중국어 등 다양한 언어 지원
-- **GPU 최적화**: CUDA GPU를 활용한 빠른 처리
-- **Docker 환경**: 컨테이너화된 간단한 배포
-- **FastAPI 서버**: REST API를 통한 쉬운 접근
-- **faster-whisper**: CTransformers 기반으로 3-4배 빠른 추론
+## 📋 빠른 시작
 
-**참고**: vLLM 텍스트 처리는 별도로 배포된 서버에서 담당합니다.
+### 1️⃣ 로컬 개발 (macOS/Linux)
 
-## 🔍 faster-whisper와 Whisper 모델의 관계
-
-### Whisper Large Turbo v3 (모델)
-- **역할**: OpenAI에서 제공하는 학습된 AI 모델
-- **파라미터**: ~1.5B (약 15억 개)
-- **기능**: 음성을 텍스트로 변환하는 신경망
-- **저장위치**: `models/openai_whisper-large-v3-turbo/` 디렉토리에 저장됨
-- **파일 크기**: ~2.7GB (모델 가중치)
-
-### faster-whisper (추론 엔진)
-- **역할**: Whisper 모델을 더 빠르게 실행하는 최적화된 엔진
-- **기술**: CTranslate2 + ONNX Runtime 사용
-- **성능**: 3-4배 빠른 추론 속도, 30-40% 적은 VRAM 사용
-- **호환성**: Whisper 모델과 100% 호환
-
-### 실행 흐름
-```
-음성 파일 
-    ↓
-faster-whisper 엔진 (CTranslate2 최적화)
-    ↓
-Whisper Large Turbo v3 모델 (가중치 로드)
-    ↓
-텍스트 출력
-```
-
-### 기술적 차이
-
-| 항목 | OpenAI Whisper | faster-whisper |
-|------|---|---|
-| **라이브러리** | Transformers (PyTorch) | CTranslate2 + ONNX |
-| **추론 속도** | 느림 (1배) | 빠름 (3-4배) ⚡ |
-| **VRAM 사용** | 4-6GB | 2.5-3.5GB |
-| **모델 형식** | PyTorch `.pt` | ONNX `.onnx` |
-| **정확도** | 100% | 100% (동일) |
-| **오디오 처리** | 수동 (librosa) | 자동 내장 |
-
-### 왜 faster-whisper를 사용하나?
-✅ **프로덕션 환경에 최적화**: 더 빠른 응답 시간  
-✅ **비용 절감**: 낮은 VRAM으로 더 많은 동시 처리 가능  
-✅ **에너지 효율**: 전력 소비 감소  
-✅ **호환성**: 기존 Whisper 모델 그대로 사용  
-✅ **오프라인 최적화**: RHEL 8.9 서버에 적합
-
-## 📋 준비 사항
-
-- Python 3.11+
-- CUDA 12.4+ (GPU 사용 시, CUDA 11.8 호환도 가능)
-- Docker & Docker Compose
-- 최소 4GB VRAM (권장 8GB 이상)
-
-## 🚀 빠른 시작 (Docker)
-
-### Docker Compose 사용 (권장)
-
-### 1단계: 이미지 빌드
 ```bash
-docker build -f docker/Dockerfile.gpu -t whisper-stt:latest .
-```
+# 환경 설정
+python3.11 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
 
-### 2단계: 컨테이너 실행
-```bash
-docker-compose -f docker/docker-compose.yml up -d
-```
+# API 서버 시작
+python3.11 api_server.py
 
-### 3단계: 상태 확인
-```bash
+# 테스트 (다른 터미널)
 curl http://localhost:8003/health
 ```
 
-### Docker 직접 사용 (docker-compose 없이)
+### 2️⃣ Linux 서버 배포
 
 ```bash
-# 이미지 빌드
-docker build -f docker/Dockerfile.gpu -t whisper-stt:latest .
+# 로컬에서: 배포 패키지 전송
+scp -r deployment_package/ user@server:/home/user/stt_engine/
 
-# 컨테이너 실행 (GPU 사용)
-docker run -d \
-  --name whisper-stt \
-  --gpus all \
-  -p 8003:8003 \
-  -v $(pwd)/models:/app/models \
-  -v $(pwd)/audio:/app/audio \
-  -v $(pwd)/logs:/app/logs \
-  -e WHISPER_DEVICE=cuda \
-  -e SERVER_HOST=0.0.0.0 \
-  -e SERVER_PORT=8003 \
-  whisper-stt:latest
+# 서버에서: 배포 실행
+ssh user@server
+cd /home/user/stt_engine/deployment_package
+./deploy.sh
 
-# 상태 확인
-curl http://localhost:8003/health
-
-# 로그 확인
-docker logs -f whisper-stt
-
-# 컨테이너 중지
-docker stop whisper-stt
-docker rm whisper-stt
+# 서버: API 시작
+python3.11 api_server.py
 ```
 
-### 4단계: 음성 인식 테스트
-```bash
-curl -X POST -F "file=@audio.wav" -F "language=ko" \
-  http://localhost:8003/transcribe
-```
-
-## 📡 API 엔드포인트
-
-### 헬스 체크
-```bash
-curl http://localhost:8003/health
-```
-
-### 음성 인식 (STT)
-```bash
-curl -X POST \
-  -F "file=@audio.wav" \
-  -F "language=ko" \
-  http://localhost:8003/transcribe
-```
-
-**응답 예시**:
-```json
-{
-  "success": true,
-  "text": "안녕하세요, 저는 인공지능 음성인식 시스템입니다.",
-  "language": "ko"
-}
-```
-
-## 🔄 텍스트 처리 (vLLM)
-
-**참고**: STT로 변환한 텍스트를 별도로 배포된 vLLM 서버로 보내서 처리합니다.
+### 3️⃣ Docker 배포
 
 ```bash
-# 1단계: Whisper STT로 음성 인식
-curl -X POST http://localhost:8003/transcribe \
-  -F "file=@audio.wav" \
-  -F "language=ko"
+# 로컬: Docker 이미지 빌드 (1.2GB)
+bash scripts/build-engine-image.sh
 
-# 응답: {"success": true, "text": "...", "language": "ko"}
+# 로컬: tar 파일로 저장됨 (build/output/)
 
-# 2단계: 텍스트를 vLLM 서버로 전송
-curl -X POST http://your-vllm-server:8000/v1/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "meta-llama/Llama-2-7b-hf",
-    "prompt": "음성에서 변환된 텍스트",
-    "max_tokens": 100
-  }'
+# 서버: 이미지 로드 및 실행
+docker load -i stt-engine-linux-x86_64.tar
+docker run -p 8003:8003 stt-engine:linux-x86_64
 ```
 
-## 📁 프로젝트 구조
+---
+
+## 📂 프로젝트 구조
 
 ```
 stt_engine/
-├── download_model.py          # 모델 다운로드 스크립트
-├── stt_engine.py             # STT 핵심 모듈
-├── vllm_client.py            # vLLM 클라이언트
-├── api_server.py             # FastAPI 서버
-├── Dockerfile                # Docker 이미지 정의
-├── docker-compose.yml        # Docker Compose 설정
-├── requirements.txt          # Python 의존성
-├── .env.example              # 환경 변수 예제
-├── README.md                 # 이 파일
-├── models/                   # Whisper 모델 저장 위치
-├── audio/                    # 테스트 음성 파일 위치
-└── logs/                     # 로그 파일 위치
+├── 📖 docs/                          # 모든 문서
+│   ├── INDEX.md                      # 📍 문서 시작점
+│   ├── QUICKSTART.md                 # 5분 빠른 시작
+│   ├── FINAL_STATUS.md               # 프로젝트 현황
+│   ├── DEPLOYMENT_READY.md           # 배포 준비
+│   ├── architecture/                 # 기술 문서
+│   ├── deployment/                   # 배포 가이드
+│   └── guides/                       # 각종 가이드
+│
+├── 📦 deployment_package/            # 배포용 패키지
+│   ├── wheels/                       # 59개 wheel 파일 (413MB)
+│   ├── deploy.sh                     # ⭐ 메인 배포 스크립트
+│   ├── setup_offline.sh              # 수동 설치
+│   ├── run_all.sh                    # 서비스 실행
+│   ├── START_HERE.sh                 # 배포 시작 가이드
+│   └── requirements.txt              # 패키지 목록
+│
+├── 🐳 docker/                        # Docker 설정
+│   ├── Dockerfile.engine             # STT Engine 이미지
+│   ├── Dockerfile.wheels-download    # Wheel 다운로드 이미지
+│   ├── docker-compose.yml            # 다중 컨테이너 설정
+│   └── ...                           # 기타 Dockerfile
+│
+├── 🛠️  scripts/                       # 개발/빌드 스크립트
+│   ├── build-engine-image.sh         # Docker 이미지 빌드
+│   ├── download-wheels/              # 휠 다운로드 스크립트
+│   ├── setup.sh                      # 초기 설정
+│   └── ...                           # 기타 유틸리티
+│
+├── 🏗️  build/                        # 빌드 산출물
+│   └── output/                       # Docker tar 파일
+│
+├── 📄 소스 코드
+│   ├── stt_engine.py                 # 메인 엔진
+│   ├── api_server.py                 # FastAPI 서버
+│   ├── api_client.py                 # API 클라이언트
+│   ├── model_manager.py              # 모델 관리
+│   └── ...
+│
+└── ⚙️  설정 파일
+    ├── requirements.txt              # 의존성
+    ├── pyproject.toml                # 프로젝트 설정
+    └── .env                          # 환경변수
 ```
 
-## 🔧 고급 설정
+---
 
-### GPU 사용 설정
+## 🚀 배포 방법
 
-#### docker-compose.yml에서 GPU 활성화:
-```yaml
-deploy:
-  resources:
-    reservations:
-      devices:
-        - driver: nvidia
-          count: 1
-          capabilities: [gpu]
-```
+| 방법 | 시간 | 권장 | 명령 |
+|------|------|------|------|
+| **오프라인** | 5-10분 | ⭐⭐⭐⭐⭐ | `cd deployment_package && ./deploy.sh` |
+| **Docker** | 15-30분 | ⭐⭐⭐ | `bash scripts/build-engine-image.sh` |
+| **개발 환경** | 5분 | ⭐⭐⭐⭐ | `pip install -r requirements.txt` |
 
-#### 환경 변수에서 GPU 설정:
+---
+
+## 📚 문서
+
+### 🎯 시작하기
+- **[docs/INDEX.md](docs/INDEX.md)** ← 📍 문서 시작점
+- **[docs/QUICKSTART.md](docs/QUICKSTART.md)** - 5분 빠른 시작
+- **[docs/FINAL_STATUS.md](docs/FINAL_STATUS.md)** - 현재 상태
+
+### 📋 배포 가이드
+- **[docs/DEPLOYMENT_READY.md](docs/DEPLOYMENT_READY.md)** - 배포 준비 사항
+- **[docs/deployment/](docs/deployment/)** - 상세 배포 가이드
+- **[deployment_package/START_HERE.sh](deployment_package/START_HERE.sh)** - 배포 시작
+
+### 🔧 기술 문서
+- **[docs/architecture/](docs/architecture/)** - 모델 구조 및 최적화
+- **[docs/guides/](docs/guides/)** - 설정 및 마이그레이션
+
+---
+
+## 🎓 기술 스펙
+
+| 항목 | 정보 |
+|------|------|
+| **모델** | OpenAI Whisper Large v3 Turbo |
+| **프레임워크** | PyTorch 2.1.2 |
+| **API** | FastAPI 0.109.0 |
+| **Python** | 3.11.5 |
+| **플랫폼** | Linux x86_64, macOS |
+| **GPU 지원** | NVIDIA CUDA 12.1/12.9 |
+
+---
+
+## 📊 주요 기능
+
+✅ **실시간 음성 인식**
+- 44.1kHz 오디오 지원
+- 다양한 오디오 포맷 (WAV, MP3, M4A 등)
+
+✅ **API 서버**
+- FastAPI 기반 REST API
+- 헬스 체크 및 통계 엔드포인트
+- 비동기 처리 지원
+
+✅ **오프라인 배포**
+- 인터넷 없이 Linux 서버에 배포 가능
+- 사전 다운로드된 휠 파일 (413MB)
+
+✅ **Docker 지원**
+- Docker 이미지 자동 빌드
+- 일관된 환경 보장
+
+---
+
+## ⚡ 성능
+
+| 항목 | 사양 |
+|------|------|
+| **메모리 (CPU)** | 2-4GB |
+| **메모리 (GPU)** | 6-8GB |
+| **디스크** | 2GB+ |
+| **추론 속도** | ~5-10초/분 |
+
+---
+
+## 🔧 설정
+
+### 환경 변수
+
 ```bash
-WHISPER_DEVICE=cuda
+# .env 파일
+HF_HOME=/path/to/models
+LOG_LEVEL=INFO
+API_PORT=8003
+CUDA_VISIBLE_DEVICES=0  # GPU 선택 (선택사항)
 ```
 
-### vLLM 모델 변경
+### 시스템 요구사항
 
-docker-compose.yml에서 모델 이름 변경:
-```yaml
-environment:
-  - MODEL_NAME=meta-llama/Llama-2-13b-hf  # 다른 모델로 변경
-```
+**최소 요구사항:**
+- Python 3.11.5
+- 2GB RAM
+- 2GB Disk
 
-## 🧪 테스트
+**권장 사양:**
+- Python 3.11.5
+- 8GB RAM (4GB CPU, 8GB GPU)
+- SSD 디스크
 
-### 로컬 테스트
+**GPU 사용 (선택사항):**
+- NVIDIA GPU (CUDA Compute Capability 3.5+)
+- NVIDIA Driver 575+
+- CUDA 12.1 or 12.9
+- cuDNN
+
+---
+
+## 📖 상세 가이드
+
+### 로컬 개발
+
 ```bash
-# STT 엔진 테스트
-python stt_engine.py
+# 1. 저장소 클론
+git clone <repo>
+cd stt_engine
 
-# vLLM 연결 테스트
-python vllm_client.py
+# 2. 가상 환경 생성
+python3.11 -m venv venv
+source venv/bin/activate
+
+# 3. 의존성 설치
+pip install -r requirements.txt
+
+# 4. API 서버 시작
+python3.11 api_server.py
+
+# 5. 테스트 (다른 터미널)
+curl http://localhost:8003/health
 ```
 
-### Docker 환경에서 테스트
-```bash
-# 컨테이너 내에서 테스트 실행
-docker-compose exec stt-engine python stt_engine.py
-```
+### Linux 서버 배포
 
-## 📊 모니터링
+[docs/DEPLOYMENT_READY.md](docs/DEPLOYMENT_READY.md) 참고
 
-### 로그 확인
-```bash
-# 최근 100줄 로그
-tail -100f logs/*.log
+### Docker 배포
 
-# 특정 로그 보기
-docker-compose logs -f stt-engine
-```
+[docs/deployment/DEPLOYMENT_GUIDE.md](docs/deployment/DEPLOYMENT_GUIDE.md) 참고
 
-### 리소스 사용량 확인
-```bash
-docker stats stt-engine vllm-server
-```
+---
 
-## ⚠️ 주의사항
+## 🐛 문제 해결
 
-1. **모델 다운로드**: 첫 실행 시 모델이 상당히 큼 (수 GB)이므로 시간이 걸릴 수 있습니다.
-2. **GPU 메모리**: GPU를 사용할 경우 충분한 VRAM이 필요합니다 (최소 8GB 권장).
-3. **vLLM 서버**: STT와 vLLM을 함께 사용하려면 vLLM 서버가 반드시 실행 중이어야 합니다.
+| 문제 | 해결책 |
+|------|--------|
+| API 시작 안 됨 | 모델 다운로드 대기 (1-2분) 확인 |
+| 메모리 부족 | CPU 모드 사용 또는 메모리 증설 |
+| GPU 인식 안 됨 | `nvidia-smi` 명령으로 드라이버 확인 |
+| 포트 충돌 | `API_PORT` 환경변수 변경 |
 
-## 🛠️ 문제 해결
+더 자세한 내용은 [docs/](docs/) 참고
 
-### 모델 다운로드 실패
-```bash
-# Hugging Face 토큰 설정
-export HUGGINGFACE_HUB_TOKEN=your_token_here
-python download_model.py
-```
+---
 
-### 메모리 부족
-```bash
-# CPU 모드로 실행
-export WHISPER_DEVICE=cpu
-python stt_engine.py
-```
+## 📞 지원
 
-### vLLM 서버 연결 실패
-```bash
-# vLLM 서버가 실행 중인지 확인
-curl http://localhost:8000/health
+- **문서**: [docs/INDEX.md](docs/INDEX.md)
+- **이슈**: GitHub Issues
+- **논의**: GitHub Discussions
 
-# 서버 재시작
-docker-compose restart vllm-server
-```
+---
 
-## 📝 라이선스
+## 📄 라이선스
 
-이 프로젝트는 MIT 라이선스를 따릅니다.
+MIT License - 자유롭게 사용, 수정, 배포 가능
 
-## 👥 기여
+---
 
-이슈 및 풀 리퀘스트는 언제든 환영합니다!
+## 🙏 감사의 말
+
+- OpenAI (Whisper 모델)
+- Meta (PyTorch)
+- Hugging Face (Transformers)
+
+---
+
+**버전**: 1.0.0  
+**마지막 업데이트**: 2026-02-02  
+**상태**: ✅ 배포 준비 완료
