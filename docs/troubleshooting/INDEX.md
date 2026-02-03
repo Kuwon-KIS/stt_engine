@@ -7,6 +7,13 @@
 
 ## 📋 가이드 목록
 
+### 0. [REALTIME_FIX_GUIDE.md](./REALTIME_FIX_GUIDE.md) ⭐ 긴급
+**실시간 오류 해결** - 현재 실행 중인 컨테이너의 문제를 즉시 수정
+- docker cp로 Python 파일 교체
+- 패키지 설치 및 재시작
+- GPU 드라이버 호환성 문제
+- 5-15분 내 해결 가능
+
 ### 1. [CONTAINER_FILE_UPDATES.md](./CONTAINER_FILE_UPDATES.md)
 이미지 재빌드 없이 **Python 파일만 수정**하여 운영환경에서 테스트하기
 - 빠른 핫픽스가 필요한 경우
@@ -26,6 +33,12 @@ Docker 이미지 실행 오류 원인 분석 및 해결책
 ---
 
 ## 🎯 문제별 빠른 진단
+
+### 문제: 컨테이너가 시작 즉시 오류로 종료된다
+**진단**: 로그 확인 후 [REALTIME_FIX_GUIDE.md](./REALTIME_FIX_GUIDE.md) → "모든 오류 설명" 섹션
+
+### 문제: 구 버전 코드 때문에 오류가 난다
+**해결**: [REALTIME_FIX_GUIDE.md](./REALTIME_FIX_GUIDE.md) → "Step 1-5" 순서대로 따르기
 
 ### 문제: `docker run` 명령이 실패한다
 **진단**: [IMAGE_RUN_ISSUES.md](./IMAGE_RUN_ISSUES.md) → "Docker 실행 오류" 섹션 참고
@@ -49,6 +62,7 @@ docker logs <container_id>
 
 | 상황 | 추천 방법 | 소요시간 | 가이드 |
 |------|---------|--------|------|
+| **현재 실행 중인 컨테이너 오류** | docker cp + pip | ~5분 | [링크](./REALTIME_FIX_GUIDE.md) ⭐ |
 | Python 파일만 수정 후 테스트 | docker cp | ~5분 | [링크](./CONTAINER_FILE_UPDATES.md) |
 | 이미지 실행 오류 발생 | 오류 로그 분석 | ~10분 | [링크](./IMAGE_RUN_ISSUES.md) |
 | 최종 이미지 빌드 | 새 이미지 생성 | ~30분 | [SERVER_DEPLOYMENT_GUIDE.md](../SERVER_DEPLOYMENT_GUIDE.md) |
