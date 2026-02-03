@@ -21,6 +21,7 @@ pydantic==2.5.3
 fastapi==0.109.0
 uvicorn==0.27.0
 requests==2.31.0
+python-multipart==0.0.22
 
 # 설정
 pyyaml==6.0.1

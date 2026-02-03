@@ -8,6 +8,7 @@ faster-whisper 모델을 사용하여 음성을 텍스트로 변환합니다.
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from pathlib import Path
 import tempfile
+import os
 from stt_engine import WhisperSTT
 
 app = FastAPI(
@@ -17,15 +18,18 @@ app = FastAPI(
 )
 
 # 모델 초기화
-# faster-whisper는 자동으로 CUDA 감지
+# 환경변수 STT_DEVICE로 cpu/cuda 선택 가능 (기본값: cpu)
 try:
     model_path = Path(__file__).parent / "models" / "openai_whisper-large-v3-turbo"
+    device = os.getenv("STT_DEVICE", "cpu")
+    compute_type = "float16" if device == "cuda" else "int8"  # CPU는 int8이 더 효율적
+    
     stt = WhisperSTT(
         str(model_path),
-        device="cuda",
-        compute_type="float16"  # VRAM 효율적, 빠른 추론
+        device=device,
+        compute_type=compute_type
     )
-    print("✅ faster-whisper 모델 로드 완료 (Device: cuda, compute: float16)")
+    print(f"✅ faster-whisper 모델 로드 완료 (Device: {device}, compute: {compute_type})")
 except Exception as e:
     print(f"❌ 모델 로드 실패: {e}")
     stt = None

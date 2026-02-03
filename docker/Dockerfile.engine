@@ -19,7 +19,8 @@ RUN python3.11 -m pip install --no-index --find-links=/wheels/ \
     torch torchaudio faster-whisper \
     librosa scipy numpy \
     fastapi uvicorn requests pydantic \
-    huggingface-hub python-dotenv pyyaml && \
+    huggingface-hub python-dotenv pyyaml \
+    python-multipart && \
     rm -rf /wheels/
 
 # Copy application files
@@ -33,6 +34,7 @@ RUN mkdir -p /app/models /app/logs /app/audio
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV HF_HOME=/app/models
+ENV STT_DEVICE=cpu
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
