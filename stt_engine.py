@@ -94,7 +94,31 @@ class WhisperSTT:
         try:
             self.model = WhisperModel(
                 self.model_path,
-                device=self.device,, **kwargs) -> Dict:
+                device=self.device,
+                compute_type=self.compute_type,
+                num_workers=4,
+                cpu_threads=4,
+                download_root=None
+            )
+            print(f"✅ faster-whisper 모델 로드 완료")
+        except FileNotFoundError:
+            print(f"❌ 모델을 찾을 수 없습니다: {self.model_path}")
+            print(f"💡 다음 경로에 모델을 배치하세요: {self.model_path}")
+            raise
+        except Exception as e:
+            print(f"❌ 모델 로드 실패: {e}")
+            raise RuntimeError(f"모델 로드 실패: {e}") from e
+    
+    @staticmethod
+    def _is_cuda_available() -> bool:
+        """CUDA 가용성 확인"""
+        try:
+            import torch
+            return torch.cuda.is_available()
+        except ImportError:
+            return False
+    
+    def transcribe(self, audio_path: str, language: Optional[str] = None, **kwargs) -> Dict:
         """
         음성 파일을 텍스트로 변환합니다.
         
@@ -139,25 +163,7 @@ class WhisperSTT:
                 "text": text.strip(),
                 "audio_path": audio_path,
                 "language": detected_language,
-                "duration": info.duration if info else Non
-            with torch.no_grad():
-                predicted_ids = self.model.generate(
-                    inputs["input_features"].to(self.device),
-                    language=language,
-                    max_length=448
-                )
-            
-            # 결과 디코딩
-            transcription = self.processor.batch_decode(
-                predicted_ids,
-                skip_special_tokens=True
-            )
-            
-            return {
-                "success": True,
-                "text": transcription[0],
-                "audio_path": audio_path,
-                "language": language
+                "duration": info.duration if info else None
             }
         
         except Exception as e:
@@ -170,16 +176,6 @@ class WhisperSTT:
 
 
 def test_stt(model_path: str, audio_dir: str = "audio", device: str = "cpu"):
-    """
-    STT 테스트 함수
-    
-    Args:
-        model_path: 모델 경로
-        audio_dir: 테스트할 음성 파일 디렉토리
-        device: 사용할 디바이스
-    """
-    # STT 초기화
-    stt = WhisperSTT(model_path, device=device)uda"):
     """
     STT 테스트 함수
     
@@ -224,10 +220,23 @@ def test_stt(model_path: str, audio_dir: str = "audio", device: str = "cpu"):
         if result["success"]:
             print(f"✅ 파일: {audio_file.name}")
             print(f"📝 결과:\n{result['text']}")
-            if result["duration"]:
-                print(f"⏱️  음성 길이: {result['duration']:.1f}초
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+            if result.get("duration"):
+                print(f"⏱️  음성 길이: {result['duration']:.1f}초")
+        else:
+            print(f"❌ 파일: {audio_file.name}")
+            print(f"🔴 오류: {result.get('error', 'Unknown error')}")
+
+
+if __name__ == "__main__":
+    import sys
+    
+    # 모델 경로 설정
+    model_path = str(Path(__file__).parent / "models" / "openai_whisper-large-v3-turbo")
+    
+    # 디바이스 설정
+    device = "cuda"  # faster-whisper는 CUDA 자동으로 인식
+    
     print(f"🖥️  사용 디바이스: {device}")
     
-    # STT/CPU 디바이스 설정
-    device = "cuda"  # faster-whisper는 CUDA 자동으로 인식
+    # 테스트 실행
+    test_stt(model_path, audio_dir="audio", device=device)
