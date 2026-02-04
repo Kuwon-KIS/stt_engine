@@ -1,14 +1,33 @@
 #!/usr/bin/env python3
 """
-STT 모듈 - faster-whisper를 사용한 음성-텍스트 변환
-더 빠른 추론 속도와 낮은 메모리 사용량으로 최적화됨
+STT 모듈 - faster-whisper / OpenAI Whisper 자동 선택
+faster-whisper 우선 시도 → 실패 시 OpenAI Whisper로 폴백
 """
 
 import os
 from pathlib import Path
 from typing import Optional, Dict
 import tarfile
-from faster_whisper import WhisperModel
+
+# 두 가지 백엔드 시도
+try:
+    from faster_whisper import WhisperModel
+    FASTER_WHISPER_AVAILABLE = True
+except ImportError:
+    FASTER_WHISPER_AVAILABLE = False
+
+try:
+    import openai_whisper as whisper
+    WHISPER_AVAILABLE = True
+except ImportError:
+    try:
+        import whisper
+        WHISPER_AVAILABLE = True
+    except ImportError:
+        WHISPER_AVAILABLE = False
+
+if not FASTER_WHISPER_AVAILABLE and not WHISPER_AVAILABLE:
+    raise ImportError("faster-whisper 또는 openai-whisper(whisper) 패키지가 설치되어야 합니다")
 
 
 def auto_extract_model_if_needed(models_dir: str = "models") -> Path:
@@ -62,19 +81,16 @@ def auto_extract_model_if_needed(models_dir: str = "models") -> Path:
 
 
 class WhisperSTT:
-    """faster-whisper를 사용한 STT 클래스 (3-4배 빠른 추론)"""
+    """faster-whisper / OpenAI Whisper 자동 선택 STT 클래스"""
     
     def __init__(self, model_path: str, device: str = "cpu", compute_type: str = "float16"):
         """
         Whisper STT 초기화
         
         Args:
-            model_path: 모델 경로 (예: "models/openai_whisper-large-v3-turbo")
+            model_path: 모델 경로 (예: "models")
             device: 사용할 디바이스 ('cpu', 'cuda', 또는 'auto')
-            compute_type: 계산 타입 ('float32', 'float16', 'int8')
-                        - float16: 빠르고 메모리 효율적 (권장)
-                        - float32: 더 정확하지만 느림
-                        - int8: 가장 빠르고 메모리 효율적 (VRAM <2GB)
+            compute_type: 계산 타입 (faster-whisper용, 'float32', 'float16', 'int8')
         
         Raises:
             FileNotFoundError: 모델을 찾을 수 없음
@@ -86,12 +102,25 @@ class WhisperSTT:
         
         self.device = device if device != "auto" else ("cuda" if self._is_cuda_available() else "cpu")
         self.compute_type = compute_type
+        self.backend = None
         
-        print(f"🔄 faster-whisper 모델 로드 중... (디바이스: {self.device}, compute: {compute_type})")
+        # faster-whisper 먼저 시도
+        if FASTER_WHISPER_AVAILABLE:
+            self._try_faster_whisper()
         
-        # faster-whisper 모델 로드
-        # model_size_or_path: 모델 폴더 경로 (로컬) 또는 모델 이름 (tiny, base, small, medium, large)
+        # faster-whisper 실패하면 OpenAI Whisper 시도
+        if self.backend is None and WHISPER_AVAILABLE:
+            self._try_whisper()
+        
+        # 둘 다 실패하면 에러
+        if self.backend is None:
+            raise RuntimeError("모델 로드 실패: faster-whisper와 whisper 모두 실패")
+    
+    def _try_faster_whisper(self):
+        """faster-whisper로 모델 로드 시도"""
         try:
+            print(f"🔄 faster-whisper 모델 로드 시도... (디바이스: {self.device}, compute: {self.compute_type})")
+            
             self.model = WhisperModel(
                 self.model_path,
                 device=self.device,
@@ -99,16 +128,34 @@ class WhisperSTT:
                 num_workers=4,
                 cpu_threads=4,
                 download_root=None,
-                local_files_only=True  # 오프라인 환경에서 외부 네트워크 불필요
+                local_files_only=True
             )
-            print(f"✅ faster-whisper 모델 로드 완료")
-        except FileNotFoundError:
-            print(f"❌ 모델을 찾을 수 없습니다: {self.model_path}")
-            print(f"💡 다음 경로에 모델을 배치하세요: {self.model_path}")
-            raise
+            
+            self.backend = "faster-whisper"
+            print(f"✅ faster-whisper 모델 로드 성공")
+            
         except Exception as e:
-            print(f"❌ 모델 로드 실패: {e}")
-            raise RuntimeError(f"모델 로드 실패: {e}") from e
+            print(f"⚠️  faster-whisper 로드 실패: {e}")
+            print(f"   → OpenAI Whisper로 폴백 시도...")
+    
+    def _try_whisper(self):
+        """OpenAI Whisper로 모델 로드 시도"""
+        try:
+            print(f"🔄 OpenAI Whisper 모델 로드 시도... (디바이스: {self.device})")
+            
+            # openai-whisper는 모델 이름 또는 경로 사용 가능
+            # 로컬 경로가 있으면 사용, 없으면 기본 "large" 사용
+            model_name = "large"
+            if Path(self.model_path).exists() and Path(self.model_path / "pytorch_model.bin").exists():
+                model_name = str(self.model_path)
+            
+            self.model = whisper.load_model(model_name, device=self.device, in_memory=False)
+            
+            self.backend = "whisper"
+            print(f"✅ OpenAI Whisper 모델 로드 성공")
+            
+        except Exception as e:
+            print(f"❌ OpenAI Whisper 로드 실패: {e}")
     
     @staticmethod
     def _is_cuda_available() -> bool:
@@ -125,13 +172,8 @@ class WhisperSTT:
         
         Args:
             audio_path: 음성 파일 경로
-            language: 음성 언어 코드 (예: 'ko' for Korean, 'en' for English)
-                     None이면 자동 감지
+            language: 음성 언어 코드 (예: 'ko', 'en')
             **kwargs: 추가 옵션
-                - beam_size: 빔 서치 크기 (기본값: 5, 범위: 1-30)
-                - best_of: 샘플링 최적화 (기본값: 5)
-                - patience: 조기 종료 patience (기본값: 1)
-                - temperature: 온도 (기본값: 0)
         
         Returns:
             변환 결과 딕셔너리
@@ -143,29 +185,13 @@ class WhisperSTT:
             if not Path(audio_path).exists():
                 raise FileNotFoundError(f"파일을 찾을 수 없습니다: {audio_path}")
             
-            # faster-whisper transcribe (자동으로 오디오 로드 및 처리)
-            # language: 언어 토큰 설정 (명시하면 더 빠름)
-            segments, info = self.model.transcribe(
-                audio_path,
-                language=language,
-                beam_size=kwargs.get("beam_size", 5),
-                best_of=kwargs.get("best_of", 5),
-                patience=kwargs.get("patience", 1),
-                temperature=kwargs.get("temperature", 0),
-                verbose=False
-            )
-            
-            # 모든 세그먼트 수집
-            text = "".join([segment.text for segment in segments])
-            detected_language = info.language if info else language or "unknown"
-            
-            return {
-                "success": True,
-                "text": text.strip(),
-                "audio_path": audio_path,
-                "language": detected_language,
-                "duration": info.duration if info else None
-            }
+            # 백엔드별 처리
+            if self.backend == "faster-whisper":
+                return self._transcribe_faster_whisper(audio_path, language, **kwargs)
+            elif self.backend == "whisper":
+                return self._transcribe_whisper(audio_path, language, **kwargs)
+            else:
+                raise RuntimeError(f"알 수 없는 백엔드: {self.backend}")
         
         except Exception as e:
             print(f"❌ 오류: {e}")
@@ -174,23 +200,71 @@ class WhisperSTT:
                 "error": str(e),
                 "audio_path": audio_path
             }
+    
+    def _transcribe_faster_whisper(self, audio_path: str, language: Optional[str] = None, **kwargs) -> Dict:
+        """faster-whisper로 변환"""
+        segments, info = self.model.transcribe(
+            audio_path,
+            language=language,
+            beam_size=kwargs.get("beam_size", 5),
+            best_of=kwargs.get("best_of", 5),
+            patience=kwargs.get("patience", 1),
+            temperature=kwargs.get("temperature", 0),
+            verbose=False
+        )
+        
+        # 모든 세그먼트 수집
+        text = "".join([segment.text for segment in segments])
+        detected_language = info.language if info else language or "unknown"
+        
+        return {
+            "success": True,
+            "text": text.strip(),
+            "audio_path": audio_path,
+            "language": detected_language,
+            "duration": info.duration if info else None,
+            "backend": "faster-whisper"
+        }
+    
+    def _transcribe_whisper(self, audio_path: str, language: Optional[str] = None, **kwargs) -> Dict:
+        """OpenAI Whisper로 변환"""
+        result = self.model.transcribe(
+            audio_path,
+            language=language
+        )
+        
+        text = result.get("text", "").strip()
+        
+        return {
+            "success": True,
+            "text": text,
+            "audio_path": audio_path,
+            "language": language or "unknown",
+            "duration": None,
+            "backend": "whisper"
+        }
 
 
 def test_stt(model_path: str, audio_dir: str = "audio", device: str = "cpu"):
     """
-    STT 테스트 함수
+    STT 테스트 함수 (디버깅용, 실제 서비스에서는 사용 안 함)
     
     Args:
         model_path: 모델 경로
         audio_dir: 테스트할 음성 파일 디렉토리
         device: 사용할 디바이스
+    
+    참고: FastAPI 서비스 (api_server.py)에서 실제로 사용할 때는
+         이 함수가 아닌 WhisperSTT 클래스를 직접 import해서 사용합니다.
     """
-    # STT 초기화 (float16으로 최적화, VRAM 3-4GB)
+    # STT 초기화
     stt = WhisperSTT(
         model_path,
         device=device,
-        compute_type="float16"  # 빠르고 효율적
+        compute_type="float16"
     )
+    
+    print(f"\n📊 사용 백엔드: {stt.backend}\n")
     
     # 음성 파일 디렉토리 확인
     audio_path = Path(audio_dir)
@@ -223,21 +297,20 @@ def test_stt(model_path: str, audio_dir: str = "audio", device: str = "cpu"):
             print(f"📝 결과:\n{result['text']}")
             if result.get("duration"):
                 print(f"⏱️  음성 길이: {result['duration']:.1f}초")
+            print(f"🔧 사용 백엔드: {result.get('backend', 'unknown')}")
         else:
             print(f"❌ 파일: {audio_file.name}")
             print(f"🔴 오류: {result.get('error', 'Unknown error')}")
 
 
-if __name__ == "__main__":
-    import sys
-    
-    # 모델 경로 설정
-    model_path = str(Path(__file__).parent / "models" / "openai_whisper-large-v3-turbo")
-    
-    # 디바이스 설정
-    device = "cuda"  # faster-whisper는 CUDA 자동으로 인식
-    
-    print(f"🖥️  사용 디바이스: {device}")
-    
-    # 테스트 실행
-    test_stt(model_path, audio_dir="audio", device=device)
+# ============================================================================
+# 주의: 이 파일은 api_server.py의 FastAPI 서비스에서 import되어 사용됩니다.
+# api_server.py:
+#   from stt_engine import WhisperSTT
+#   stt = WhisperSTT(model_path=..., device=...)
+#   result = stt.transcribe(audio_path)
+#
+# 따라서 이 파일을 직접 실행할 필요는 없습니다.
+# 만약 로컬에서 테스트하려면:
+#   python stt_engine.py  (단, audio/ 디렉토리에 음성 파일이 있어야 함)
+# ============================================================================

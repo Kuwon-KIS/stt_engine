@@ -182,6 +182,7 @@ RUN python3.11 -c "import torch; \
 
 RUN python3.11 -m pip install --trusted-host files.pythonhosted.org \
     faster-whisper==1.0.3 \
+    openai-whisper==20231117 \
     librosa==0.10.0 \
     scipy==1.12.0 \
     numpy==1.24.3 \
@@ -193,6 +194,9 @@ RUN python3.11 -m pip install --trusted-host files.pythonhosted.org \
     python-dotenv==1.0.0 \
     pyyaml==6.0.1 \
     python-multipart==0.0.6
+
+# 검증: 두 백엔드 설치 확인
+RUN python3.11 -c "import faster_whisper; import whisper; print('✅ faster-whisper와 openai-whisper 모두 설치됨')"
 
 # ============================================================================
 # 5단계: 애플리케이션 파일 복사

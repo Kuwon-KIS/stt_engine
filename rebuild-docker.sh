@@ -1,61 +1,53 @@
 #!/bin/bash
+# Docker 이미지 재빌드 및 배포 스크립트
 
-# STT Engine Docker 재빌드 스크립트
-# 수정된 코드를 포함한 새로운 이미지 빌드
+set -e
 
-echo "🔄 STT Engine Docker 이미지 재빌드"
-echo "════════════════════════════════════════════"
+WORKSPACE="/Users/a113211/workspace/stt_engine"
+
+echo "=========================================="
+echo "🚀 STT Engine Docker 재빌드 시작"
+echo "=========================================="
 echo ""
 
-IMAGE_NAME="stt-engine"
-OLD_TAG="cuda129-v1.0"
-NEW_TAG="cuda129-v1.1"
+# 1단계: 빌드 스크립트 실행
+echo "1️⃣  Docker 이미지 빌드 중..."
+echo "   (약 15-20분 소요)"
+echo ""
 
-echo "1️⃣ 기존 이미지 확인"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-docker images | grep "$IMAGE_NAME"
+cd "$WORKSPACE"
+bash scripts/build-stt-engine-cuda.sh
 
 echo ""
-echo "2️⃣ 빌드 스크립트 실행 중... (약 10-15분 소요)"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "=========================================="
+echo "✅ Docker 이미지 빌드 완료!"
+echo "=========================================="
+echo ""
 
-# 빌드 실행
-cd /Users/a113211/workspace/stt_engine
-bash build-stt-engine-cuda.sh
+# 2단계: 빌드된 이미지 확인
+echo "2️⃣  빌드된 이미지 확인"
+docker images | grep stt-engine
 
 echo ""
-echo "3️⃣ 빌드 완료 확인"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-docker images | grep "$IMAGE_NAME"
-
+echo "=========================================="
+echo "📋 다음 단계:"
+echo "=========================================="
 echo ""
-echo "4️⃣ 새 이미지 태그 지정"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-# 최신 빌드된 이미지 찾기
-LATEST_IMAGE=$(docker images | grep "$IMAGE_NAME" | grep "$OLD_TAG" | awk '{print $3}' | head -1)
-
-if [ -z "$LATEST_IMAGE" ]; then
-    echo "❌ 빌드된 이미지를 찾을 수 없습니다"
-    exit 1
-fi
-
-echo "이미지 ID: $LATEST_IMAGE"
-
-# 새 태그로 지정 (선택사항 - 기존 이미지 유지)
-# docker tag "$LATEST_IMAGE" "$IMAGE_NAME:$NEW_TAG"
-# echo "✅ 새 태그: $IMAGE_NAME:$NEW_TAG"
-
+echo "운영서버에서 다음 명령어 실행:"
 echo ""
-echo "════════════════════════════════════════════"
-echo "✅ Docker 이미지 재빌드 완료!"
-echo "════════════════════════════════════════════"
+echo "# 1. 수정된 파일 복사"
+echo "docker cp /app/stt_engine.py CONTAINER_NAME:/app/"
+echo "docker cp /app/api_server.py CONTAINER_NAME:/app/"
 echo ""
-echo "📋 사용 가능한 이미지:"
-docker images | grep "$IMAGE_NAME"
+echo "# 2. 컨테이너 재시작"
+echo "docker restart CONTAINER_NAME"
 echo ""
-echo "🚀 다음 명령어로 컨테이너 실행:"
-echo "   docker run -d --name stt-engine-gpu --gpus all -p 8003:8003 \\"
-echo "     -v /Users/a113211/workspace/stt_engine/models:/app/models \\"
-echo "     $IMAGE_NAME:$OLD_TAG"
+echo "# 3. 서비스 초기화 대기 (30초)"
+echo "sleep 30"
+echo ""
+echo "# 4. 헬스 체크"
+echo "curl http://localhost:8003/health"
+echo ""
+echo "예상 응답:"
+echo '{"status":"ok","version":"1.0.0","backend":"faster-whisper 또는 whisper"}'
 echo ""

@@ -13,7 +13,11 @@ echo "════════════════════════�
 echo "🚀 STT Engine Docker 백그라운드 재빌드"
 echo "════════════════════════════════════════════════════════════"
 echo ""
-echo "📝 로그 파일: $BUILD_LOG"
+echo "� 설치될 패키지:"
+echo "   - faster-whisper (CTranslate2 백엔드, model.bin)"
+echo "   - openai-whisper (PyTorch 백엔드, model.safetensors)"
+echo ""
+echo "�📝 로그 파일: $BUILD_LOG"
 echo "🔄 PID 파일: $PID_FILE"
 echo ""
 

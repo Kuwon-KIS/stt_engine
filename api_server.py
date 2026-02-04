@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
 FastAPI를 사용한 STT(Speech-to-Text) 서버
-faster-whisper 모델을 사용하여 음성을 텍스트로 변환합니다.
-더 빠른 추론 속도와 낮은 메모리 사용량으로 최적화됨
+faster-whisper 또는 OpenAI Whisper를 자동으로 선택하여 음성을 텍스트로 변환합니다.
+- faster-whisper: CTranslate2 백엔드 (model.bin 형식)
+- OpenAI Whisper: PyTorch 백엔드 (model.safetensors 형식)
 """
 
 from fastapi import FastAPI, File, UploadFile, HTTPException
@@ -14,7 +15,7 @@ from stt_engine import WhisperSTT
 app = FastAPI(
     title="Whisper STT API",
     version="1.0.0",
-    description="faster-whisper를 사용한 고속 음성 인식 API"
+    description="faster-whisper / OpenAI Whisper를 사용한 음성 인식 API (자동 선택)"
 )
 
 # 모델 초기화
@@ -29,7 +30,7 @@ try:
         device=device,
         compute_type=compute_type
     )
-    print(f"✅ faster-whisper 모델 로드 완료 (Device: {device}, compute: {compute_type})")
+    print(f"✅ STT 모델 로드 완료 (Device: {device}, Backend: {stt.backend})")
 except Exception as e:
     print(f"❌ 모델 로드 실패: {e}")
     stt = None
@@ -40,7 +41,11 @@ async def health():
     """헬스 체크"""
     if stt is None:
         return {"status": "error", "message": "STT 모델을 로드할 수 없음"}
-    return {"status": "ok", "version": "1.0.0", "engine": "faster-whisper"}
+    return {
+        "status": "ok",
+        "version": "1.0.0",
+        "backend": stt.backend
+    }
 
 
 @app.post("/transcribe")
@@ -53,13 +58,16 @@ async def transcribe(file: UploadFile = File(...), language: str = None):
     - language: 언어 코드 (선택사항, 예: "en", "ko", "ja")
     
     Returns:
+    - success: 처리 성공 여부
     - text: 인식된 텍스트
     - language: 감지된 언어
     - duration: 오디오 길이 (초)
+    - backend: 사용된 백엔드 (faster-whisper 또는 whisper)
     """
     if stt is None:
         raise HTTPException(status_code=503, detail="STT 모델이 로드되지 않음")
     
+    tmp_path = None
     try:
         # 임시 파일에 저장
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
@@ -74,7 +82,8 @@ async def transcribe(file: UploadFile = File(...), language: str = None):
             "success": result.get("success", False),
             "text": result.get("text", ""),
             "language": result.get("language", "unknown"),
-            "duration": result.get("duration", None)
+            "duration": result.get("duration", None),
+            "backend": result.get("backend", "unknown")
         }
     
     except Exception as e:
@@ -82,7 +91,7 @@ async def transcribe(file: UploadFile = File(...), language: str = None):
     
     finally:
         # 임시 파일 삭제
-        if Path(tmp_path).exists():
+        if tmp_path and Path(tmp_path).exists():
             Path(tmp_path).unlink()
 
 
