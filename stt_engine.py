@@ -98,7 +98,8 @@ class WhisperSTT:
                 compute_type=self.compute_type,
                 num_workers=4,
                 cpu_threads=4,
-                download_root=None
+                download_root=None,
+                local_files_only=True  # 오프라인 환경에서 외부 네트워크 불필요
             )
             print(f"✅ faster-whisper 모델 로드 완료")
         except FileNotFoundError:

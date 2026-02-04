@@ -60,3 +60,5 @@ stt_engine_deployment_*.tar.gz
 # Logs
 logs/
 *.log
+
+.build-pid
