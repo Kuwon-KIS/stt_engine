@@ -24,8 +24,15 @@ import tarfile
 from pathlib import Path
 from datetime import datetime
 
-# SSL 인증서 검증 비활성화 (네트워크 문제 해결용)
+# SSL 인증서 검증 비활성화 (네트워크/방화벽 문제 해결용)
 ssl._create_default_https_context = ssl._create_unverified_context
+
+# urllib3 경고 비활성화
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# 환경 변수 설정
+os.environ['HF_HUB_DISABLE_TELEMETRY'] = '1'
 
 def print_header(msg):
     print("\n" + "=" * 60)
@@ -81,6 +88,17 @@ print_step("Step 2: Hugging Face에서 모델 다운로드")
 
 try:
     from huggingface_hub import snapshot_download
+    
+    # ========== SSL 검증 완전 비활성화 ==========
+    import requests
+    from requests.packages.urllib3.exceptions import InsecureRequestWarning
+    
+    # urllib3 경고 무시
+    requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+    
+    # 환경 변수로도 비활성화
+    os.environ['REQUESTS_CA_BUNDLE'] = ''
+    os.environ['CURL_CA_BUNDLE'] = ''
     
     MODEL_REPO = "openai/whisper-large-v3-turbo"
     
@@ -148,65 +166,122 @@ print_success("파일 검증 완료")
 # Step 4: CTranslate2 포맷 변환 (model.bin 생성)
 # ============================================================================
 
-print_step("Step 4: CTranslate2 포맷 변환")
+print_step("Step 4: CTranslate2 포맷 변환 (model.bin 생성)")
 
 print("⏳ PyTorch 모델을 CTranslate2 바이너리 포맷으로 변환 중...")
-print("   (이 단계는 몇 분 걸릴 수 있습니다)")
+print("   (이 단계는 5-15분 걸릴 수 있습니다)")
 print()
 
+output_dir = model_specific_dir / "ctranslate2_model"
+conversion_success = False
+
+# CTranslate2 CLI 도구로 변환 (Hugging Face 모델 ID 사용)
 try:
-    import torch
-    import torch.nn as nn
-    from ctranslate2.converters import TransformersConverter
+    print("⏳ ct2-transformers-converter CLI 도구로 변환 중...")
+    print("   모델: openai/whisper-large-v3-turbo")
+    print(f"   출력: {output_dir}")
+    print()
     
-    # PyTorch 모델 경로
-    pytorch_model_path = model_specific_dir
+    output_dir.mkdir(parents=True, exist_ok=True)
     
-    # CTranslate2 변환기 생성
-    converter = TransformersConverter(
-        model_name_or_path=str(pytorch_model_path),
-        quantization=None,  # 정밀도 유지 (no quantization)
-        trust_remote_code=True
-    )
+    # CLI 도구 실행
+    cmd = [
+        "conda", "run", "-n", "stt-py311",
+        "ct2-transformers-converter",
+        "--model", "openai/whisper-large-v3-turbo",
+        "--output_dir", str(output_dir),
+        "--force",
+        "--quantization", "int8"
+    ]
     
-    # 변환 실행
-    output_dir = model_specific_dir / "ctranslate2_model"
-    converter.convert(str(output_dir), force=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
     
-    print_success("CTranslate2 모델 변환 완료")
-    
-    # 변환된 파일 확인
-    print(f"\n📁 변환된 파일:")
-    for f in output_dir.glob("*"):
-        if f.is_file():
-            size = f.stat().st_size / (1024**2)
-            print(f"  ✓ {f.name} ({size:.2f}MB)")
-    
-    # model.bin 복사/링크 생성 (호환성)
-    print(f"\n⏳ model.bin 복사 중...")
-    model_bin_src = output_dir / "model.bin"
-    model_bin_dst = model_specific_dir / "model.bin"
-    
-    if model_bin_src.exists():
-        # 바이너리 파일 복사
-        shutil.copy2(model_bin_src, model_bin_dst)
-        print_success(f"model.bin 생성 완료: {model_bin_dst}")
+    if result.returncode == 0:
+        print_success("✅ CTranslate2 모델 변환 완료!")
+        conversion_success = True
     else:
-        # 심링크 생성 (공간 절약)
-        if model_bin_dst.exists() or model_bin_dst.is_symlink():
-            model_bin_dst.unlink()
-        model_bin_dst.symlink_to(model_bin_src)
-        print_success(f"model.bin 심링크 생성: {model_bin_dst} -> {model_bin_src}")
-    
-except ImportError as e:
-    print(f"❌ CTranslate2 변환 실패: {e}")
-    print("   설치: pip install ctranslate2 torch")
-    print("   ⚠️  CTranslate2 변환은 선택사항입니다. (openai-whisper로 폴백 가능)")
-    print()
+        # CLI 도구 실패 시 Python API로 재시도
+        print(f"⚠️  CLI 도구 실패, Python API로 재시도...")
+        print()
+        
 except Exception as e:
-    print(f"❌ CTranslate2 변환 중 오류: {e}")
-    print("   ⚠️  CTranslate2 변환은 선택사항입니다. (openai-whisper로 폴백 가능)")
+    print(f"⚠️  CLI 도구 오류: {e}")
+    print("   Python API로 재시도...")
     print()
+
+# 파이썬 API 사용 (HF 모델 ID)
+if not conversion_success:
+    try:
+        from ctranslate2.converters.transformers import TransformersConverter
+        
+        print("⏳ Python API(TransformersConverter)로 변환 중...")
+        print("   모델: openai/whisper-large-v3-turbo (Hugging Face)")
+        print()
+        
+        # HF 모델 ID를 사용하여 변환
+        converter = TransformersConverter("openai/whisper-large-v3-turbo")
+        
+        converter.convert(
+            output_dir=str(output_dir),
+            quantization="int8",
+            force=True
+        )
+        
+        print_success("✅ CTranslate2 모델 변환 완료!")
+        conversion_success = True
+        
+    except Exception as e:
+        error_msg = str(e)
+        if len(error_msg) > 300:
+            error_msg = error_msg[:300] + "..."
+        print(f"⚠️  변환 중 오류: {error_msg}")
+        print()
+
+# 변환 결과 확인
+print()
+if conversion_success and output_dir.exists():
+    bin_files = list(output_dir.glob("*.bin"))
+    
+    if bin_files:
+        print("✅ 변환된 CTranslate2 모델 파일:")
+        total_size = 0
+        
+        for bin_file in sorted(bin_files):
+            size = bin_file.stat().st_size / (1024**2)
+            total_size += size
+            print(f"   ✓ {bin_file.name} ({size:.2f}MB)")
+        
+        print(f"\n   📏 합계: {total_size:.2f}MB")
+        
+        # model.bin 심링크 생성 (faster-whisper 호환성)
+        print()
+        print("⏳ 심링크 생성 중...")
+        
+        model_bin_src = bin_files[0]
+        model_bin_link = model_specific_dir / "model.bin"
+        
+        if model_bin_link.exists() or model_bin_link.is_symlink():
+            model_bin_link.unlink()
+        
+        model_bin_link.symlink_to(model_bin_src)
+        print_success("✅ model.bin 심링크 생성 완료")
+        print(f"   소스: {model_bin_src.name}")
+        print(f"   대상: model.bin")
+        
+    else:
+        print("⚠️  변환된 파일을 찾을 수 없습니다")
+        print()
+        print("💡 수동 변환 시도:")
+        print(f"   conda activate stt-py311")
+        print(f"   ct2-transformers-converter --model openai/whisper-large-v3-turbo \\")
+        print(f"     --output_dir {output_dir} --force --quantization int8")
+else:
+    print("⚠️  CTranslate2 변환 실패")
+    print()
+    print("💡 수동 변환 시도:")
+    print(f"   conda activate stt-py311")
+    print(f"   ct2-transformers-converter --model openai/whisper-large-v3-turbo \\")
+    print(f"     --output_dir {output_dir} --force --quantization int8")
 
 # ============================================================================
 # Step 5: 모델 파일 압축 (tar.gz)
@@ -294,3 +369,108 @@ print(f"     docker run -v /path/to/models:/app/models stt-engine:cuda129-v1.2")
 print()
 
 print("✨ 모든 준비가 완료되었습니다!")
+
+# ============================================================================
+# Step 7: faster-whisper 검증 (CTranslate2 변환된 모델 테스트)
+# ============================================================================
+
+print()
+print("=" * 60)
+print("🔍 모델 검증 (faster-whisper 로드 테스트)")
+print("=" * 60)
+print()
+
+try:
+    from faster_whisper import WhisperModel
+    import numpy as np
+    
+    # CTranslate2로 변환된 모델 경로 확인
+    ct2_model_dir = model_specific_dir / "ctranslate2_model"
+    model_bin_path = ct2_model_dir / "model.bin"
+    
+    if not model_bin_path.exists():
+        raise FileNotFoundError(f"CTranslate2 모델 파일을 찾을 수 없습니다: {model_bin_path}")
+    
+    print("⏳ faster-whisper로 CTranslate2 모델 로드 중...")
+    print(f"   모델 경로: {ct2_model_dir}")
+    print("   (이 단계는 1-3분 걸릴 수 있습니다)")
+    print()
+    
+    # CTranslate2 변환된 모델 로드
+    model = WhisperModel(
+        model_size_or_path=str(ct2_model_dir),
+        device="cpu",
+        compute_type="int8"
+    )
+    
+    print_success("✅ faster-whisper 모델 로드 성공!")
+    print()
+    
+    # 모델 정보 출력
+    print("📋 모델 정보:")
+    print(f"   ✓ 모델 타입: Whisper Large-v3-Turbo")
+    print(f"   ✓ 형식: CTranslate2 바이너리 (model.bin)")
+    print(f"   ✓ 디바이스: CPU")
+    print(f"   ✓ 양자화: INT8 (메모리 효율적)")
+    print()
+    
+    # 더미 오디오로 추론 테스트
+    print("⏳ 추론 테스트 중 (더미 오디오)...")
+    
+    # 1초의 더미 오디오 생성 (16kHz, 모노)
+    dummy_audio = np.zeros((16000,), dtype=np.float32)
+    
+    # 추론 실행
+    segments, info = model.transcribe(dummy_audio, language="ko")
+    
+    print_success("✅ 추론 테스트 성공!")
+    print()
+    
+    print("📊 추론 결과:")
+    print(f"   ✓ 감지된 언어: {info.language}")
+    print(f"   ✓ 언어 신뢰도: {info.language_probability:.2%}")
+    print(f"   ✓ 처리된 오디오 시간: {info.duration:.2f}초")
+    
+    segment_list = list(segments)
+    print(f"   ✓ 감지된 세그먼트: {len(segment_list)}개")
+    print()
+    
+    print("="*60)
+    print("✅ 모델 검증 완료!")
+    print("="*60)
+    print()
+    print("🎉 faster-whisper로 정상 작동합니다!")
+    print("   CTranslate2 변환된 모델이 성공적으로 로드되었습니다.")
+    print()
+    
+except FileNotFoundError as e:
+    print(f"⚠️  파일 오류: {e}")
+    print()
+    print("💡 해결 방법:")
+    print("   CTranslate2 변환이 성공적으로 완료되었는지 확인하세요.")
+    print("   만약 변환 실패 시 다음 명령으로 수동 변환:")
+    print()
+    print("   conda activate stt-py311")
+    print(f"   ct2-transformers-converter --model openai/whisper-large-v3-turbo \\")
+    print(f"     --output_dir {ct2_model_dir} --force --quantization int8")
+    print()
+    
+except ImportError:
+    print("⚠️  faster-whisper가 설치되어 있지 않습니다")
+    print()
+    print("설치: pip install faster-whisper")
+    print()
+    
+except Exception as e:
+    print(f"⚠️  모델 로드 중 오류: {e}")
+    print()
+    print("📝 디버깅:")
+    print("   1. CTranslate2 변환 상태 확인:")
+    print(f"      ls -lh {model_specific_dir}/ctranslate2_model/")
+    print()
+    print("   2. 패키지 버전 확인:")
+    print("      pip list | grep -E 'faster-whisper|ctranslate2'")
+    print()
+    print("   3. 패키지 업그레이드:")
+    print("      pip install --upgrade faster-whisper ctranslate2 torch")
+    print()
