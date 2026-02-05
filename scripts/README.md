@@ -1,13 +1,37 @@
 # 🛠️ Scripts 디렉토리 가이드
 
-## 디렉토리 구조
+## 📁 디렉토리 구조
 
 ```
 scripts/
 ├── README.md                    # 이 파일
+├── models/                      # 🆕 모델 관리 스크립트
+│   ├── download/               # 모델 다운로드
+│   │   ├── download_model.py
+│   │   ├── download_model_simple.py
+│   │   ├── download_model_direct.py
+│   │   └── download_hf_model.py
+│   ├── convert/                # 모델 포맷 변환
+│   │   ├── convert_model_ctranslate2.py
+│   │   ├── convert_model_direct.py
+│   │   ├── convert_final.py
+│   │   ├── simple_model_convert.py
+│   │   └── setup_and_convert.py
+│   └── validate/               # 모델 검증
+│       ├── validate_model.py
+│       ├── validate_model_detailed.py
+│       ├── test_model.py
+│       ├── test_model_transformers.py
+│       └── check_model_structure.py
+│
+├── analysis/                    # 🆕 분석 및 디버깅
+│   ├── analyze_model_compatibility.py
+│   ├── docker_model_fix_analysis.py
+│   └── compress_model.py
+│
 ├── build-engine-image.sh        # ⭐ Docker 이미지 빌드 (메인)
 ├── setup.sh                     # 초기 설정 스크립트
-├── download-model.sh            # 모델 다운로드
+├── download-model.sh            # 모델 다운로드 (레거시)
 ├── migrate-to-gpu-server.sh     # GPU 서버 마이그레이션
 ├── download_pytorch_wheels.py   # PyTorch wheel 다운로드 (Python)
 │

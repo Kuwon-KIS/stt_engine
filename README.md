@@ -80,24 +80,35 @@ stt_engine/
 │
 ├── 🛠️  scripts/                       # 개발/빌드 스크립트
 │   ├── build-engine-image.sh         # Docker 이미지 빌드
-│   ├── download-wheels/              # 휠 다운로드 스크립트
 │   ├── setup.sh                      # 초기 설정
-│   └── ...                           # 기타 유틸리티
+│   ├── models/
+│   │   ├── download/                 # 🆕 모델 다운로드 (4개 스크립트)
+│   │   ├── convert/                  # 🆕 모델 변환 (5개 스크립트)
+│   │   └── validate/                 # 🆕 모델 검증 (5개 스크립트)
+│   └── analysis/                     # 🆕 분석/디버깅 (3개 스크립트)
 │
 ├── 🏗️  build/                        # 빌드 산출물
 │   └── output/                       # Docker tar 파일
 │
-├── 📄 소스 코드
-│   ├── stt_engine.py                 # 메인 엔진
-│   ├── api_server.py                 # FastAPI 서버
-│   ├── api_client.py                 # API 클라이언트
-│   ├── model_manager.py              # 모델 관리
-│   └── ...
+├── ⚙️  모델 및 데이터
+│   ├── models/                       # 다운로드된 모델
+│   ├── audio/                        # 테스트 오디오
+│   └── wheels/                       # 휠 캐시
+│
+├── 📄 서비스 (Production)
+│   ├── main.py                       # ⭐ 애플리케이션 진입점
+│   ├── stt_engine.py                 # ⭐ STT 엔진 코어
+│   ├── api_server.py                 # ⭐ FastAPI 서버
+│   ├── api_client.py                 # ⭐ API 클라이언트
+│   ├── model_manager.py              # ⭐ 모델 관리 유틸
+│   └── download_model_hf.py          # ⭐ 모델 다운로드 (메인)
 │
 └── ⚙️  설정 파일
     ├── requirements.txt              # 의존성
     ├── pyproject.toml                # 프로젝트 설정
-    └── .env                          # 환경변수
+    ├── README.md                     # 이 파일
+    ├── README_KO.md                  # 한국어 버전
+    └── .env                          # 환경변수 (선택사항)
 ```
 
 ---

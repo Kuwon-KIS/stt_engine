@@ -28,7 +28,7 @@ chmod +x setup.sh
 #### Step 2: Whisper 모델 다운로드
 ```bash
 source venv/bin/activate
-python download_model.py
+python download_model_hf.py
 ```
 
 > **⏱️ 예상 시간**: 10-20분 (인터넷 속도에 따라 변함)
@@ -248,7 +248,7 @@ DEBUG=True
 **A**: Hugging Face 토큰 설정
 ```bash
 export HUGGINGFACE_HUB_TOKEN=your_token_here
-python download_model.py
+python download_model_hf.py
 ```
 
 ### Q: GPU가 인식되지 않음
@@ -285,7 +285,7 @@ docker-compose restart vllm-server
 
 | 파일 | 설명 |
 |------|------|
-| `download_model.py` | Hugging Face에서 Whisper 모델 다운로드 |
+| `download_model_hf.py` | Hugging Face에서 Whisper 모델 다운로드 |
 | `stt_engine.py` | Whisper STT 핵심 모듈 |
 | `stt_engine.py` | Whisper STT 엔진 (faster-whisper) |
 | `api_server.py` | FastAPI REST API 서버 |
@@ -334,7 +334,7 @@ MIT License - 자유롭게 사용, 수정, 배포 가능
 ```bash
 # 로컬 테스트
 source venv/bin/activate
-python download_model.py
+python download_model_hf.py
 python api_server.py
 
 # 또는 Docker

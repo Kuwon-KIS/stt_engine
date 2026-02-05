@@ -46,7 +46,7 @@ python download_model_hf.py
 
 ```bash
 conda activate stt-py311
-python compress_model.py
+python scripts/analysis/compress_model.py
 ```
 
 **소요 시간**: 약 2-5분
@@ -146,7 +146,7 @@ docker run -d \
 A: 다시 실행하면 이어서 진행됩니다 (resume_download=True)
 
 ### Q: 모델이 로드되지 않아요
-A: validate_model.py를 실행해서 문제를 진단하세요
+A: scripts/models/validate/validate_model.py를 실행해서 문제를 진단하세요
 
 ### Q: 서버로 전송이 느려요
 A: 압축 파일을 사용하면 원본 크기의 약 50% 크기로 전송됩니다
@@ -171,11 +171,11 @@ A: local_files_only=True 파라미터를 확인하세요
 bash scripts/setup.sh
 
 # 개별 실행
-python download_model_simple.py    # 1단계
-python validate_model.py           # 2단계
-python compress_model.py           # 3단계
-scp *.tar.gz user@server:/path/    # 4단계
-# 서버에서: tar -xzf *.tar.gz      # 5단계
+python download_model_hf.py                              # 1단계: 모델 다운로드
+python scripts/models/validate/validate_model.py        # 2단계: 검증
+python scripts/analysis/compress_model.py               # 3단계: 압축
+scp *.tar.gz user@server:/path/                         # 4단계: 전송
+# 서버에서: tar -xzf *.tar.gz                           # 5단계: 압축 해제
 ```
 
 ---
