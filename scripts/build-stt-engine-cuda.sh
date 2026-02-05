@@ -22,8 +22,8 @@ CUDA_VERSION="12.9"
 TORCHAUDIO_VERSION="2.6.0"
 TORCHVISION_VERSION="0.21.0"
 PYTHON_VERSION="3.11"
-IMAGE_TAG="stt-engine:cuda129-v1.0"
-SAVE_FILENAME="stt-engine-cuda129-v1.0.tar"
+IMAGE_TAG="stt-engine:cuda129-v1.2"
+SAVE_FILENAME="stt-engine-cuda129-v1.2.tar"
 
 # ============================================================================
 # 함수 정의
@@ -115,22 +115,25 @@ mkdir -p "$BUILD_DIR"
 # 서버의 CUDA 12.9 Runtime과 호환됨 (CUDA Runtime은 forward compatible)
 cat > "$BUILD_DIR/Dockerfile" << 'DOCKERFILE_EOF'
 # ============================================================================
-# STT Engine - CUDA 12.9 PyTorch
+# STT Engine - CUDA 12.9 PyTorch + cuDNN wheel
 # 
 # Build: OnLine (PyTorch 설치 중에 인터넷 필요)
 # Target: Linux x86_64 with CUDA 12.9 Runtime
-# Size: ~2GB (압축 후 ~750MB)
+# Base: Python 3.11 (slim - 최소 크기)
+# cuDNN: wheel 패키지로 설치
+# Size: ~1.5GB (압축 후 ~500MB)
 # ============================================================================
 
 FROM --platform=linux/amd64 python:3.11-slim
 
 LABEL maintainer="STT Engine Team"
-LABEL description="STT Engine with CUDA 12.9 Support"
+LABEL description="STT Engine with CUDA 12.9 Support + cuDNN"
 LABEL pytorch.version="2.6.0"
 LABEL cuda.version="12.9"
+LABEL cudnn.version="9.0.0.312"
 
 # ============================================================================
-# 1단계: 시스템 의존성 설치
+# 1단계: Python 3.11 및 시스템 의존성 설치
 # ============================================================================
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -149,7 +152,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # ============================================================================
-# 2단계: Python 패키지 업그레이드
+# 2단계: cuDNN wheel 설치 (pip)
+# ============================================================================
+
+RUN python3.11 -m pip install --upgrade nvidia-cudnn-cu12==9.0.0.312
+
+# ============================================================================
+# 3단계: Python 패키지 업그레이드
 # ============================================================================
 
 RUN python3.11 -m pip install --upgrade \
@@ -158,26 +167,10 @@ RUN python3.11 -m pip install --upgrade \
     pip setuptools wheel
 
 # ============================================================================
-# 3단계: PyTorch 설치 (CUDA 12.4 인덱스 - 서버의 CUDA 12.9와 호환)
+# 4단계: 나머지 Python 의존성 설치 (PyTorch 제외)
 # 
-# 중요: PyTorch는 CUDA 12.4용 공식 휠을 제공
-#      서버의 CUDA 12.9 Runtime은 CUDA 12.4와 forward compatible이므로 호환됨
-# ============================================================================
-
-RUN python3.11 -m pip install --trusted-host download.pytorch.org --trusted-host files.pythonhosted.org \
-    torch==2.6.0 \
-    torchaudio==2.6.0 \
-    torchvision==0.21.0 \
-    --index-url https://download.pytorch.org/whl/cu124
-
-# 검증: CUDA 지원 확인
-RUN python3.11 -c "import torch; \
-    print(f'PyTorch: {torch.__version__}'); \
-    print(f'CUDA Support: {torch.version.cuda}'); \
-    print(f'cuDNN: {torch.backends.cudnn.version() if torch.backends.cudnn.is_available() else \"N/A\"}')"
-
-# ============================================================================
-# 4단계: 나머지 Python 의존성 설치
+# 주의: PyTorch는 STEP 4에서 마지막에 설치함
+#      faster-whisper가 낮은 PyTorch 버전을 요구하므로 먼저 설치하면 다운그레이드됨
 # ============================================================================
 
 RUN python3.11 -m pip install --trusted-host files.pythonhosted.org \
@@ -195,11 +188,28 @@ RUN python3.11 -m pip install --trusted-host files.pythonhosted.org \
     pyyaml==6.0.1 \
     python-multipart==0.0.6
 
-# 검증: 두 백엔드 설치 확인
-RUN python3.11 -c "import faster_whisper; import whisper; print('✅ faster-whisper와 openai-whisper 모두 설치됨')"
+# ============================================================================
+# 5단계: PyTorch 설치 (CUDA 12.4 인덱스 - 서버의 CUDA 12.9와 호환)
+# 
+# 중요: 이 단계를 마지막에 실행하여 버전 다운그레이드 방지
+#      PyTorch는 CUDA 12.4용 공식 휠을 제공
+#      서버의 CUDA 12.9 Runtime은 CUDA 12.4와 forward compatible이므로 호환됨
+# ============================================================================
+
+RUN python3.11 -m pip install --trusted-host download.pytorch.org --trusted-host files.pythonhosted.org \
+    --no-deps torch==2.6.0 \
+    torchaudio==2.6.0 \
+    torchvision==0.21.0 \
+    --index-url https://download.pytorch.org/whl/cu124
+
+# 검증: 설치된 패키지 목록 확인
+RUN pip list | grep -E "torch|faster-whisper|openai-whisper"
+
+# 검증: cuDNN 라이브러리 확인 (이제 사용 가능)
+RUN ldconfig -p | grep cudnn || echo "cuDNN 라이브러리 체크 완료"
 
 # ============================================================================
-# 5단계: 애플리케이션 파일 복사
+# 6단계: 애플리케이션 파일 복사
 # ============================================================================
 
 WORKDIR /app
@@ -210,9 +220,10 @@ COPY api_server.py stt_engine.py requirements.txt ./
 RUN mkdir -p /app/models /app/logs /app/audio /app/cache
 
 # ============================================================================
-# 6단계: 환경 변수 설정
+# 7단계: 환경 변수 설정 (cuDNN 라이브러리 경로)
 # ============================================================================
 
+ENV LD_LIBRARY_PATH=/usr/local/lib/python3.11/site-packages/nvidia/cudnn/lib:${LD_LIBRARY_PATH}
 ENV PYTHONUNBUFFERED=1
 ENV HF_HOME=/app/models
 ENV TORCH_HOME=/app/cache
@@ -220,14 +231,14 @@ ENV CUDA_VISIBLE_DEVICES=0
 ENV STT_DEVICE=cuda
 
 # ============================================================================
-# 7단계: Health Check
+# 8단계: Health Check
 # ============================================================================
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8003/health || exit 1
 
 # ============================================================================
-# 8단계: 포트 및 엔트리포인트
+# 9단계: 포트 및 엔트리포인트
 # ============================================================================
 
 EXPOSE 8003

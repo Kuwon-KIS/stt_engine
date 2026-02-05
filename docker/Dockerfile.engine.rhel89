@@ -1,0 +1,152 @@
+# ============================================================================
+# STT Engine - RHEL 8.9 Optimized with CUDA 12.9 + cuDNN
+# 
+# Build Platform: RHEL 8.9 AMI EC2
+# Build Environment: Online (requires internet)
+# Target Server: RHEL 8.9 with CUDA 12.9 + NVIDIA Driver 575.57.08
+# Base Image: ubi8/python-311 (Red Hat Universal Base Image)
+# glibc: 2.28 (RHEL 8.9 기본값 - 호환성 100%)
+# cuDNN: wheel 패키지 설치
+# Final Size: ~1.5GB (compressed tar.gz ~500MB)
+#
+# 빌드 명령어:
+#   docker build --platform linux/amd64 -t stt-engine:cuda129-rhel89-v1.2 -f docker/Dockerfile.engine.rhel89 .
+# ============================================================================
+
+FROM --platform=linux/amd64 registry.access.redhat.com/ubi8/python-311:latest
+
+LABEL maintainer="STT Engine Team"
+LABEL description="STT Engine RHEL 8.9 Optimized with CUDA 12.9"
+LABEL os="RHEL 8.9"
+LABEL glibc="2.28"
+LABEL cuda.version="12.9"
+LABEL cudnn.version="9.0.0.312"
+LABEL pytorch.version="2.6.0"
+
+# ============================================================================
+# Step 1: 시스템 의존성 설치 (RHEL/yum 기반)
+# ============================================================================
+
+RUN yum install -y \
+    # CA 인증서 (SSL/TLS)
+    ca-certificates \
+    openssl \
+    curl \
+    wget \
+    \
+    # Audio/Media 처리
+    libsndfile \
+    ffmpeg \
+    sox \
+    \
+    # 개발 도구
+    make \
+    gcc \
+    gcc-c++ \
+    && yum clean all \
+    && rm -rf /var/cache/yum/*
+
+# ============================================================================
+# Step 2: cuDNN wheel 설치 (nvidia-cudnn-cu12)
+# 
+# RHEL 8.9에서 pip를 통한 cuDNN 설치
+# 버전: 9.0.0.312 (CUDA 12.x 호환)
+# ============================================================================
+
+RUN python3.11 -m pip install --upgrade nvidia-cudnn-cu12==9.0.0.312
+
+# ============================================================================
+# Step 3: LD_LIBRARY_PATH 설정 (cuDNN 라이브러리 경로)
+# ============================================================================
+
+ENV LD_LIBRARY_PATH=/usr/local/lib/python3.11/site-packages/nvidia/cudnn/lib:${LD_LIBRARY_PATH}
+
+# ============================================================================
+# Step 4: Python 패키지 매니저 업그레이드
+# ============================================================================
+
+RUN python3.11 -m pip install --upgrade \
+    --trusted-host pypi.org \
+    --trusted-host files.pythonhosted.org \
+    pip setuptools wheel
+
+# ============================================================================
+# Step 5: Whisper 및 의존성 설치 (PyTorch 제외)
+# 
+# RHEL 8.9 호환 버전 사용:
+# - faster-whisper: CTranslate2 기반 빠른 추론
+# - openai-whisper: fallback (느림)
+# ============================================================================
+
+RUN python3.11 -m pip install --trusted-host files.pythonhosted.org \
+    # Whisper implementations
+    faster-whisper==1.0.3 \
+    openai-whisper==20231117 \
+    \
+    # Audio processing
+    librosa==0.10.0 \
+    scipy==1.12.0 \
+    numpy==1.24.3 \
+    \
+    # Model management
+    huggingface-hub==0.21.4 \
+    \
+    # Web framework
+    fastapi==0.109.0 \
+    uvicorn==0.27.0 \
+    requests==2.31.0 \
+    pydantic==2.5.3 \
+    python-multipart==0.0.6 \
+    \
+    # Configuration
+    python-dotenv==1.0.0 \
+    pyyaml==6.0.1
+
+# ============================================================================
+# Step 6: PyTorch 설치 (마지막)
+# 
+# CUDA 12.4 공식 지원 버전 사용
+# RHEL 8.9의 CUDA 12.9 Runtime과 forward compatible
+# torchaudio도 포함 (whisper에서 필수)
+# ============================================================================
+
+RUN python3.11 -m pip install --no-deps \
+    --index-url https://download.pytorch.org/whl/cu124 \
+    torch==2.6.0 \
+    torchaudio==2.6.0
+
+# ============================================================================
+# Step 7: 애플리케이션 설정
+# ============================================================================
+
+WORKDIR /app
+
+# 애플리케이션 파일 복사
+COPY api_server.py /app/
+COPY stt_engine.py /app/
+COPY requirements.txt /app/
+
+# 필수 디렉토리 생성
+RUN mkdir -p /app/models /app/logs /app/audio
+
+# Python 환경 변수
+ENV PYTHONUNBUFFERED=1
+ENV HF_HOME=/app/models
+ENV STT_DEVICE=cpu
+
+# ============================================================================
+# Step 8: 헬스 체크 및 포트 노출
+# ============================================================================
+
+# Health check: 30초마다 체크, 10초 타임아웃, 3번 실패 시 unhealthy
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8003/health || exit 1
+
+# STT API 포트
+EXPOSE 8003
+
+# ============================================================================
+# Step 9: 시작 명령어
+# ============================================================================
+
+CMD ["python3.11", "api_server.py"]
