@@ -27,7 +27,10 @@ LABEL pytorch.version="2.6.0"
 # Step 1: Subscription Manager 완전 비활성화
 # ============================================================================
 
-# 💡 RHEL subscription manager 완전 제거 (UBI 이미지용)
+# 💡 명시적으로 root 사용자로 전환 (UBI 이미지의 기본 사용자는 non-root)
+USER root
+
+# RHEL subscription manager 완전 제거 (UBI 이미지용)
 # /etc/rhsm 디렉토리 제거 + 설정 초기화
 RUN rm -rf /etc/rhsm /etc/pki/entitlement* 2>/dev/null || true && \
     subscription-manager clean 2>/dev/null || true && \
