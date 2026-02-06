@@ -131,63 +131,63 @@ RUN python3.11 -m pip install --trusted-host files.pythonhosted.org \
     pyyaml==6.0.1
 
 # ============================================================================
-# Step 8: PyTorch 설치 - ROOT로 실행
+# Step 8: PyTorch 설치 및 CUDA 런타임 라이브러리 - ROOT로 실행
 # 
 # CUDA 12.4 공식 지원 버전 사용
 # RHEL 8.9의 CUDA 12.9 Runtime과 forward compatible
 # torchaudio도 포함 (whisper에서 필수)
 #
-# PyTorch wheel은 다음을 번들로 포함:
-# - cuDNN 라이브러리
-# - CUDA 런타임 라이브러리 (cublas, cusparse, cusparselt, cuda_runtime 등)
-# - NVCC 컴파일러
-# 이들은 torch/lib 디렉토리에 위치하며 LD_LIBRARY_PATH로 접근 가능
+# 중요: --no-deps를 사용하지 않음!
+# PyTorch의 CUDA 의존성(nvidia-cublas-cu12, nvidia-cusparse-cu12 등)이
+# 자동으로 설치되어야 libcusparseLt.so.0 등 CUDA 런타임 라이브러리가 제공됨
 # ============================================================================
 
-RUN python3.11 -m pip install --no-deps \
+RUN python3.11 -m pip install \
     --index-url https://download.pytorch.org/whl/cu124 \
     torch==2.6.0 \
     torchaudio==2.6.0
 
 # ============================================================================
-# Step 8a: 라이브러리 경로 등록 (심볼릭 링크 + ldconfig)
+# Step 8a: CUDA 라이브러리 위치 탐색 및 경로 등록
 # ============================================================================
-# Strategy:
-# 1. /usr/local/lib 에 PyTorch/CUDA 라이브러리 심볼릭 링크 생성
-# 2. ldconfig로 시스템 라이브러리 캐시 재구성
-# 3. /usr/local/lib는 모든 사용자가 접근 가능 (root 권한 불필요)
-#
-# This ensures:
-# - All users (root, stt-user, etc.) can find libraries
-# - Libraries are discoverable without LD_LIBRARY_PATH
-# - ldconfig cache includes all library paths
+# PyTorch의 nvidia-* 의존성 설치로 인해 CUDA 라이브러리가 여러 위치에 존재할 수 있음
+# 모든 가능한 위치를 찾아서 /usr/local/lib에 심볼릭 링크 생성
 # ============================================================================
 
 RUN bash -c ' \
-    # Create symbolic links in standard system location
     mkdir -p /usr/local/lib /usr/local/lib64 && \
     \
-    # Link cuDNN libraries
-    ln -sf /opt/app-root/lib/python3.11/site-packages/nvidia/cudnn/lib/*.so* /usr/local/lib/ 2>/dev/null || true && \
-    ln -sf /opt/app-root/lib64/python3.11/site-packages/nvidia/cudnn/lib/*.so* /usr/local/lib64/ 2>/dev/null || true && \
+    # Find all CUDA/cuDNN libraries in site-packages
+    find /opt/app-root -path "*/site-packages/nvidia/*" -name "*.so*" -type f 2>/dev/null | while read lib; do \
+        ln -sf "$lib" "/usr/local/lib/$(basename "$lib")" 2>/dev/null || true; \
+        ln -sf "$lib" "/usr/local/lib64/$(basename "$lib")" 2>/dev/null || true; \
+    done && \
     \
-    # Link PyTorch CUDA libraries (torch/lib contains all CUDA runtime)
-    ln -sf /opt/app-root/lib/python3.11/site-packages/torch/lib/*.so* /usr/local/lib/ 2>/dev/null || true && \
-    ln -sf /opt/app-root/lib64/python3.11/site-packages/torch/lib/*.so* /usr/local/lib64/ 2>/dev/null || true && \
+    find /opt/app-root -path "*/site-packages/torch/lib/*" -name "*.so*" -type f 2>/dev/null | while read lib; do \
+        ln -sf "$lib" "/usr/local/lib/$(basename "$lib")" 2>/dev/null || true; \
+        ln -sf "$lib" "/usr/local/lib64/$(basename "$lib")" 2>/dev/null || true; \
+    done && \
     \
-    # Create ldconfig configuration
-    echo "/opt/app-root/lib/python3.11/site-packages/nvidia/cudnn/lib" > /etc/ld.so.conf.d/torch-cuda.conf && \
-    echo "/opt/app-root/lib/python3.11/site-packages/torch/lib" >> /etc/ld.so.conf.d/torch-cuda.conf && \
-    echo "/opt/app-root/lib64/python3.11/site-packages/nvidia/cudnn/lib" >> /etc/ld.so.conf.d/torch-cuda.conf && \
-    echo "/opt/app-root/lib64/python3.11/site-packages/torch/lib" >> /etc/ld.so.conf.d/torch-cuda.conf && \
-    echo "/usr/local/lib" >> /etc/ld.so.conf.d/torch-cuda.conf && \
-    echo "/usr/local/lib64" >> /etc/ld.so.conf.d/torch-cuda.conf && \
+    # Create ldconfig configuration with all paths
+    {
+        echo "/opt/app-root/lib/python3.11/site-packages/nvidia/cudnn/lib"
+        echo "/opt/app-root/lib/python3.11/site-packages/torch/lib"
+        echo "/opt/app-root/lib64/python3.11/site-packages/nvidia/cudnn/lib"
+        echo "/opt/app-root/lib64/python3.11/site-packages/torch/lib"
+        find /opt/app-root/lib/python3.11/site-packages/nvidia -type d -name "lib" 2>/dev/null
+        find /opt/app-root/lib64/python3.11/site-packages/nvidia -type d -name "lib" 2>/dev/null
+        echo "/usr/local/lib"
+        echo "/usr/local/lib64"
+    } > /etc/ld.so.conf.d/torch-cuda.conf && \
     \
-    # Rebuild library cache
+    # Remove duplicates and rebuild cache
+    sort -u /etc/ld.so.conf.d/torch-cuda.conf > /tmp/torch-cuda.conf && \
+    mv /tmp/torch-cuda.conf /etc/ld.so.conf.d/torch-cuda.conf && \
     ldconfig && \
     \
-    # Verify critical libraries exist
-    ldconfig -p | grep -E "libcusparseLt|libcudnn|libtorch" | head -20'
+    # Log all found libraries for debugging
+    echo "=== CUDA Libraries Found ===" && \
+    ldconfig -p | grep -E "libcusparseLt|libcublas|libcusparse|libcudart|libcudnn" | sort -u | head -30'
 
 # ============================================================================
 # Step 9: 라이브러리 검증 (빌드 시 확인)
