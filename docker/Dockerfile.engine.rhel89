@@ -27,21 +27,26 @@ LABEL pytorch.version="2.6.0"
 # Step 1: Subscription Manager 완전 비활성화
 # ============================================================================
 
-# 💡 명시적으로 root 사용자로 전환 (UBI 이미지의 기본 사용자는 non-root)
-USER root
-
-# RHEL subscription manager 완전 제거 (UBI 이미지용)
-# /etc/rhsm 디렉토리 제거 + 설정 초기화
+# 💡 root 권한으로 subscription manager 제거 (초기 설정용)
 RUN rm -rf /etc/rhsm /etc/pki/entitlement* 2>/dev/null || true && \
     subscription-manager clean 2>/dev/null || true && \
     yum clean all 2>/dev/null || true && \
     rm -rf /var/cache/yum/*
 
 # ============================================================================
-# Step 2: 시스템 의존성 설치 (기본 저장소만 사용)
+# Step 2: Rootless 사용자 생성 (stt-user)
 # ============================================================================
 
-RUN yum install -y \
+# Non-root 사용자 생성 (UID 1000 이상)
+RUN useradd -m -u 1001 -s /bin/bash stt-user && \
+    echo "stt-user ALL=(ALL) NOPASSWD: /usr/bin/yum" >> /etc/sudoers.d/stt-user && \
+    chmod 0440 /etc/sudoers.d/stt-user
+
+# ============================================================================
+# Step 3: 시스템 의존성 설치 (sudo를 통한 권한 상승)
+# ============================================================================
+
+RUN sudo yum install -y \
     # CA 인증서 (SSL/TLS)
     ca-certificates \
     openssl \
@@ -57,8 +62,14 @@ RUN yum install -y \
     make \
     gcc \
     gcc-c++ \
-    && yum clean all \
-    && rm -rf /var/cache/yum/*
+    && sudo yum clean all \
+    && sudo rm -rf /var/cache/yum/*
+
+# ============================================================================
+# Step 4: 사용자 전환 (이후 모든 작업은 stt-user로)
+# ============================================================================
+
+USER stt-user
 
 # ============================================================================
 # Step 2: cuDNN wheel 설치 (nvidia-cudnn-cu12)
@@ -132,18 +143,19 @@ RUN python3.11 -m pip install --no-deps \
     torchaudio==2.6.0
 
 # ============================================================================
-# Step 7: 애플리케이션 설정
+# Step 7: 애플리케이션 설정 (stt-user 권한)
 # ============================================================================
 
 WORKDIR /app
 
 # 애플리케이션 파일 복사
-COPY api_server.py /app/
-COPY stt_engine.py /app/
-COPY requirements.txt /app/
+COPY --chown=stt-user:stt-user api_server.py /app/
+COPY --chown=stt-user:stt-user stt_engine.py /app/
+COPY --chown=stt-user:stt-user requirements.txt /app/
 
-# 필수 디렉토리 생성
-RUN mkdir -p /app/models /app/logs /app/audio
+# 필수 디렉토리 생성 (stt-user 소유권으로)
+RUN sudo mkdir -p /app/models /app/logs /app/audio && \
+    sudo chown -R stt-user:stt-user /app
 
 # Python 환경 변수
 ENV PYTHONUNBUFFERED=1
