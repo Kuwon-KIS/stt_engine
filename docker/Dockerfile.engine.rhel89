@@ -24,17 +24,21 @@ LABEL cudnn.version="9.0.0.312"
 LABEL pytorch.version="2.6.0"
 
 # ============================================================================
-# Step 1: 시스템 의존성 설치 (RHEL/yum 기반)
+# Step 1: Subscription Manager 완전 비활성화
 # ============================================================================
 
-# 💡 명시적 root 사용자 + yum 저장소 직접 지정
-# ubi-8-baseos, ubi-8-appstream 저장소만 사용 (subscription 우회)
-USER root
+# 💡 RHEL subscription manager 완전 제거 (UBI 이미지용)
+# /etc/rhsm 디렉토리 제거 + 설정 초기화
+RUN rm -rf /etc/rhsm /etc/pki/entitlement* 2>/dev/null || true && \
+    subscription-manager clean 2>/dev/null || true && \
+    yum clean all 2>/dev/null || true && \
+    rm -rf /var/cache/yum/*
+
+# ============================================================================
+# Step 2: 시스템 의존성 설치 (기본 저장소만 사용)
+# ============================================================================
 
 RUN yum install -y \
-    --disablerepo='*' \
-    --enablerepo=ubi-8-baseos \
-    --enablerepo=ubi-8-appstream \
     # CA 인증서 (SSL/TLS)
     ca-certificates \
     openssl \
