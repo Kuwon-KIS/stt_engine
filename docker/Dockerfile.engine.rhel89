@@ -24,20 +24,15 @@ LABEL cudnn.version="9.0.0.312"
 LABEL pytorch.version="2.6.0"
 
 # ============================================================================
-# Step 1: 시스템 의존성 설치 (RHEL/yum 기반)
+# Step 1: 시스템 의존성 설치 (RHEL/microdnf 기반)
 # ============================================================================
 
-# 💡 UBI 8 subscription-manager 완전 비활성화
-# RHEL subscription 관리 비활성화 + 저장소 설정
-RUN rm -f /etc/rhsm/rhsm.conf && \
-    subscription-manager unregister 2>/dev/null || true && \
-    subscription-manager clean all 2>/dev/null || true && \
-    yum clean all 2>/dev/null || true
-
-# yum 캐시 비활성화 설정
-RUN yum-config-manager --save --setopt=tsflags=nodocs 2>/dev/null || true
-
-RUN yum install -y \
+# 💡 UBI 8에서는 microdnf 사용 - subscription 제약 없음
+# yum이 아닌 microdnf로 패키지 설치 (subscription manager 우회)
+RUN microdnf install -y \
+    --disablerepo=* \
+    --enablerepo=ubi-8-baseos \
+    --enablerepo=ubi-8-appstream \
     # CA 인증서 (SSL/TLS)
     ca-certificates \
     openssl \
@@ -53,8 +48,8 @@ RUN yum install -y \
     make \
     gcc \
     gcc-c++ \
-    && yum clean all \
-    && rm -rf /var/cache/yum/*
+    && microdnf clean all \
+    && rm -rf /var/cache/yum/* /var/cache/dnf/*
 
 # ============================================================================
 # Step 2: cuDNN wheel 설치 (nvidia-cudnn-cu12)
