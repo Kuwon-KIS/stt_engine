@@ -44,10 +44,10 @@ RUN rm -rf /etc/rhsm /etc/pki/entitlement* 2>/dev/null || true && \
     chmod 0440 /etc/sudoers.d/stt-user
 
 # ============================================================================
-# Step 2: 시스템 의존성 설치 (sudo를 통한 권한 상승)
+# Step 2: 시스템 의존성 설치 (아직 root로 실행 중)
 # ============================================================================
 
-RUN sudo yum install -y \
+RUN yum install -y \
     # CA 인증서 (SSL/TLS)
     ca-certificates \
     openssl \
@@ -63,17 +63,27 @@ RUN sudo yum install -y \
     make \
     gcc \
     gcc-c++ \
-    && sudo yum clean all \
-    && sudo rm -rf /var/cache/yum/*
+    && yum clean all \
+    && rm -rf /var/cache/yum/*
 
 # ============================================================================
-# Step 3: 사용자 전환 (이후 모든 작업은 stt-user로)
+# Step 3: 애플리케이션 디렉토리 생성 (root로 실행)
+# ============================================================================
+
+WORKDIR /app
+
+# 애플리케이션 디렉토리 구조 생성
+RUN mkdir -p /app/models /app/logs /app/audio && \
+    chmod -R 755 /app
+
+# ============================================================================
+# Step 4: 사용자 전환 (이후 모든 작업은 stt-user로)
 # ============================================================================
 
 USER stt-user
 
 # ============================================================================
-# Step 2: cuDNN wheel 설치 (nvidia-cudnn-cu12)
+# Step 5: cuDNN wheel 설치 (nvidia-cudnn-cu12)
 # 
 # RHEL 8.9에서 pip를 통한 cuDNN 설치
 # 버전: 9.0.0.312 (CUDA 12.x 호환)
@@ -82,13 +92,13 @@ USER stt-user
 RUN python3.11 -m pip install --upgrade nvidia-cudnn-cu12==9.0.0.312
 
 # ============================================================================
-# Step 3: LD_LIBRARY_PATH 설정 (cuDNN 라이브러리 경로)
+# Step 6: LD_LIBRARY_PATH 설정 (cuDNN 라이브러리 경로)
 # ============================================================================
 
 ENV LD_LIBRARY_PATH=/usr/local/lib/python3.11/site-packages/nvidia/cudnn/lib:${LD_LIBRARY_PATH}
 
 # ============================================================================
-# Step 4: Python 패키지 매니저 업그레이드
+# Step 7: Python 패키지 매니저 업그레이드
 # ============================================================================
 
 RUN python3.11 -m pip install --upgrade \
@@ -97,7 +107,7 @@ RUN python3.11 -m pip install --upgrade \
     pip setuptools wheel
 
 # ============================================================================
-# Step 5: Whisper 및 의존성 설치 (PyTorch 제외)
+# Step 8: Whisper 및 의존성 설치 (PyTorch 제외)
 # 
 # RHEL 8.9 호환 버전 사용:
 # - faster-whisper: CTranslate2 기반 빠른 추론
@@ -131,7 +141,7 @@ RUN python3.11 -m pip install --trusted-host files.pythonhosted.org \
     pyyaml==6.0.1
 
 # ============================================================================
-# Step 6: PyTorch 설치 (마지막)
+# Step 9: PyTorch 설치 (마지막)
 # 
 # CUDA 12.4 공식 지원 버전 사용
 # RHEL 8.9의 CUDA 12.9 Runtime과 forward compatible
@@ -144,19 +154,13 @@ RUN python3.11 -m pip install --no-deps \
     torchaudio==2.6.0
 
 # ============================================================================
-# Step 7: 애플리케이션 설정 (stt-user 권한)
+# Step 10: 애플리케이션 파일 복사 (stt-user 권한)
 # ============================================================================
-
-WORKDIR /app
 
 # 애플리케이션 파일 복사
 COPY --chown=stt-user:stt-user api_server.py /app/
 COPY --chown=stt-user:stt-user stt_engine.py /app/
 COPY --chown=stt-user:stt-user requirements.txt /app/
-
-# 필수 디렉토리 생성 (stt-user 소유권으로)
-RUN sudo mkdir -p /app/models /app/logs /app/audio && \
-    sudo chown -R stt-user:stt-user /app
 
 # Python 환경 변수
 ENV PYTHONUNBUFFERED=1
@@ -164,7 +168,7 @@ ENV HF_HOME=/app/models
 ENV STT_DEVICE=cpu
 
 # ============================================================================
-# Step 8: 헬스 체크 및 포트 노출
+# Step 11: 헬스 체크 및 포트 노출
 # ============================================================================
 
 # Health check: 30초마다 체크, 10초 타임아웃, 3번 실패 시 unhealthy
@@ -175,7 +179,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 EXPOSE 8003
 
 # ============================================================================
-# Step 9: 시작 명령어
+# Step 12: 시작 명령어
 # ============================================================================
 
 CMD ["python3.11", "api_server.py"]
