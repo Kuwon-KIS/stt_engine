@@ -27,6 +27,9 @@ LABEL pytorch.version="2.6.0"
 # Step 1: 시스템 의존성 설치 (RHEL/yum 기반)
 # ============================================================================
 
+# 💡 UBI 8 이미지는 이미 root이지만, subscription manager 비활성화 필요
+RUN subscription-manager config --rhsm.manage_repos=false 2>/dev/null || true
+
 RUN yum install -y \
     # CA 인증서 (SSL/TLS)
     ca-certificates \

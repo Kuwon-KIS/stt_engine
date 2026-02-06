@@ -73,6 +73,9 @@ ssh -i your-key.pem ec2-user@<ec2-ip>
 ```
 
 ### 2-2. 필수 패키지 설치
+
+#### 방법 A: Docker 설치 (권장 - 실제 Docker 사용)
+
 ```bash
 # RHEL 8.9 기본 업데이트
 sudo yum update -y
@@ -80,25 +83,76 @@ sudo yum update -y
 # Development Tools 설치
 sudo yum groupinstall -y "Development Tools"
 
-# Docker 설치
-sudo yum install -y docker git
+# Git 설치
+sudo yum install -y git
 
-# Docker 시작
+# Docker 저장소 추가
+sudo yum-config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo
+
+# Docker CE 설치 (Podman 대신 실제 Docker)
+sudo yum install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+
+# Docker 데몬 시작 및 자동 시작 활성화
 sudo systemctl start docker
 sudo systemctl enable docker
 
-# 현재 사용자에게 Docker 권한
+# 현재 사용자에게 Docker 권한 부여
 sudo usermod -aG docker ec2-user
 newgrp docker
 
-# 확인
+# 버전 확인
 docker --version
+docker ps
 git --version
+```
+
+**💡 팁**: `newgrp docker` 후 새 터미널에서 `sudo` 없이 docker 명령 사용 가능
+
+---
+
+#### 방법 B: Podman 사용 (기본 제공 - Docker 명령 호환)
+
+만약 Docker 설치가 실패하면 Podman을 사용할 수 있습니다:
+
+```bash
+# Podman은 이미 설치됨 (위의 docker 설치 건너뜀)
+# 동일한 명령으로 작동:
+docker --version   # Podman으로 실행됨
+docker ps
 ```
 
 ---
 
-## 📥 Step 3: 레포지토리 클론
+## ⚠️ RHEL 8.9 특수 사항: Docker vs Podman
+
+### 상황
+위의 **방법 A**로 Docker를 성공적으로 설치했다면 실제 Docker를 사용하고 있습니다.
+
+```bash
+# 확인 방법
+docker --version
+# 출력: Docker version 25.x.x, build xxxxx  ← 실제 Docker
+```
+
+### Docker 설치 실패 시
+
+만약 Docker 저장소 추가가 실패하면 (네트워크 이슈 등):
+
+```bash
+# Podman으로 대체 가능 (기본 제공)
+# docker 명령이 Podman으로 실행됨
+docker --version
+# 출력: Emulate Docker CLI using podman. podman version 4.9.4-rhel
+
+# 이 경우에도 모든 docker 명령 동일하게 작동:
+docker run ...    # ✅ 작동
+docker ps         # ✅ 작동
+docker build ...  # ✅ 작동
+```
+
+---
+
+## 🚀 Step 3: 레포지토리 클론
 
 ```bash
 # 방법 A: Git 클론 (권장)
