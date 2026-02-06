@@ -23,6 +23,10 @@ LABEL cuda.version="12.9"
 LABEL cudnn.version="9.0.0.312"
 LABEL pytorch.version="2.6.0"
 
+# 💡 중요: UBI 8 이미지는 기본으로 non-root 사용자로 설정됨
+# FROM 바로 다음에 root로 전환하여 이후 모든 RUN 블록이 root 권한으로 실행되도록 함
+USER root
+
 # ============================================================================
 # Step 1: Subscription Manager 완전 비활성화 + Rootless 사용자 생성
 # ============================================================================
