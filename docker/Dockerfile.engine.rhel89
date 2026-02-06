@@ -54,10 +54,8 @@ RUN yum install -y \
     curl \
     wget \
     \
-    # Audio/Media 처리
+    # Audio/Media 처리 (Python librosa로 대체)
     libsndfile \
-    ffmpeg \
-    sox \
     \
     # 개발 도구
     make \
