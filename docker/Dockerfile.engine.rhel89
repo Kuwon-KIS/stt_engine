@@ -119,7 +119,7 @@ RUN python3.11 -m pip install --trusted-host files.pythonhosted.org \
     \
     # Model management & transformers (flexible versions for compatibility)
     huggingface-hub>=0.21 \
-    transformers>=4.30,<6 \
+    "transformers>=4.30,<6" \
     \
     # Web framework
     fastapi==0.109.0 \
