@@ -169,16 +169,15 @@ RUN bash -c ' \
     done && \
     \
     # Create ldconfig configuration with all paths
-    {
-        echo "/opt/app-root/lib/python3.11/site-packages/nvidia/cudnn/lib"
-        echo "/opt/app-root/lib/python3.11/site-packages/torch/lib"
-        echo "/opt/app-root/lib64/python3.11/site-packages/nvidia/cudnn/lib"
-        echo "/opt/app-root/lib64/python3.11/site-packages/torch/lib"
-        find /opt/app-root/lib/python3.11/site-packages/nvidia -type d -name "lib" 2>/dev/null
-        find /opt/app-root/lib64/python3.11/site-packages/nvidia -type d -name "lib" 2>/dev/null
-        echo "/usr/local/lib"
-        echo "/usr/local/lib64"
-    } > /etc/ld.so.conf.d/torch-cuda.conf && \
+    cat > /etc/ld.so.conf.d/torch-cuda.conf << EOF
+/opt/app-root/lib/python3.11/site-packages/nvidia/cudnn/lib
+/opt/app-root/lib/python3.11/site-packages/torch/lib
+/opt/app-root/lib64/python3.11/site-packages/nvidia/cudnn/lib
+/opt/app-root/lib64/python3.11/site-packages/torch/lib
+/usr/local/lib
+/usr/local/lib64
+EOF
+ && \
     \
     # Remove duplicates and rebuild cache
     sort -u /etc/ld.so.conf.d/torch-cuda.conf > /tmp/torch-cuda.conf && \
