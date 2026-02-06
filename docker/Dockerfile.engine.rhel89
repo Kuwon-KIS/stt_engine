@@ -81,20 +81,8 @@ RUN mkdir -p /app/models /app/logs /app/audio && \
 # 버전: 9.0.0.312 (CUDA 12.x 호환)
 # ============================================================================
 
-RUN python3.11 -m pip install --upgrade nvidia-cudnn-cu12==9.0.0.312
-
-# ============================================================================
-# Step 5: 임시 LD_LIBRARY_PATH 설정 (cuDNN 심볼릭 링크 생성용)
-# ============================================================================
-
-ENV LD_LIBRARY_PATH=/opt/app-root/lib/python3.11/site-packages/nvidia/cudnn/lib:${LD_LIBRARY_PATH:-}
-
-# ============================================================================
-# Step 5b: cuDNN 라이브러리 심볼릭 링크 (libcudnn.so.8 → libcudnn.so.9)
-# ============================================================================
-# PyTorch 2.6.0은 libcudnn.so.9를 기대하지만 pip에서 설치되는 nvidia-cudnn-cu12는
-# libcudnn.so.8을 제공함. 호환성을 위해 심볼릭 링크 생성.
-RUN ln -sf /opt/app-root/lib/python3.11/site-packages/nvidia/cudnn/lib/libcudnn.so.8 \
+RUN python3.11 -m pip install --upgrade nvidia-cudnn-cu12==9.0.0.312 && \
+    ln -sf /opt/app-root/lib/python3.11/site-packages/nvidia/cudnn/lib/libcudnn.so.8 \
            /opt/app-root/lib/python3.11/site-packages/nvidia/cudnn/lib/libcudnn.so.9 && \
     ln -sf /opt/app-root/lib64/python3.11/site-packages/nvidia/cudnn/lib/libcudnn.so.8 \
            /opt/app-root/lib64/python3.11/site-packages/nvidia/cudnn/lib/libcudnn.so.9
@@ -162,13 +150,18 @@ RUN python3.11 -m pip install --no-deps \
     torchaudio==2.6.0
 
 # ============================================================================
-# Step 8a: 최종 LD_LIBRARY_PATH 설정 (PyTorch 설치 후)
+# Step 8a: 라이브러리 경로 등록 (ldconfig 사용)
 # ============================================================================
-# PyTorch 설치 후 모든 CUDA 라이브러리 경로 포함:
-# - nvidia/cudnn/lib: cuDNN 라이브러리
-# - torch/lib: PyTorch 번들 CUDA 런타임 (cublas, cusparse, cusparselt, etc.)
-# Both /lib/ and /lib64/ paths needed for compatibility
-ENV LD_LIBRARY_PATH=/opt/app-root/lib/python3.11/site-packages/nvidia/cudnn/lib:/opt/app-root/lib/python3.11/site-packages/torch/lib:/opt/app-root/lib64/python3.11/site-packages/nvidia/cudnn/lib:/opt/app-root/lib64/python3.11/site-packages/torch/lib:${LD_LIBRARY_PATH:-}
+# ldconfig를 사용하여 시스템 라이브러리 캐시에 경로 등록
+# - cuDNN 라이브러리 경로
+# - PyTorch 번들 CUDA 런타임 (cublas, cusparse, cusparselt, etc.)
+# 이 방법이 ENV 변수보다 더 안정적이고 확실함
+RUN bash -c ' \
+    echo "/opt/app-root/lib/python3.11/site-packages/nvidia/cudnn/lib" > /etc/ld.so.conf.d/torch-cuda.conf && \
+    echo "/opt/app-root/lib/python3.11/site-packages/torch/lib" >> /etc/ld.so.conf.d/torch-cuda.conf && \
+    echo "/opt/app-root/lib64/python3.11/site-packages/nvidia/cudnn/lib" >> /etc/ld.so.conf.d/torch-cuda.conf && \
+    echo "/opt/app-root/lib64/python3.11/site-packages/torch/lib" >> /etc/ld.so.conf.d/torch-cuda.conf && \
+    ldconfig'
 
 # ============================================================================
 # Step 9: 사용자 전환 (이후 모든 작업은 stt-user로) - 모든 pip 설치 완료 후
