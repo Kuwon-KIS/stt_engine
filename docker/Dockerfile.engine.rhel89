@@ -164,19 +164,26 @@ RUN python3.11 -m pip install \
 # 모든 가능한 위치를 찾아서 /usr/local/lib에 심볼릭 링크 생성
 # ============================================================================
 
-# Create ldconfig config file
+# Create ldconfig config file with ALL CUDA library paths
 RUN cat > /etc/ld.so.conf.d/torch-cuda.conf << 'EOF'
 /opt/app-root/lib/python3.11/site-packages/nvidia/cudnn/lib
+/opt/app-root/lib/python3.11/site-packages/nvidia/cusparse/lib
+/opt/app-root/lib/python3.11/site-packages/nvidia/cusparselt/lib
+/opt/app-root/lib/python3.11/site-packages/nvidia/cublas/lib
+/opt/app-root/lib/python3.11/site-packages/nvidia/cuda_runtime/lib
+/opt/app-root/lib/python3.11/site-packages/cusparselt/lib
 /opt/app-root/lib/python3.11/site-packages/torch/lib
-/opt/app-root/lib64/python3.11/site-packages/nvidia/cudnn/lib
-/opt/app-root/lib64/python3.11/site-packages/torch/lib
 /usr/local/lib
 /usr/local/lib64
 EOF
 
-# Find and link CUDA libraries, rebuild ldconfig cache
+# Find and link CUDA libraries from nvidia/* and cusparselt/lib, rebuild ldconfig cache
 RUN mkdir -p /usr/local/lib /usr/local/lib64 && \
     find /opt/app-root -path "*/site-packages/nvidia/*" -name "*.so*" -type f 2>/dev/null | while read lib; do \
+        ln -sf "$lib" "/usr/local/lib/$(basename "$lib")" 2>/dev/null || true; \
+        ln -sf "$lib" "/usr/local/lib64/$(basename "$lib")" 2>/dev/null || true; \
+    done && \
+    find /opt/app-root -path "*/site-packages/cusparselt/*" -name "*.so*" -type f 2>/dev/null | while read lib; do \
         ln -sf "$lib" "/usr/local/lib/$(basename "$lib")" 2>/dev/null || true; \
         ln -sf "$lib" "/usr/local/lib64/$(basename "$lib")" 2>/dev/null || true; \
     done && \
@@ -189,7 +196,8 @@ RUN mkdir -p /usr/local/lib /usr/local/lib64 && \
     ldconfig -p | grep -E "libcusparseLt|libcublas|libcusparse|libcudart|libcudnn" | sort -u | head -30
 
 # Set LD_LIBRARY_PATH for CUDA library discovery at runtime
-ENV LD_LIBRARY_PATH="/opt/app-root/lib/python3.11/site-packages/nvidia/cudnn/lib:/opt/app-root/lib/python3.11/site-packages/nvidia/cusparse/lib:/opt/app-root/lib/python3.11/site-packages/nvidia/cusparselt/lib:/opt/app-root/lib/python3.11/site-packages/torch/lib:/usr/local/lib:/usr/local/lib64:$LD_LIBRARY_PATH"
+# Include all paths where CUDA libraries are installed
+ENV LD_LIBRARY_PATH="/opt/app-root/lib/python3.11/site-packages/nvidia/cudnn/lib:/opt/app-root/lib/python3.11/site-packages/nvidia/cusparse/lib:/opt/app-root/lib/python3.11/site-packages/nvidia/cusparselt/lib:/opt/app-root/lib/python3.11/site-packages/nvidia/cublas/lib:/opt/app-root/lib/python3.11/site-packages/nvidia/cuda_runtime/lib:/opt/app-root/lib/python3.11/site-packages/cusparselt/lib:/opt/app-root/lib/python3.11/site-packages/torch/lib:/usr/local/lib:/usr/local/lib64"
 
 # ============================================================================
 # Step 9: 라이브러리 검증 (빌드 시 확인)
