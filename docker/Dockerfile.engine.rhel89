@@ -75,13 +75,7 @@ RUN mkdir -p /app/models /app/logs /app/audio && \
     chmod -R 755 /app
 
 # ============================================================================
-# Step 4: 사용자 전환 (이후 모든 작업은 stt-user로)
-# ============================================================================
-
-USER stt-user
-
-# ============================================================================
-# Step 5: cuDNN wheel 설치 (nvidia-cudnn-cu12)
+# Step 4: cuDNN wheel 설치 (nvidia-cudnn-cu12) - ROOT로 실행
 # 
 # RHEL 8.9에서 pip를 통한 cuDNN 설치
 # 버전: 9.0.0.312 (CUDA 12.x 호환)
@@ -90,13 +84,13 @@ USER stt-user
 RUN python3.11 -m pip install --upgrade nvidia-cudnn-cu12==9.0.0.312
 
 # ============================================================================
-# Step 6: LD_LIBRARY_PATH 설정 (cuDNN 라이브러리 경로)
+# Step 5: LD_LIBRARY_PATH 설정 (cuDNN 라이브러리 경로)
 # ============================================================================
 
 ENV LD_LIBRARY_PATH=/usr/local/lib/python3.11/site-packages/nvidia/cudnn/lib:${LD_LIBRARY_PATH}
 
 # ============================================================================
-# Step 7: Python 패키지 매니저 업그레이드
+# Step 6: Python 패키지 매니저 업그레이드 - ROOT로 실행
 # ============================================================================
 
 RUN python3.11 -m pip install --upgrade \
@@ -105,7 +99,7 @@ RUN python3.11 -m pip install --upgrade \
     pip setuptools wheel
 
 # ============================================================================
-# Step 8: Whisper 및 의존성 설치 (PyTorch 제외)
+# Step 7: Whisper 및 의존성 설치 (PyTorch 제외) - ROOT로 실행
 # 
 # RHEL 8.9 호환 버전 사용:
 # - faster-whisper: CTranslate2 기반 빠른 추론
@@ -139,7 +133,7 @@ RUN python3.11 -m pip install --trusted-host files.pythonhosted.org \
     pyyaml==6.0.1
 
 # ============================================================================
-# Step 9: PyTorch 설치 (마지막)
+# Step 8: PyTorch 설치 (마지막) - ROOT로 실행
 # 
 # CUDA 12.4 공식 지원 버전 사용
 # RHEL 8.9의 CUDA 12.9 Runtime과 forward compatible
@@ -150,6 +144,12 @@ RUN python3.11 -m pip install --no-deps \
     --index-url https://download.pytorch.org/whl/cu124 \
     torch==2.6.0 \
     torchaudio==2.6.0
+
+# ============================================================================
+# Step 9: 사용자 전환 (이후 모든 작업은 stt-user로) - 모든 pip 설치 완료 후
+# ============================================================================
+
+USER stt-user
 
 # ============================================================================
 # Step 10: 애플리케이션 파일 복사 (stt-user 권한)
