@@ -87,7 +87,9 @@ RUN python3.11 -m pip install --upgrade nvidia-cudnn-cu12==9.0.0.312
 # Step 5: LD_LIBRARY_PATH 설정 (cuDNN 라이브러리 경로)
 # ============================================================================
 
-ENV LD_LIBRARY_PATH=/usr/local/lib/python3.11/site-packages/nvidia/cudnn/lib:${LD_LIBRARY_PATH}
+# UBI 8 Python packages install to /opt/app-root/lib
+# Add both possible locations for cuDNN libraries (main path + fallback)
+ENV LD_LIBRARY_PATH=/opt/app-root/lib/python3.11/site-packages/nvidia/cudnn/lib:/opt/app-root/lib64/python3.11/site-packages/nvidia/cudnn/lib:${LD_LIBRARY_PATH}
 
 # ============================================================================
 # Step 6: Python 패키지 매니저 업그레이드 - ROOT로 실행
