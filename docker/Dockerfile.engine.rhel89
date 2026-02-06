@@ -84,12 +84,14 @@ RUN mkdir -p /app/models /app/logs /app/audio && \
 RUN python3.11 -m pip install --upgrade nvidia-cudnn-cu12==9.0.0.312
 
 # ============================================================================
-# Step 5: LD_LIBRARY_PATH 설정 (cuDNN 라이브러리 경로)
+# Step 5: LD_LIBRARY_PATH 설정 (cuDNN 및 CUDA 런타임 라이브러리 경로)
 # ============================================================================
 
 # UBI 8 Python packages install to /opt/app-root/lib
-# Add both possible locations for cuDNN libraries (main path + fallback)
-ENV LD_LIBRARY_PATH=/opt/app-root/lib/python3.11/site-packages/nvidia/cudnn/lib:/opt/app-root/lib64/python3.11/site-packages/nvidia/cudnn/lib:${LD_LIBRARY_PATH}
+# Include paths for:
+# - cuDNN (neural network acceleration)
+# - CUDA runtime libraries (cusparse, cublas, etc.)
+ENV LD_LIBRARY_PATH=/opt/app-root/lib/python3.11/site-packages/nvidia/cudnn/lib:/opt/app-root/lib/python3.11/site-packages/nvidia/cuda_runtime/lib:/opt/app-root/lib/python3.11/site-packages/nvidia/cublas/lib:/opt/app-root/lib/python3.11/site-packages/nvidia/cusparselt/lib:/opt/app-root/lib/python3.11/site-packages/nvidia/cusparse/lib:/opt/app-root/lib64/python3.11/site-packages/nvidia/cudnn/lib:${LD_LIBRARY_PATH}
 
 # ============================================================================
 # Step 5b: cuDNN 라이브러리 심볼릭 링크 (libcudnn.so.8 → libcudnn.so.9)
@@ -145,7 +147,25 @@ RUN python3.11 -m pip install --trusted-host files.pythonhosted.org \
     pyyaml==6.0.1
 
 # ============================================================================
-# Step 8: PyTorch 설치 (마지막) - ROOT로 실행
+# Step 8a: CUDA 런타임 라이브러리 설치 (PyTorch 의존성)
+# ============================================================================
+# PyTorch가 필요로 하는 NVIDIA CUDA 런타임 라이브러리들
+# - nvidia-cuda-runtime: CUDA 실행 라이브러리
+# - nvidia-cuda-cudart: CUDA Runtime API
+# - nvidia-cublas: 선형대수 라이브러리
+# - nvidia-cusparse-lt: 희소 행렬 연산 (cuSPARSELt)
+# - nvidia-cuspares: 희소 행렬 연산 (기본)
+# ============================================================================
+
+RUN python3.11 -m pip install \
+    nvidia-cuda-runtime-cu12>=12.1 \
+    nvidia-cuda-cudart-cu12>=12.1 \
+    nvidia-cublas-cu12>=12.1 \
+    nvidia-cusparselt-cu12>=0.1.0.post2 \
+    nvidia-cusparse-cu12>=12.1
+
+# ============================================================================
+# Step 8b: PyTorch 설치 (마지막) - ROOT로 실행
 # 
 # CUDA 12.4 공식 지원 버전 사용
 # RHEL 8.9의 CUDA 12.9 Runtime과 forward compatible
