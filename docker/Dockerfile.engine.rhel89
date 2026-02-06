@@ -154,39 +154,29 @@ RUN python3.11 -m pip install \
 # 모든 가능한 위치를 찾아서 /usr/local/lib에 심볼릭 링크 생성
 # ============================================================================
 
-RUN bash -c ' \
-    mkdir -p /usr/local/lib /usr/local/lib64 && \
-    \
-    # Find all CUDA/cuDNN libraries in site-packages
-    find /opt/app-root -path "*/site-packages/nvidia/*" -name "*.so*" -type f 2>/dev/null | while read lib; do \
-        ln -sf "$lib" "/usr/local/lib/$(basename "$lib")" 2>/dev/null || true; \
-        ln -sf "$lib" "/usr/local/lib64/$(basename "$lib")" 2>/dev/null || true; \
-    done && \
-    \
-    find /opt/app-root -path "*/site-packages/torch/lib/*" -name "*.so*" -type f 2>/dev/null | while read lib; do \
-        ln -sf "$lib" "/usr/local/lib/$(basename "$lib")" 2>/dev/null || true; \
-        ln -sf "$lib" "/usr/local/lib64/$(basename "$lib")" 2>/dev/null || true; \
-    done && \
-    \
-    # Create ldconfig configuration with all paths
-    cat > /etc/ld.so.conf.d/torch-cuda.conf << "EOCONF" && \
+# Create ldconfig config file
+RUN cat > /etc/ld.so.conf.d/torch-cuda.conf << 'EOF'
 /opt/app-root/lib/python3.11/site-packages/nvidia/cudnn/lib
 /opt/app-root/lib/python3.11/site-packages/torch/lib
 /opt/app-root/lib64/python3.11/site-packages/nvidia/cudnn/lib
 /opt/app-root/lib64/python3.11/site-packages/torch/lib
 /usr/local/lib
 /usr/local/lib64
-EOCONF
-    \
-    \
-    # Remove duplicates and rebuild cache
-    sort -u /etc/ld.so.conf.d/torch-cuda.conf > /tmp/torch-cuda.conf && \
-    mv /tmp/torch-cuda.conf /etc/ld.so.conf.d/torch-cuda.conf && \
+EOF
+
+# Find and link CUDA libraries, rebuild ldconfig cache
+RUN mkdir -p /usr/local/lib /usr/local/lib64 && \
+    find /opt/app-root -path "*/site-packages/nvidia/*" -name "*.so*" -type f 2>/dev/null | while read lib; do \
+        ln -sf "$lib" "/usr/local/lib/$(basename "$lib")" 2>/dev/null || true; \
+        ln -sf "$lib" "/usr/local/lib64/$(basename "$lib")" 2>/dev/null || true; \
+    done && \
+    find /opt/app-root -path "*/site-packages/torch/lib/*" -name "*.so*" -type f 2>/dev/null | while read lib; do \
+        ln -sf "$lib" "/usr/local/lib/$(basename "$lib")" 2>/dev/null || true; \
+        ln -sf "$lib" "/usr/local/lib64/$(basename "$lib")" 2>/dev/null || true; \
+    done && \
     ldconfig && \
-    \
-    # Log all found libraries for debugging
     echo "=== CUDA Libraries Found ===" && \
-    ldconfig -p | grep -E "libcusparseLt|libcublas|libcusparse|libcudart|libcudnn" | sort -u | head -30'
+    ldconfig -p | grep -E "libcusparseLt|libcublas|libcusparse|libcudart|libcudnn" | sort -u | head -30
 
 # ============================================================================
 # Step 9: 라이브러리 검증 (빌드 시 확인)
