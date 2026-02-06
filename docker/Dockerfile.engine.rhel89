@@ -150,22 +150,80 @@ RUN python3.11 -m pip install --no-deps \
     torchaudio==2.6.0
 
 # ============================================================================
-# Step 8a: 라이브러리 경로 등록 (ldconfig 사용)
+# Step 8a: 라이브러리 경로 등록 (심볼릭 링크 + ldconfig)
 # ============================================================================
-# ldconfig를 사용하여 시스템 라이브러리 캐시에 경로 등록
-# - cuDNN 라이브러리 경로
-# - PyTorch 번들 CUDA 런타임 (cublas, cusparse, cusparselt, etc.)
-# 이 방법이 ENV 변수보다 더 안정적이고 확실함
+# Strategy:
+# 1. /usr/local/lib 에 PyTorch/CUDA 라이브러리 심볼릭 링크 생성
+# 2. ldconfig로 시스템 라이브러리 캐시 재구성
+# 3. /usr/local/lib는 모든 사용자가 접근 가능 (root 권한 불필요)
+#
+# This ensures:
+# - All users (root, stt-user, etc.) can find libraries
+# - Libraries are discoverable without LD_LIBRARY_PATH
+# - ldconfig cache includes all library paths
+# ============================================================================
+
 RUN bash -c ' \
+    # Create symbolic links in standard system location
+    mkdir -p /usr/local/lib /usr/local/lib64 && \
+    \
+    # Link cuDNN libraries
+    ln -sf /opt/app-root/lib/python3.11/site-packages/nvidia/cudnn/lib/*.so* /usr/local/lib/ 2>/dev/null || true && \
+    ln -sf /opt/app-root/lib64/python3.11/site-packages/nvidia/cudnn/lib/*.so* /usr/local/lib64/ 2>/dev/null || true && \
+    \
+    # Link PyTorch CUDA libraries (torch/lib contains all CUDA runtime)
+    ln -sf /opt/app-root/lib/python3.11/site-packages/torch/lib/*.so* /usr/local/lib/ 2>/dev/null || true && \
+    ln -sf /opt/app-root/lib64/python3.11/site-packages/torch/lib/*.so* /usr/local/lib64/ 2>/dev/null || true && \
+    \
+    # Create ldconfig configuration
     echo "/opt/app-root/lib/python3.11/site-packages/nvidia/cudnn/lib" > /etc/ld.so.conf.d/torch-cuda.conf && \
     echo "/opt/app-root/lib/python3.11/site-packages/torch/lib" >> /etc/ld.so.conf.d/torch-cuda.conf && \
     echo "/opt/app-root/lib64/python3.11/site-packages/nvidia/cudnn/lib" >> /etc/ld.so.conf.d/torch-cuda.conf && \
     echo "/opt/app-root/lib64/python3.11/site-packages/torch/lib" >> /etc/ld.so.conf.d/torch-cuda.conf && \
-    ldconfig'
+    echo "/usr/local/lib" >> /etc/ld.so.conf.d/torch-cuda.conf && \
+    echo "/usr/local/lib64" >> /etc/ld.so.conf.d/torch-cuda.conf && \
+    \
+    # Rebuild library cache
+    ldconfig && \
+    \
+    # Verify critical libraries exist
+    ldconfig -p | grep -E "libcusparseLt|libcudnn|libtorch" | head -20'
 
 # ============================================================================
-# Step 9: 사용자 전환 (이후 모든 작업은 stt-user로) - 모든 pip 설치 완료 후
+# Step 9: 라이브러리 검증 (빌드 시 확인)
 # ============================================================================
+# Verify that critical CUDA libraries are discoverable
+RUN python3.11 << 'EOF'
+import ctypes
+import os
+
+print("\n=== CUDA Library Verification ===")
+
+# Critical libraries that PyTorch needs
+libs_to_find = [
+    'libcusparseLt.so.0',
+    'libcublas.so.12',
+    'libcusparse.so.12',
+    'libcudart.so.12',
+    'libcudnn.so.9',
+]
+
+# Try to load each library
+for lib_name in libs_to_find:
+    try:
+        lib = ctypes.CDLL(lib_name)
+        print(f"✅ {lib_name}: FOUND")
+    except OSError as e:
+        print(f"❌ {lib_name}: NOT FOUND - {e}")
+
+print("\n=== ldconfig cache ===")
+os.system("ldconfig -p | grep -E 'libcusparseLt|libcudnn|libcublas' | head -10")
+
+print("\n=== Library paths ===")
+os.system("find /opt/app-root -name 'libcusparseLt*' -o -name 'libcudnn.so*' 2>/dev/null")
+os.system("find /usr/local -name 'libcusparseLt*' 2>/dev/null")
+
+EOF
 
 USER stt-user
 
