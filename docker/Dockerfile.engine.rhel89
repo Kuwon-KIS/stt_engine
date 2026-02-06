@@ -147,6 +147,16 @@ RUN python3.11 -m pip install \
     torch==2.6.0 \
     torchaudio==2.6.0
 
+# Install CUDA runtime libraries explicitly
+# These packages provide the *.so files needed for CUDA at runtime
+# Especially libcusparseLt.so.0 from nvidia-cusparselt-cu12
+RUN python3.11 -m pip install \
+    nvidia-cublas-cu12 \
+    nvidia-cusparse-cu12 \
+    nvidia-cusparselt-cu12 \
+    nvidia-cuda-runtime-cu12 \
+    nvidia-cuda-cupti-cu12
+
 # ============================================================================
 # Step 8a: CUDA 라이브러리 위치 탐색 및 경로 등록
 # ============================================================================
