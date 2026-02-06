@@ -188,6 +188,9 @@ RUN mkdir -p /usr/local/lib /usr/local/lib64 && \
     echo "=== CUDA Libraries Found ===" && \
     ldconfig -p | grep -E "libcusparseLt|libcublas|libcusparse|libcudart|libcudnn" | sort -u | head -30
 
+# Set LD_LIBRARY_PATH for CUDA library discovery at runtime
+ENV LD_LIBRARY_PATH="/opt/app-root/lib/python3.11/site-packages/nvidia/cudnn/lib:/opt/app-root/lib/python3.11/site-packages/nvidia/cusparse/lib:/opt/app-root/lib/python3.11/site-packages/nvidia/cusparselt/lib:/opt/app-root/lib/python3.11/site-packages/torch/lib:/usr/local/lib:/usr/local/lib64:$LD_LIBRARY_PATH"
+
 # ============================================================================
 # Step 9: 라이브러리 검증 (빌드 시 확인)
 # ============================================================================
