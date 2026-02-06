@@ -92,6 +92,16 @@ RUN python3.11 -m pip install --upgrade nvidia-cudnn-cu12==9.0.0.312
 ENV LD_LIBRARY_PATH=/opt/app-root/lib/python3.11/site-packages/nvidia/cudnn/lib:/opt/app-root/lib64/python3.11/site-packages/nvidia/cudnn/lib:${LD_LIBRARY_PATH}
 
 # ============================================================================
+# Step 5b: cuDNN 라이브러리 심볼릭 링크 (libcudnn.so.8 → libcudnn.so.9)
+# ============================================================================
+# PyTorch 2.6.0은 libcudnn.so.9를 기대하지만 pip에서 설치되는 nvidia-cudnn-cu12는
+# libcudnn.so.8을 제공함. 호환성을 위해 심볼릭 링크 생성.
+RUN ln -sf /opt/app-root/lib/python3.11/site-packages/nvidia/cudnn/lib/libcudnn.so.8 \
+           /opt/app-root/lib/python3.11/site-packages/nvidia/cudnn/lib/libcudnn.so.9 && \
+    ln -sf /opt/app-root/lib64/python3.11/site-packages/nvidia/cudnn/lib/libcudnn.so.8 \
+           /opt/app-root/lib64/python3.11/site-packages/nvidia/cudnn/lib/libcudnn.so.9
+
+# ============================================================================
 # Step 6: Python 패키지 매니저 업그레이드 - ROOT로 실행
 # ============================================================================
 
