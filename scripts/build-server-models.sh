@@ -168,6 +168,7 @@ setup_python_environment() {
         ["torchaudio"]="torchaudio==2.6.0"
         ["transformers"]="transformers"
         ["ctranslate2"]="ctranslate2"
+        ["faster_whisper"]="faster-whisper"
         ["huggingface_hub"]="huggingface-hub"
     )
     
@@ -210,7 +211,7 @@ setup_python_environment() {
     # 모델 처리 라이브러리
     log_info "모델 처리 라이브러리 설치 중..."
     $PYTHON_BIN -m pip install --upgrade -q \
-        transformers ctranslate2 huggingface-hub \
+        transformers ctranslate2 faster-whisper huggingface-hub \
         scipy numpy librosa pydantic 2>&1 | tail -3
     
     log_success "Python 패키지 설치 완료"
