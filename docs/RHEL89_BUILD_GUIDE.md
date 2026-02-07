@@ -167,113 +167,392 @@ scp -i your-key.pem -r ~/workspace/stt_engine ec2-user@<ec2-ip>:~/
 
 ---
 
-## 🏗️ Step 4: Docker 이미지 빌드
+## 🏗️ Step 4: Docker 이미지 빌드 (20~40분)
 
-### 4-1. 빌드 스크립트 실행 (권장)
+### 4-1. 빌드 실행
+
 ```bash
 cd ~/stt_engine
 
-# RHEL 8.9 최적화 빌드 🔴
+# 방법 1: RHEL 8.9 전용 빌드 스크립트 사용 (권장)
 bash scripts/build-stt-engine-rhel89.sh
 
-# 또는 일반 빌드
-bash scripts/build-stt-engine-ec2.sh
+# 또는 방법 2: 직접 docker build 실행
+docker build \
+  --platform linux/amd64 \
+  -t stt-engine:cuda129-rhel89-v1.2 \
+  -f docker/Dockerfile.engine.rhel89 \
+  . 2>&1 | tee /tmp/build.log
 ```
 
-### 4-2. 빌드 로그 모니터링
+### 4-2. 빌드 진행 상황 모니터링
+
 ```bash
 # 다른 터미널에서:
 ssh -i your-key.pem ec2-user@<ec2-ip>
 watch -n 10 'docker ps -a && echo "---" && df -h'
+
+# 또는 로그 모니터링
+tail -f /tmp/build.log
 ```
 
 ### 4-3. 빌드 완료 확인
+
 ```bash
+# 이미지 확인
 docker images | grep stt-engine
-# 출력:
-# stt-engine   cuda129-rhel89-v1.2   <image-id>   <time>   1.5GB
+
+# 예상 출력:
+# stt-engine   cuda129-rhel89-v1.2   HASH   7.3GB   1 minute ago
+
+# 이미지 상세 정보 확인
+docker inspect stt-engine:cuda129-rhel89-v1.2 | jq '.Config.Env[] | select(startswith("LD_"))'
+
+# 예상 출력에 LD_LIBRARY_PATH가 포함되어야 함
 ```
 
-**예상 소요 시간: 20-30분**
+### 4-4. 빌드 오류 처리
+
+```bash
+# 오류가 발생한 경우 로그 확인
+grep -i "error\|failed\|not found" /tmp/build.log | tail -20
+```
 
 ---
 
-## 💾 Step 5: 이미지 저장 및 다운로드
+## 📦 Step 5: 모델 다운로드 및 준비 (25~45분)
 
-### 5-1. EC2에서 이미지 저장
+**중요**: EC2 빌드 서버의 **로컬 환경**에서 모델을 다운로드합니다 (Docker가 아님).
+
+### 5-1. 모델 다운로드 및 CTranslate2 변환
+
 ```bash
-cd ~/stt_engine/build/output
+cd ~/stt_engine
 
-# RHEL 8.9 이미지 저장
-docker save stt-engine:cuda129-rhel89-v1.2 | gzip > stt-engine-cuda129-rhel89-v1.2.tar.gz
+# 필수 패키지 설치 (필요시)
+pip install --upgrade huggingface-hub transformers ctranslate2
 
-# 또는 일반 이미지
-docker save stt-engine:cuda129-v1.2 | gzip > stt-engine-cuda129-v1.2.tar.gz
+# 모델 다운로드 및 변환 실행
+# 이 스크립트는 자동으로:
+#   1. openai/whisper-large-v3-turbo 다운로드 (Hugging Face)
+#   2. CTranslate2 포맷 변환 (model.bin 생성)
+#   3. 모델 구조 검증
+python3 download_model_hf.py 2>&1 | tee /tmp/model_download.log
 
-# 파일 확인
-ls -lh *.tar.gz
-# 출력: stt-engine-cuda129-rhel89-v1.2.tar.gz  500M
+# 예상 출력:
+# ========================================================
+# 🚀 STT Engine 모델 준비
+# ========================================================
+# 
+# 📌 Step 1: 기존 모델 파일 정리
+# ✅ 기존 모델 파일 삭제 완료
+#
+# 📌 Step 2: Hugging Face에서 모델 다운로드
+# ⏳ openai/whisper-large-v3-turbo 다운로드 중...
+# ✅ 모델 다운로드 완료 (약 3-5분 소요)
+#
+# 📌 Step 3: 모델 파일 검증
+# ✅ config.json 검증 완료
+# ✅ pytorch_model.bin 검증 완료
+# ✅ tokenizer.json 검증 완료
+#
+# 📌 Step 4: CTranslate2 포맷 변환
+# ⏳ CTranslate2 변환 중... (약 5-10분 소요)
+# ✅ CTranslate2 변환 완료
+#
+# 📌 Step 5: 모델 구조 검증
+# ✅ ctranslate2_model 구조 확인
+#    - config.json ✓
+#    - model.bin ✓
+#    - vocabulary.json ✓
+#
+# ✅ 모든 단계 완료!
 ```
 
-**소요 시간: 3-5분**
+### 5-2. 모델 디렉토리 구조 확인
 
-### 5-2. Mac으로 다운로드
+```bash
+# 모델 디렉토리 크기 확인
+du -sh models/
+du -sh models/openai_whisper-large-v3-turbo/
+du -sh models/ctranslate2_model/
+
+# 예상:
+# 2.5G  models/
+# 1.6G  models/openai_whisper-large-v3-turbo/
+# 0.9G  models/ctranslate2_model/
+
+# 파일 확인
+find models/ -type f -name "*.json" -o -name "*.bin"
+```
+
+### 5-3. 모델 파일 검증 (Python)
+
+```bash
+python3 << 'PYTHON_TEST'
+from pathlib import Path
+
+models_base = Path("models")
+print("=" * 70)
+print("🔍 모델 구조 세부 검증")
+print("=" * 70)
+
+# CTranslate2 모델 확인
+print("\n📂 CTranslate2 모델")
+ct2_model = models_base / "ctranslate2_model"
+required_files = {
+    "config.json": "설정 파일",
+    "model.bin": "모델 가중치",
+    "vocabulary.json": "토크나이저 어휘"
+}
+
+for fname, desc in required_files.items():
+    fpath = ct2_model / fname
+    if fpath.exists():
+        size = fpath.stat().st_size / (1024 * 1024)
+        print(f"   ✅ {fname:20} ({size:6.1f} MB) - {desc}")
+    else:
+        print(f"   ❌ {fname:20} NOT FOUND")
+
+# OpenAI Whisper 모델 확인
+print("\n📂 OpenAI Whisper 모델")
+whisper_model = models_base / "openai_whisper-large-v3-turbo"
+required_whisper_files = {
+    "config.json": "설정 파일",
+    "pytorch_model.bin": "모델 가중치",
+    "tokenizer.json": "토크나이저"
+}
+
+for fname, desc in required_whisper_files.items():
+    fpath = whisper_model / fname
+    if fpath.exists():
+        size = fpath.stat().st_size / (1024 * 1024)
+        print(f"   ✅ {fname:25} ({size:6.1f} MB) - {desc}")
+    else:
+        print(f"   ❌ {fname:25} NOT FOUND")
+
+print("\n" + "=" * 70)
+PYTHON_TEST
+```
+
+---
+
+## 🧪 Step 6: 빌드 서버에서 모델 로드 테스트 (20~30분)
+
+### 6-1. 테스트용 컨테이너 시작 (모델 마운트)
+
+```bash
+cd ~/stt_engine
+
+# 컨테이너 실행 (모델 디렉토리 마운트)
+docker run -it \
+  --name stt-test-engine \
+  -v $(pwd)/models:/app/models \
+  -e CUDA_VISIBLE_DEVICES=0 \
+  stt-engine:cuda129-rhel89-v1.2 \
+  /bin/bash
+```
+
+### 6-2. 컨테이너 내 마운트된 모델 확인
+
+컨테이너 내부에서:
+
+```bash
+# 마운트 확인
+ls -lh /app/models/
+du -sh /app/models/*
+```
+
+### 6-3. CUDA 및 PyTorch 검증
+
+컨테이너 내부에서:
+
+```bash
+python3 << 'PYTHON_TEST'
+import torch
+import torchaudio
+import os
+
+print("=" * 70)
+print("🔍 CUDA & PyTorch 검증")
+print("=" * 70)
+
+print(f"\n✅ PyTorch: {torch.__version__}")
+print(f"✅ torchaudio: {torchaudio.__version__}")
+print(f"✅ CUDA Available: {torch.cuda.is_available()}")
+
+if torch.cuda.is_available():
+    print(f"✅ CUDA Device: {torch.cuda.get_device_name(0)}")
+    x = torch.randn(1000, 1000).cuda()
+    y = torch.randn(1000, 1000).cuda()
+    z = torch.matmul(x, y)
+    print(f"✅ CUDA Matrix Multiplication: Success")
+
+print(f"✅ LD_LIBRARY_PATH: {bool(os.environ.get('LD_LIBRARY_PATH'))}")
+print("=" * 70)
+
+PYTHON_TEST
+```
+
+### 6-4. 모델 로드 테스트
+
+컨테이너 내부에서:
+
+```bash
+# Faster-Whisper (CTranslate2 모델)
+python3 << 'PYTHON_TEST'
+import sys
+sys.path.insert(0, '/app')
+
+print("=" * 70)
+print("🎯 Faster-Whisper 모델 로드 테스트")
+print("=" * 70)
+
+try:
+    from faster_whisper import WhisperModel
+    
+    print("\n⏳ 모델 로드 중...")
+    model = WhisperModel(
+        "/app/models/ctranslate2_model",
+        device="auto",
+        compute_type="float32",
+        download_root="/opt/app-root/src/.cache",
+        local_files_only=True
+    )
+    
+    print("✅ Faster-Whisper 모델 로드 성공!")
+    
+except Exception as e:
+    print(f"❌ 오류: {type(e).__name__}: {e}")
+    import traceback
+    traceback.print_exc()
+
+PYTHON_TEST
+
+# OpenAI Whisper (원본 모델)
+python3 << 'PYTHON_TEST'
+import sys
+sys.path.insert(0, '/app')
+
+print("=" * 70)
+print("🎯 OpenAI Whisper 모델 로드 테스트")
+print("=" * 70)
+
+try:
+    from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
+    
+    print("\n⏳ Processor 로드 중...")
+    processor = AutoProcessor.from_pretrained(
+        "/app/models/openai_whisper-large-v3-turbo",
+        local_files_only=True,
+        cache_dir="/opt/app-root/src/.cache"
+    )
+    
+    print("⏳ Model 로드 중...")
+    model = AutoModelForSpeechSeq2Seq.from_pretrained(
+        "/app/models/openai_whisper-large-v3-turbo",
+        local_files_only=True,
+        cache_dir="/opt/app-root/src/.cache"
+    )
+    
+    print("✅ OpenAI Whisper 모델 로드 성공!")
+    
+except Exception as e:
+    print(f"❌ 오류: {type(e).__name__}: {e}")
+    import traceback
+    traceback.print_exc()
+
+PYTHON_TEST
+```
+
+### 6-5. 컨테이너 종료
+
+```bash
+# 컨테이너에서 exit 실행
+exit
+
+# 또는 다른 터미널에서
+docker rm stt-test-engine
+```
+
+---
+
+## 💾 Step 7: 이미지 및 모델 저장 (5~10분)
+
+### 7-1. EC2에서 이미지와 모델 저장
+
+```bash
+cd ~/stt_engine
+
+# Docker 이미지 저장
+mkdir -p ~/build/output
+docker save stt-engine:cuda129-rhel89-v1.2 | gzip > ~/build/output/stt-engine-cuda129-rhel89-v1.2.tar.gz
+
+# 모델 디렉토리 확인
+ls -lh models/
+du -sh models/
+
+# 빌드 로그 저장
+cp /tmp/build.log ~/build/output/build-$(date +%Y%m%d-%H%M%S).log
+cp /tmp/model_download.log ~/build/output/model-$(date +%Y%m%d-%H%M%S).log
+
+# 최종 파일 확인
+ls -lh ~/build/output/
+```
+
+**소요 시간: 5~10분**
+
+---
+
+## 🚢 Step 8: 운영 서버에 배포
+
+### 8-1. Mac으로 파일 다운로드 (선택사항 - 로컬 검증용)
+
 ```bash
 # Mac 로컬 터미널:
-scp -i your-key.pem ec2-user@<ec2-ip>:~/stt_engine/build/output/stt-engine-cuda129-rhel89-v1.2.tar.gz \
+scp -i your-key.pem ec2-user@<ec2-ip>:~/build/output/stt-engine-cuda129-rhel89-v1.2.tar.gz \
     ~/Downloads/
 
 # 파일 확인
 ls -lh ~/Downloads/stt-engine-cuda129-rhel89-v1.2.tar.gz
 ```
 
-**소요 시간: 2-5분 (네트워크에 따라)**
+**소요 시간: 2~5분 (네트워크에 따라)**
 
-### 5-3. MD5 검증 (선택)
+### 8-2. EC2 빌드 서버에서 운영 서버로 직접 전송 (권장)
+
 ```bash
-# EC2에서:
-md5sum build/output/stt-engine-cuda129-rhel89-v1.2.tar.gz > /tmp/image.md5
+# EC2 빌드 서버에서:
+# 1. Docker 이미지 로드
+scp -i your-key.pem \
+  ~/build/output/stt-engine-cuda129-rhel89-v1.2.tar.gz \
+  deploy-user@production-server:/tmp/
 
-# Mac으로 다운로드:
-scp -i your-key.pem ec2-user@<ec2-ip>:/tmp/image.md5 ~/Downloads/
-
-# 검증:
-cd ~/Downloads
-md5sum -c image.md5
+# 2. 모델 디렉토리 전송 (대용량이므로 시간이 걸림)
+scp -r -i your-key.pem \
+  ~/stt_engine/models \
+  deploy-user@production-server:/path/to/deployment/
 ```
 
----
+### 8-3. 운영 서버에서 로드
 
-## 🚢 Step 6: 운영 서버에 배포
-
-### 6-1. 이미지 업로드
-```bash
-# Mac에서:
-scp -P 22 ~/Downloads/stt-engine-cuda129-rhel89-v1.2.tar.gz \
-    deploy-user@production-server:/tmp/
-```
-
-### 6-2. 운영 서버에서 로드
 ```bash
 # RHEL 8.9 운영 서버:
 cd /tmp
 
-# 1. 압축 해제
-gunzip stt-engine-cuda129-rhel89-v1.2.tar.gz
+# 1. Docker 이미지 로드
+docker load < stt-engine-cuda129-rhel89-v1.2.tar.gz
 
-# 2. Docker에 로드
-docker load < stt-engine-cuda129-rhel89-v1.2.tar
-
-# 3. 확인
+# 2. 이미지 확인
 docker images | grep stt-engine
-# 출력: stt-engine  cuda129-rhel89-v1.2  <image-id>  1.5GB
+# 출력: stt-engine  cuda129-rhel89-v1.2  <image-id>  7.3GB
 ```
 
 ---
 
-## ✅ Step 7: 이미지 검증 (운영 서버)
+## ✅ Step 9: 이미지 검증 (운영 서버)
 
-### 7-1. PyTorch/CUDA 검증
+### 9-1. PyTorch/CUDA 검증
 ```bash
 docker run --rm stt-engine:cuda129-rhel89-v1.2 python3.11 -c "
 import torch
@@ -288,7 +567,7 @@ print(f'✅ cuDNN: OK')
 # ✅ cuDNN: OK
 ```
 
-### 7-2. Whisper 검증
+### 9-2. Whisper 검증
 ```bash
 docker run --rm stt-engine:cuda129-rhel89-v1.2 python3.11 -c "
 try:
@@ -298,108 +577,155 @@ except:
     print('⚠️  faster-whisper: 미사용')
     
 try:
-    import whisper
-    print('✅ openai-whisper: 로드됨')
+    from transformers import AutoModelForSpeechSeq2Seq
+    print('✅ transformers: 로드됨')
 except:
-    print('⚠️  openai-whisper: 미사용')
+    print('⚠️  transformers: 미사용')
 "
 ```
 
-### 7-3. API 헬스 체크
+### 9-3. 모델 마운트 및 통합 테스트
+
 ```bash
-# 모델 다운로드 (처음 1회, 5-10분)
-docker run -it --rm \
+# 모델 디렉토리 마운트하여 컨테이너 실행
+docker run -it \
+  --name stt-final-test \
   -v /path/to/models:/app/models \
+  -e CUDA_VISIBLE_DEVICES=0 \
   stt-engine:cuda129-rhel89-v1.2 \
-  python3.11 -c 'import whisper; whisper.load_model("large-v3")'
+  /bin/bash
 
-# API 서버 실행
-docker run -d \
-  --name stt-api \
-  --gpus all \
-  -p 8003:8003 \
-  -v /path/to/models:/app/models \
-  -e STT_DEVICE=cuda \
-  stt-engine:cuda129-rhel89-v1.2
+# 컨테이너 내부에서:
+python3 << 'PYTHON_TEST'
+import sys
+sys.path.insert(0, '/app')
 
-# 헬스 체크
-sleep 10
-curl http://localhost:8003/health
-# 예상: {"status":"ok","backend":"faster-whisper"}
+print("=" * 70)
+print("✅ 최종 통합 검증")
+print("=" * 70)
+
+# Faster-Whisper 로드 확인
+try:
+    from faster_whisper import WhisperModel
+    model = WhisperModel(
+        "/app/models/ctranslate2_model",
+        device="auto",
+        compute_type="float32",
+        local_files_only=True
+    )
+    print("\n✅ Faster-Whisper 모델 로드 성공")
+except Exception as e:
+    print(f"\n❌ Faster-Whisper 오류: {e}")
+
+# OpenAI Whisper 로드 확인
+try:
+    from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
+    processor = AutoProcessor.from_pretrained(
+        "/app/models/openai_whisper-large-v3-turbo",
+        local_files_only=True
+    )
+    model = AutoModelForSpeechSeq2Seq.from_pretrained(
+        "/app/models/openai_whisper-large-v3-turbo",
+        local_files_only=True
+    )
+    print("✅ OpenAI Whisper 모델 로드 성공")
+except Exception as e:
+    print(f"❌ OpenAI Whisper 오류: {e}")
+
+print("\n" + "=" * 70)
+print("🎉 모든 검증 완료!")
+print("=" * 70)
+PYTHON_TEST
+
+# 컨테이너 종료
+exit
 ```
 
 ---
 
-## 📊 예상 소요 시간
+## 📊 예상 소요 시간 (전체)
 
-| 단계 | 시간 |
-|------|------|
-| EC2 생성 | 2분 |
-| Docker/Git 설치 | 5분 |
-| 레포지토리 클론 | 2분 |
-| **Docker 빌드** | **20-30분** |
-| 이미지 저장 | 5분 |
-| Mac 다운로드 | 5분 |
-| 운영 서버 업로드 | 5분 |
-| 이미지 로드 | 3분 |
-| 검증 | 5분 |
-| **총합** | **~60분** |
+| 단계 | 예상 시간 |
+|------|----------|
+| Step 1: EC2 생성 | 2분 |
+| Step 2: 환경 설정 | 5분 |
+| Step 3: 레포지토리 클론 | 2분 |
+| Step 4: Docker 이미지 빌드 | 20~40분 |
+| Step 5: 모델 다운로드 + 변환 | 25~45분 |
+| Step 6: 모델 로드 테스트 | 20~30분 |
+| Step 7: 이미지/모델 저장 | 5~10분 |
+| Step 8: 운영 서버 배포 | 5~15분 |
+| Step 9: 이미지 검증 | 5분 |
+| **총 소요 시간** | **90~155분 (1.5~2.5시간)** |
 
 ---
 
-## 🔍 문제 해결
+## ✅ 최종 검증 체크리스트
 
-### 빌드 실패 - "インターネット接続がありません"
-```bash
-# EC2의 인터넷 연결 확인
-ping google.com
+모든 항목이 ✅ 상태여야 합니다:
 
-# DNS 확인
-nslookup github.com
-
-# 재시도
-bash scripts/build-stt-engine-rhel89.sh
 ```
+Build 서버 (EC2):
+  ✅ Docker 이미지 빌드 성공 (7.3GB)
+  ✅ 모델 다운로드 완료 (2.5GB)
+  ✅ CTranslate2 변환 완료 (model.bin 생성)
+  ✅ 모든 모델 파일 검증 완료
+  ✅ 테스트 컨테이너 모델 로드 성공
 
-### 이미지 로드 실패 - "unknown file format"
-```bash
-# 파일 손상 확인
-file stt-engine-cuda129-rhel89-v1.2.tar.gz
-# 출력: gzip compressed data
-
-# 압축 확인
-gunzip -t stt-engine-cuda129-rhel89-v1.2.tar.gz
-
-# MD5 검증
-md5sum -c stt-engine-cuda129-rhel89-v1.2.tar.gz.md5
-```
-
-### CUDA 인식 안됨
-```bash
-# 운영 서버의 CUDA 확인
-nvidia-smi
-nvcc --version
-
-# Docker 내부의 CUDA 확인
-docker run --rm --gpus all stt-engine:cuda129-rhel89-v1.2 \
-  python3.11 -c "import torch; print(torch.cuda.is_available())"
-```
-
-### 디스크 부족
-```bash
-# EC2 디스크 확인
-df -h
-
-# 불필요한 이미지 정리
-docker system prune -a
-docker builder prune
-
-# 권장: 50GB 이상 필요
+Production 서버 (RHEL 8.9):
+  ✅ Docker 이미지 로드 완료
+  ✅ 모델 디렉토리 마운트 가능
+  ✅ PyTorch/CUDA 정상 작동
+  ✅ Faster-Whisper 모델 로드 성공
+  ✅ OpenAI Whisper 모델 로드 성공
+  ✅ 최종 통합 검증 통과
 ```
 
 ---
 
-## 📝 체크리스트
+## 🎯 다음 단계 (운영 서버)
+
+빌드 및 검증 완료 후:
+
+1. **STT API 서버 실행**
+   ```bash
+   docker run -d \
+     --name stt-api \
+     --gpus all \
+     -p 5000:5000 \
+     -v /path/to/models:/app/models \
+     -e CUDA_VISIBLE_DEVICES=0 \
+     stt-engine:cuda129-rhel89-v1.2
+   ```
+
+2. **헬스 체크**
+   ```bash
+   sleep 10
+   curl http://localhost:5000/health
+   # 예상: {"status":"ok","backend":"faster-whisper"}
+   ```
+
+3. **STT 서비스 테스트**
+   ```bash
+   curl -X POST http://localhost:5000/transcribe \
+     -F "file=@/path/to/audio.wav"
+   ```
+
+---
+
+## 📞 트러블슈팅
+
+| 문제 | 해결책 |
+|------|--------|
+| Docker 빌드 실패 | 인터넷 연결 확인, `grep -i error /tmp/build.log` 확인 |
+| 모델 다운로드 실패 | HuggingFace 접근성 확인, VPN 사용, 프록시 설정 |
+| CUDA 인식 안됨 | 운영 서버의 `nvidia-smi` 확인 |
+| 모델 로드 실패 | 모델 파일 경로 확인, `/app/models` 마운트 확인 |
+| 디스크 부족 | EC2: `df -h` 확인, 운영 서버: 충분한 스토리지 확보 |
+
+---
+
+## 📝 체크리스트 (완전 버전)
 
 ```
 [ ] RHEL 8.9 정보 수집 완료
@@ -410,79 +736,86 @@ docker builder prune
     - NVIDIA Driver: 575.57.08
 
 [ ] AWS EC2 RHEL 8.9 생성
-    - t3.large 이상
-    - 50GB 스토리지
+    - t3.large 이상 (또는 t3.xlarge 권장)
+    - 100GB 이상 스토리지 (Docker 7GB + 모델 2.5GB + 여유)
     - Security Group 설정
 
 [ ] EC2 환경 설정
-    - Docker 설치
+    - Docker 설치 및 실행
     - Git 설치
     - 사용자 권한 설정
 
-[ ] 레포지토리 클론/전송
+[ ] Step 3: 레포지토리 클론
+    - git clone 완료
+    - 코드 최신화 확인
 
-[ ] Docker 빌드 실행
-    - scripts/build-stt-engine-rhel89.sh
+[ ] Step 4: Docker 이미지 빌드
+    - 빌드 스크립트 실행
+    - 빌드 완료 (7.3GB)
+    - LD_LIBRARY_PATH 설정 확인
 
-[ ] 이미지 저장 (.tar.gz)
+[ ] Step 5: 모델 다운로드 및 준비
+    - download_model_hf.py 실행 완료
+    - models/ 디렉토리 (2.5GB) 생성
+    - CTranslate2 변환 완료
+    - 모델 파일 검증 완료
 
-[ ] Mac으로 다운로드
+[ ] Step 6: 빌드 서버에서 모델 로드 테스트
+    - 테스트 컨테이너 실행
+    - CUDA 및 PyTorch 검증
+    - Faster-Whisper 로드 성공
+    - OpenAI Whisper 로드 성공
 
-[ ] 운영 서버에 업로드
+[ ] Step 7: 이미지 및 모델 저장
+    - Docker 이미지 저장 (tar.gz)
+    - 빌드 로그 저장
+    - 모델 디렉토리 확인
 
-[ ] 이미지 로드
-    - docker load < stt-engine-cuda129-rhel89-v1.2.tar
+[ ] Step 8: 운영 서버 배포
+    - 이미지 및 모델 전송 완료
+    - 운영 서버 로드 완료
 
-[ ] PyTorch/CUDA 검증
-
-[ ] Whisper 검증
-
-[ ] API 헬스 체크
+[ ] Step 9: 이미지 검증
+    - PyTorch/CUDA 검증
+    - Whisper 검증
+    - 모델 마운트 테스트
+    - 통합 검증 완료
 ```
 
 ---
 
-## 🎯 다음 단계
+## 🎯 주요 포인트 정리
 
-빌드 완료 후:
+### Build 서버 (AWS EC2 RHEL 8.9)에서:
 
-1. **모델 다운로드**
-   ```bash
-   docker run -it --rm \
-     -v /path/to/models:/app/models \
-     stt-engine:cuda129-rhel89-v1.2 \
-     python3.11 -c 'import whisper; whisper.load_model("large-v3")'
-   ```
+1. **Step 1~3**: AWS EC2 준비 및 레포지토리 클론
+   - ✅ 약 10분
 
-2. **STT API 서버 실행**
-   ```bash
-   docker run -d \
-     --name stt-api \
-     --gpus all \
-     -p 8003:8003 \
-     -v /path/to/models:/app/models \
-     -e STT_DEVICE=cuda \
-     stt-engine:cuda129-rhel89-v1.2
-   ```
+2. **Step 4**: Docker 이미지 빌드
+   - ✅ 약 20~40분
+   - 결과: `stt-engine:cuda129-rhel89-v1.2` (7.3GB)
 
-3. **트랜스크립션 테스트**
-   ```bash
-   curl -X POST http://localhost:8003/transcribe \
-     -F "file=@/path/to/audio.wav"
-   ```
+3. **Step 5**: 모델 다운로드 + CTranslate2 변환 (NEW)
+   - ✅ 약 25~45분
+   - 결과: `models/` 디렉토리 (2.5GB)
+     - `openai_whisper-large-v3-turbo/` (1.6GB)
+     - `ctranslate2_model/` (0.9GB)
 
----
+4. **Step 6**: 모델 로드 테스트 (NEW)
+   - ✅ 약 20~30분
+   - Faster-Whisper + OpenAI Whisper 모두 테스트
 
-## 📞 트러블슈팅
+5. **Step 7**: 이미지 및 모델 저장
+   - ✅ 약 5~10분
 
-문제 발생 시 확인사항:
+6. **Step 8~9**: 운영 서버 배포 및 검증
+   - ✅ 약 15~25분
 
-1. EC2 인터넷 연결
-2. Docker 이미지 크기 (1.5GB 이상)
-3. glibc 버전 (운영 서버 2.28과 동일)
-4. CUDA/NVIDIA Driver (12.9+)
-5. 디스크 여유 공간 (50GB 이상)
+### 최종 결과:
+- ✅ Production Ready Docker 이미지
+- ✅ 완벽하게 검증된 모델 세트
+- ✅ RHEL 8.9 100% 호환성 보장
 
 ---
 
-**마지막 업데이트**: 2026년 2월 5일
+**마지막 업데이트**: 2026년 2월 7일
