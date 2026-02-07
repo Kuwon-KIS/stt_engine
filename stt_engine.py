@@ -30,61 +30,111 @@ if not FASTER_WHISPER_AVAILABLE and not WHISPER_AVAILABLE:
     raise ImportError("faster-whisper 또는 openai-whisper(whisper) 패키지가 설치되어야 합니다")
 
 
-def validate_faster_whisper_model(model_path: str) -> bool:
+def diagnose_faster_whisper_model(model_path: str) -> dict:
     """
-    faster-whisper 모델 유효성 검증 (CTranslate2 모델 형식)
-    faster-whisper는 model_path 내에서 ctranslate2_model 폴더를 찾습니다.
-    필수 폴더: model_path/ctranslate2_model/
-    필수 파일: model.bin, config.json, vocabulary.json, tokenizer.json 등
-    
-    Args:
-        model_path: 모델 폴더 경로 (예: /app/models/openai_whisper-large-v3-turbo)
+    faster-whisper 모델 상세 진단 (디버깅용)
     
     Returns:
-        True if 유효, False otherwise
+        {
+            'valid': bool,
+            'errors': [list of errors],
+            'warnings': [list of warnings],
+            'files': {detailed file structure},
+            'model_bin_size_mb': float
+        }
     """
     model_dir = Path(model_path)
     ct_model_dir = model_dir / "ctranslate2_model"
     
+    diagnosis = {
+        'valid': True,
+        'errors': [],
+        'warnings': [],
+        'files': {},
+        'model_bin_size_mb': None
+    }
+    
+    # 1. ctranslate2_model 폴더 존재 확인
+    if not ct_model_dir.exists():
+        diagnosis['errors'].append(f"ctranslate2_model 폴더 없음: {ct_model_dir}")
+        diagnosis['valid'] = False
+        return diagnosis
+    
+    # 2. ctranslate2_model 내 모든 파일 나열
+    try:
+        ct_files = list(ct_model_dir.rglob("*"))
+        diagnosis['files']['total_count'] = len(ct_files)
+        diagnosis['files']['list'] = []
+        
+        for file_path in sorted(ct_files)[:20]:  # 처음 20개만
+            if file_path.is_file():
+                size_kb = file_path.stat().st_size / 1024
+                diagnosis['files']['list'].append({
+                    'name': file_path.name,
+                    'relative_path': str(file_path.relative_to(ct_model_dir)),
+                    'size_kb': size_kb
+                })
+    except Exception as e:
+        diagnosis['errors'].append(f"파일 나열 실패: {e}")
+        diagnosis['valid'] = False
+        return diagnosis
+    
+    # 3. 필수 파일 확인
+    critical_files = {
+        'model.bin': 'CTranslate2 변환된 모델 바이너리',
+        'config.json': 'Whisper 모델 설정',
+        'tokenizer.json': 'Whisper 토크나이저'
+    }
+    
+    for file_name, description in critical_files.items():
+        file_path = ct_model_dir / file_name
+        if not file_path.exists():
+            diagnosis['errors'].append(f"누락: {file_name} ({description})")
+            diagnosis['valid'] = False
+        else:
+            size_kb = file_path.stat().st_size / 1024
+            if size_kb < 10:
+                diagnosis['warnings'].append(f"{file_name}이 너무 작음: {size_kb:.1f}KB (손상 가능성)")
+    
+    # 4. model.bin 상세 검사
+    model_bin = ct_model_dir / "model.bin"
+    if model_bin.exists():
+        size_bytes = model_bin.stat().st_size
+        size_mb = size_bytes / (1024 * 1024)
+        diagnosis['model_bin_size_mb'] = size_mb
+        
+        if size_mb < 100:
+            diagnosis['warnings'].append(f"model.bin이 매우 작음: {size_mb:.1f}MB (손상 또는 변환 실패 가능성)")
+            diagnosis['valid'] = False
+        
+        if size_mb > 5000:
+            diagnosis['warnings'].append(f"model.bin이 매우 큼: {size_mb:.1f}MB (양자화 확인 필요)")
+    
+    return diagnosis
+
+
+def validate_faster_whisper_model(model_path: str) -> bool:
+    """
+    faster-whisper 모델 유효성 검증
+    diagnose_faster_whisper_model의 간단한 래퍼
+    """
+    diagnosis = diagnose_faster_whisper_model(model_path)
+    
     print(f"   📂 faster-whisper 모델 검증: {model_path}")
     
-    # ctranslate2_model 폴더 확인
-    if not ct_model_dir.exists():
-        print(f"   ⚠️  ctranslate2_model 폴더 없음: {ct_model_dir}")
-        return False
+    if diagnosis['files']['total_count'] > 0:
+        print(f"   ✓ ctranslate2_model 폴더 있음 ({diagnosis['files']['total_count']}개 파일)")
     
-    # ctranslate2_model 내 파일 확인
-    ct_files = list(ct_model_dir.glob("*"))
-    if not ct_files:
-        print(f"   ⚠️  ctranslate2_model 폴더가 비어있음: {ct_model_dir}")
-        return False
+    if diagnosis['model_bin_size_mb']:
+        print(f"   ✓ model.bin: {diagnosis['model_bin_size_mb']:.1f}MB")
     
-    print(f"   ✓ ctranslate2_model 폴더 있음 ({len(ct_files)}개 파일)")
+    for warning in diagnosis['warnings']:
+        print(f"   ⚠️  {warning}")
     
-    # 필수 파일 확인 (너무 엄격하지 않게)
-    critical_files = ["model.bin"]
-    missing_critical = []
+    for error in diagnosis['errors']:
+        print(f"   ❌ {error}")
     
-    for file in critical_files:
-        file_path = ct_model_dir / file
-        if not file_path.exists():
-            missing_critical.append(file)
-    
-    if missing_critical:
-        print(f"   ⚠️  필수 파일 누락: {', '.join(missing_critical)}")
-        return False
-    
-    # model.bin 파일 크기 확인 (손상 여부 판단)
-    model_bin = ct_model_dir / "model.bin"
-    size_mb = model_bin.stat().st_size / (1024 * 1024)
-    print(f"   ✓ model.bin 있음 ({size_mb:.1f} MB)")
-    
-    if size_mb < 100:  # 100MB 미만이면 손상 가능성
-        print(f"   ⚠️  경고: model.bin 파일이 너무 작음 ({size_mb:.1f} MB) - 손상되었을 수 있음")
-        return False
-    
-    print(f"   ✓ faster-whisper 모델 구조 유효")
-    return True
+    return diagnosis['valid']
 
 
 def validate_whisper_model(model_path: str) -> bool:
@@ -248,16 +298,27 @@ class WhisperSTT:
             )
     
     def _try_faster_whisper(self):
-        """faster-whisper로 모델 로드 시도 (로컬 모델만 사용)"""
+        """faster-whisper로 모델 로드 시도 (로컬 모델만 사용, 상세 진단 포함)"""
         try:
             print(f"🔄 faster-whisper 모델 로드 시도... (디바이스: {self.device}, compute: {self.compute_type})")
             
-            # 모델 구조 먼저 검증
-            if not validate_faster_whisper_model(self.model_path):
-                print(f"   → faster-whisper 모델 구조 검증 실패")
+            # 모델 구조 상세 진단
+            diagnosis = diagnose_faster_whisper_model(self.model_path)
+            
+            if not diagnosis['valid']:
+                print(f"\n   ❌ 모델 구조 검증 실패:")
+                for error in diagnosis['errors']:
+                    print(f"      - {error}")
                 return
             
-            # 로컬 모델만 사용하도록 로드
+            # 경고 확인
+            if diagnosis['warnings']:
+                print(f"\n   ⚠️  주의사항:")
+                for warning in diagnosis['warnings']:
+                    print(f"      - {warning}")
+            
+            # 모델 로드 시도
+            print(f"\n   📦 faster-whisper WhisperModel 로드 중...")
             self.model = WhisperModel(
                 self.model_path,
                 device=self.device,
@@ -265,18 +326,39 @@ class WhisperSTT:
                 num_workers=4,
                 cpu_threads=4,
                 download_root=None,
-                local_files_only=True  # 🔒 운영서버에서 다운로드 방지
+                local_files_only=True
             )
             
             self.backend = "faster-whisper"
             print(f"✅ faster-whisper 모델 로드 성공")
             
         except FileNotFoundError as e:
-            print(f"⚠️  faster-whisper: 모델 파일을 찾을 수 없음 - {e}")
-            print(f"   → OpenAI Whisper로 폴백 시도...")
+            print(f"\n   ❌ faster-whisper: 파일을 찾을 수 없음")
+            print(f"      에러: {e}")
+            print(f"      경로: {self.model_path}")
+            print(f"\n   💡 해결 방법:")
+            print(f"      1. download_model_hf.py 실행 확인")
+            print(f"      2. CTranslate2 변환 로그 확인 (model.bin 생성 여부)")
+            print(f"      3. 모델 파일 손상 여부 확인")
         except Exception as e:
-            print(f"⚠️  faster-whisper 로드 실패: {e}")
-            print(f"   → OpenAI Whisper로 폴백 시도...")
+            error_str = str(e)
+            print(f"\n   ❌ faster-whisper 로드 실패: {type(e).__name__}")
+            print(f"      메시지: {error_str[:200]}")
+            
+            # 알려진 에러 진단
+            if "vocabulary" in error_str.lower():
+                print(f"\n   💡 분석: 모델 구조 오류 (vocabulary 로드 실패)")
+                print(f"      - CTranslate2 변환이 올바르게 완료되지 않았을 수 있음")
+                print(f"      - model.bin 파일이 손상되었을 수 있음")
+            elif "not found" in error_str.lower() or "no such file" in error_str.lower():
+                print(f"\n   💡 분석: 파일 경로 오류")
+                print(f"      - 모델 경로 확인: {self.model_path}")
+            else:
+                print(f"\n   💡 상세 진단을 위해 다음을 확인하세요:")
+                print(f"      1. {self.model_path}/ctranslate2_model/ 폴더 존재 여부")
+                print(f"      2. model.bin 파일 크기 (100MB 이상 권장)")
+                print(f"      3. config.json, tokenizer.json 파일 존재")
+
     
     def _try_whisper(self):
         """
