@@ -233,19 +233,18 @@ class WhisperSTT:
         if self.backend is None:
             raise RuntimeError(
                 "모델 로드 실패: 두 백엔드 모두 실패\n\n"
-                "🔧 운영서버(오프라인) 배포 체크리스트:\n"
+                "🔧 운영서버 배포 체크리스트:\n"
                 "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                "1. faster-whisper 모델 (추천):\n"
+                "1. faster-whisper 모델:\n"
                 f"   경로: {self.model_path}\n"
-                f"   필수: {self.model_path}/ctranslate2_model/model.bin\n"
-                "   검증: 모델 파일 크기 100MB 이상인지 확인\n\n"
-                "2. OpenAI Whisper (대체):\n"
-                "   지원 모델: tiny, base, small, medium, large\n"
-                "   주의: large-v3-turbo는 운영서버에서 불가능\n"
-                "   대신 'large' 모델을 사용합니다 (자동 다운로드)\n\n"
-                "3. 모델 파일 확인:\n"
-                f"   faster-whisper: find {self.model_path} -name 'model.bin'\n"
-                f"   파일이 없거나 100MB 미만이면 손상됨"
+                f"   필수: {self.model_path}/ctranslate2_model/model.bin\n\n"
+                "2. OpenAI Whisper 모델 (large-v3-turbo):\n"
+                "   경로: /app/models (Docker 마운트 포인트)\n"
+                "   구조: pytorch_model.bin, config.json, tokenizer.json\n\n"
+                "3. 모델 배포 방법:\n"
+                "   a) 로컬에서 다운로드: python download_model_hf.py\n"
+                "   b) 운영서버로 복사: rsync -av models/ server:/models/\n"
+                "   c) Docker 실행: docker run -v /models:/app/models stt-engine"
             )
     
     def _try_faster_whisper(self):
@@ -280,40 +279,43 @@ class WhisperSTT:
             print(f"   → OpenAI Whisper로 폴백 시도...")
     
     def _try_whisper(self):
-        """OpenAI Whisper로 모델 로드 시도 (오프라인 환경 고려)"""
+        """
+        OpenAI Whisper로 모델 로드 시도 (로컬 경로만 사용)
+        
+        운영서버 배포:
+        - 모델은 별도 볼륨으로 관리 (Docker와 분리)
+        - 실행: docker run -v /models/large-v3-turbo:/app/models
+        - 모델 파일은 Docker 이미지에 포함되지 않음
+        """
         try:
             print(f"🔄 OpenAI Whisper 모델 로드 시도... (디바이스: {self.device})")
             
             model_path = Path(self.model_path)
             
-            # 운영서버 오프라인 환경: 로컬 모델 경로 지원 없음
-            # OpenAI Whisper는 공식적으로 다음 모델만 지원:
-            # tiny, base, small, medium, large
-            #
-            # "large-v3-turbo" 같은 커스텀 모델은 huggingface에서만 사용 가능합니다.
-            # 따라서 운영서버에서는 다운로드 가능한 공식 모델을 사용해야 합니다.
+            # 모델 경로 존재 확인
+            if not model_path.exists():
+                print(f"   ⚠️  모델 경로를 찾을 수 없음: {model_path}")
+                print(f"   💡 확인사항:")
+                print(f"      1. 운영서버에 모델이 있는가?")
+                print(f"      2. Docker 실행 시 -v 옵션으로 마운트했는가?")
+                print(f"         예: docker run -v /models/large-v3-turbo:/app/models ...")
+                return
             
-            available_models = ["tiny", "base", "small", "medium", "large"]
+            # 로컬 경로에서 PyTorch 모델 직접 로드
+            print(f"   📂 로컬 모델 로드: {model_path}")
             
-            print(f"   📝 OpenAI Whisper 공식 지원 모델: {', '.join(available_models)}")
-            print(f"   ⚠️  주의: large-v3-turbo 같은 커스텀 모델은 운영서버에서 지원되지 않습니다")
-            print(f"   → 대신 'large' 모델을 사용하려고 시도합니다")
-            
-            # 공식 모델 'large' 사용
             self.model = whisper.load_model(
-                "large",
+                str(model_path),
                 device=self.device,
                 in_memory=False,
-                download_root=None
+                download_root=None  # 🔒 다운로드 방지
             )
             
             self.backend = "whisper"
-            print(f"✅ OpenAI Whisper 모델 로드 성공 (모델: large)")
+            print(f"✅ OpenAI Whisper 모델 로드 성공")
             
         except FileNotFoundError as e:
-            print(f"❌ OpenAI Whisper: 모델을 찾을 수 없음 - {e}")
-            print(f"   💡 팁: 운영서버에서 커스텀 모델(large-v3-turbo)을 사용하려면")
-            print(f"        모델을 Docker 이미지에 포함시켜야 합니다")
+            print(f"❌ OpenAI Whisper: 모델 파일을 찾을 수 없음 - {e}")
         except Exception as e:
             print(f"❌ OpenAI Whisper 로드 실패: {e}")
     
