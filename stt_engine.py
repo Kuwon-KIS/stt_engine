@@ -34,6 +34,12 @@ def diagnose_faster_whisper_model(model_path: str) -> dict:
     """
     faster-whisper 모델 상세 진단 (디버깅용)
     
+    CTranslate2 모델은 다음 파일들을 포함합니다:
+    - model.bin (CTranslate2 변환된 모델 바이너리)
+    - config.json (모델 설정)
+    - vocabulary.json (또는 tokens.json) - 토크나이저 정보
+    - shared_vocabulary.json (선택사항)
+    
     Returns:
         {
             'valid': bool,
@@ -66,7 +72,7 @@ def diagnose_faster_whisper_model(model_path: str) -> dict:
         diagnosis['files']['total_count'] = len(ct_files)
         diagnosis['files']['list'] = []
         
-        for file_path in sorted(ct_files)[:20]:  # 처음 20개만
+        for file_path in sorted(ct_files)[:30]:  # 처음 30개
             if file_path.is_file():
                 size_kb = file_path.stat().st_size / 1024
                 diagnosis['files']['list'].append({
@@ -79,11 +85,10 @@ def diagnose_faster_whisper_model(model_path: str) -> dict:
         diagnosis['valid'] = False
         return diagnosis
     
-    # 3. 필수 파일 확인
+    # 3. 필수 파일 확인 (CTranslate2 포맷)
     critical_files = {
         'model.bin': 'CTranslate2 변환된 모델 바이너리',
-        'config.json': 'Whisper 모델 설정',
-        'tokenizer.json': 'Whisper 토크나이저'
+        'config.json': 'Whisper 모델 설정'
     }
     
     for file_name, description in critical_files.items():
@@ -96,7 +101,22 @@ def diagnose_faster_whisper_model(model_path: str) -> dict:
             if size_kb < 10:
                 diagnosis['warnings'].append(f"{file_name}이 너무 작음: {size_kb:.1f}KB (손상 가능성)")
     
-    # 4. model.bin 상세 검사
+    # 4. 토크나이저 파일 확인 (vocabulary.json 또는 tokens.json)
+    # CTranslate2는 OpenAI Whisper의 tokenizer.json을 사용하지 않음
+    vocab_files = ['vocabulary.json', 'tokens.json', 'tokenizer.json']
+    has_vocab = False
+    for vocab_file in vocab_files:
+        if (ct_model_dir / vocab_file).exists():
+            has_vocab = True
+            size_kb = (ct_model_dir / vocab_file).stat().st_size / 1024
+            if size_kb < 10:
+                diagnosis['warnings'].append(f"{vocab_file}이 너무 작음: {size_kb:.1f}KB")
+            break
+    
+    if not has_vocab:
+        diagnosis['warnings'].append(f"토크나이저 파일 없음 (vocabulary.json, tokens.json, tokenizer.json 중 하나 필요)")
+    
+    # 5. model.bin 상세 검사
     model_bin = ct_model_dir / "model.bin"
     if model_bin.exists():
         size_bytes = model_bin.stat().st_size
@@ -309,6 +329,16 @@ class WhisperSTT:
                 print(f"\n   ❌ 모델 구조 검증 실패:")
                 for error in diagnosis['errors']:
                     print(f"      - {error}")
+                
+                # CTranslate2 변환 가이드
+                if "tokenizer.json" in str(diagnosis['errors']):
+                    print(f"\n   💡 CTranslate2 변환 정보:")
+                    print(f"      OpenAI Whisper의 tokenizer.json은 CTranslate2로 변환되지 않습니다.")
+                    print(f"      대신 다음 파일들을 확인하세요:")
+                    print(f"      - vocabulary.json")
+                    print(f"      - tokens.json")
+                    print(f"      - tokenizer.json (원본 보존된 경우)")
+                
                 return
             
             # 경고 확인
@@ -316,6 +346,14 @@ class WhisperSTT:
                 print(f"\n   ⚠️  주의사항:")
                 for warning in diagnosis['warnings']:
                     print(f"      - {warning}")
+            
+            # 파일 목록 출력
+            if diagnosis['files']['list']:
+                print(f"\n   📂 CTranslate2 모델 파일 ({diagnosis['files']['total_count']}개):")
+                for file_info in diagnosis['files']['list'][:10]:
+                    print(f"      ✓ {file_info['name']} ({file_info['size_kb']:.1f}KB)")
+                if len(diagnosis['files']['list']) > 10:
+                    print(f"      ... 외 {len(diagnosis['files']['list']) - 10}개")
             
             # 모델 로드 시도
             print(f"\n   📦 faster-whisper WhisperModel 로드 중...")
@@ -337,27 +375,34 @@ class WhisperSTT:
             print(f"      에러: {e}")
             print(f"      경로: {self.model_path}")
             print(f"\n   💡 해결 방법:")
-            print(f"      1. download_model_hf.py 실행 확인")
-            print(f"      2. CTranslate2 변환 로그 확인 (model.bin 생성 여부)")
-            print(f"      3. 모델 파일 손상 여부 확인")
+            print(f"      1. download_model_hf.py 실행 상태 확인")
+            print(f"      2. CTranslate2 변환 완료 여부 확인")
+            print(f"      3. {self.model_path}/ctranslate2_model/model.bin 파일 크기 확인 (100MB 이상)")
         except Exception as e:
             error_str = str(e)
             print(f"\n   ❌ faster-whisper 로드 실패: {type(e).__name__}")
             print(f"      메시지: {error_str[:200]}")
             
             # 알려진 에러 진단
-            if "vocabulary" in error_str.lower():
-                print(f"\n   💡 분석: 모델 구조 오류 (vocabulary 로드 실패)")
+            if "vocabulary" in error_str.lower() or "token" in error_str.lower():
+                print(f"\n   💡 분석: 토크나이저/어휘 오류")
                 print(f"      - CTranslate2 변환이 올바르게 완료되지 않았을 수 있음")
-                print(f"      - model.bin 파일이 손상되었을 수 있음")
+                print(f"      - 필요한 파일: vocabulary.json, tokens.json 등")
+                print(f"      - download_model_hf.py의 CTranslate2 변환 로그 확인")
+            elif "model.bin" in error_str.lower():
+                print(f"\n   💡 분석: model.bin 로드 오류")
+                print(f"      - model.bin 파일이 손상되었을 가능성")
+                print(f"      - CTranslate2 변환 재실행 필요")
             elif "not found" in error_str.lower() or "no such file" in error_str.lower():
                 print(f"\n   💡 분석: 파일 경로 오류")
                 print(f"      - 모델 경로 확인: {self.model_path}")
+                print(f"      - ctranslate2_model 폴더 존재 여부 확인")
             else:
                 print(f"\n   💡 상세 진단을 위해 다음을 확인하세요:")
-                print(f"      1. {self.model_path}/ctranslate2_model/ 폴더 존재 여부")
-                print(f"      2. model.bin 파일 크기 (100MB 이상 권장)")
-                print(f"      3. config.json, tokenizer.json 파일 존재")
+                print(f"      1. {self.model_path}/ctranslate2_model/ 폴더")
+                print(f"      2. model.bin 파일 (100MB 이상)")
+                print(f"      3. config.json 파일")
+                print(f"      4. vocabulary.json 또는 tokens.json 파일")
 
     
     def _try_whisper(self):
