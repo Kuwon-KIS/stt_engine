@@ -169,15 +169,27 @@ scp -i your-key.pem -r ~/workspace/stt_engine ec2-user@<ec2-ip>:~/
 
 ## 🏗️ Step 4: Docker 이미지 빌드 (20~40분)
 
-### 4-1. 빌드 실행
+### 방법 1️⃣: 자동 빌드 스크립트 사용 (권장)
 
 ```bash
 cd ~/stt_engine
 
-# 방법 1: RHEL 8.9 전용 빌드 스크립트 사용 (권장)
-bash scripts/build-stt-engine-rhel89.sh
+# Docker 이미지 빌드 스크립트 실행
+bash scripts/build-server-image.sh
 
-# 또는 방법 2: 직접 docker build 실행
+# 스크립트가 자동으로:
+# 1. 기존 이미지 확인 (있으면 재사용 여부 물어봄)
+# 2. Docker 이미지 빌드 (필요시)
+# 3. 이미지를 tar.gz로 저장
+# 4. 빌드 정보 파일 생성
+```
+
+### 방법 2️⃣: 수동 docker build 실행
+
+```bash
+cd ~/stt_engine
+
+# 직접 docker build 실행
 docker build \
   --platform linux/amd64 \
   -t stt-engine:cuda129-rhel89-v1.2 \
@@ -193,7 +205,7 @@ ssh -i your-key.pem ec2-user@<ec2-ip>
 watch -n 10 'docker ps -a && echo "---" && df -h'
 
 # 또는 로그 모니터링
-tail -f /tmp/build.log
+tail -f /tmp/build-image-*.log
 ```
 
 ### 4-3. 빌드 완료 확인
@@ -207,68 +219,68 @@ docker images | grep stt-engine
 
 # 이미지 상세 정보 확인
 docker inspect stt-engine:cuda129-rhel89-v1.2 | jq '.Config.Env[] | select(startswith("LD_"))'
-
-# 예상 출력에 LD_LIBRARY_PATH가 포함되어야 함
-```
-
-### 4-4. 빌드 오류 처리
-
-```bash
-# 오류가 발생한 경우 로그 확인
-grep -i "error\|failed\|not found" /tmp/build.log | tail -20
 ```
 
 ---
 
-## 📦 Step 5: 모델 다운로드 및 준비 (25~45분)
+## 📦 Step 5: 모델 다운로드 및 검증 (50~90분)
 
-**중요**: EC2 빌드 서버의 **로컬 환경**에서 모델을 다운로드합니다 (Docker가 아님).
+### 중요: build-server-image.sh 완료 후 실행
 
-### 5-0. RHEL 8.9 Python 환경 설정 (필수!)
+build-server-image.sh가 완료되어야 Docker 이미지가 준비되므로, 다음 명령으로 모델 다운로드를 진행합니다.
+
+### 방법: 모델 빌드 스크립트 사용
 
 ```bash
 cd ~/stt_engine
 
-# 1️⃣ Python 3.11 및 pip 설치 (RHEL 8.9 특수)
-sudo yum install -y python3.11-pip python3.11-devel
+# 모델 다운로드 및 검증 스크립트 실행
+bash scripts/build-server-models.sh
 
-# 또는 pip가 없으면 ensurepip로 설치
-python3.11 -m ensurepip --upgrade
-
-# 2️⃣ pip 업그레이드
-python3.11 -m pip install --upgrade pip setuptools wheel
-
-# 3️⃣ 모델 다운로드/변환에 필요한 핵심 패키지 설치
-# (이미지 내부에는 이미 설치되어 있지만, 호스트에서도 필요)
-python3.11 -m pip install --upgrade \
-    torch==2.6.0 \
-    torchaudio==2.6.0 \
-    transformers \
-    ctranslate2 \
-    huggingface-hub \
-    scipy \
-    numpy \
-    librosa \
-    pydantic \
-    urllib3
-
-# 설치 확인
-python3.11 -c "import torch, transformers, ctranslate2; print('✅ 모든 패키지 설치됨')"
+# 스크립트가 자동으로:
+# 1️⃣ Python 환경 설정
+#    - pip 설치 확인 (이미 설치되어 있으면 건너뜀)
+#    - 필수 패키지 설치 확인 (이미 설치되어 있으면 건너뜀)
+#    - 누락된 패키지만 설치
+#
+# 2️⃣ 모델 다운로드 및 변환
+#    - 기존 모델 확인 (있으면 재사용 여부 물어봄)
+#    - Hugging Face에서 모델 다운로드
+#    - CTranslate2 포맷 변환
+#
+# 3️⃣ 모델 구조 검증
+#    - 필수 파일 존재 확인
+#
+# 4️⃣ Docker 컨테이너 테스트
+#    - CUDA & PyTorch 검증
+#    - Faster-Whisper 로드 테스트
+#    - OpenAI Whisper 로드 테스트
 ```
 
-**주의**: 이 단계에서 패키지 설치는 5~15분 정도 소요됩니다.
+### 예상 소요시간 분석
 
-### 5-1. 모델 다운로드 및 CTranslate2 변환
+```
+Step 5-0: Python 환경 설정
+  - 처음: 5~15분 (pip, PyTorch 등 설치)
+  - 재실행: 0~1분 (이미 설치된 경우 건너뜀)
 
-```bash
-cd ~/stt_engine
+Step 5-1: 모델 다운로드 및 변환
+  - 처음: 20~30분 (Hugging Face 다운로드 10~15분 + 변환 5~10분)
+  - 재실행: 0~1분 (모델 재사용 선택)
 
-# 모델 다운로드 및 변환 실행
-# 이 스크립트는 자동으로:
-#   1. openai/whisper-large-v3-turbo 다운로드 (Hugging Face)
-#   2. CTranslate2 포맷 변환 (model.bin 생성)
-#   3. 모델 구조 검증
-python3.11 download_model_hf.py 2>&1 | tee /tmp/model_download.log
+Step 5-2: 모델 구조 검증
+  - 1~2분
+
+Step 5-3: Docker 테스트
+  - 20~30분
+
+총 처음: 50~90분
+재실행: 0~3분 (모든 단계 건너뜀)
+```
+
+---
+
+### ⚠️ 이전 단계별 상세 설명 (참고용)
 
 # 예상 출력:
 # ========================================================
@@ -678,21 +690,54 @@ exit
 
 ## 📊 예상 소요 시간 (전체)
 
+### 처음 빌드 시 (전체 처음부터 끝까지)
+
 | 단계 | 예상 시간 |
 |------|----------|
 | Step 1: EC2 생성 | 2분 |
 | Step 2: 환경 설정 | 5분 |
 | Step 3: 레포지토리 클론 | 2분 |
 | Step 4: Docker 이미지 빌드 | 20~40분 |
-| **Step 5-0: Python 환경 설정 (NEW)** | **5~15분** |
-| Step 5: 모델 다운로드 + 변환 | 20~30분 |
-| Step 6: 모델 로드 테스트 | 20~30분 |
-| Step 7: 이미지/모델 저장 | 5~10분 |
-| Step 8: 운영 서버 배포 | 5~15분 |
-| Step 9: 이미지 검증 | 5분 |
-| **총 소요 시간** | **95~170분 (1.6~2.8시간)** |
+| Step 5: 모델 다운로드 & 검증 | 50~90분 |
+| **총 소요 시간** | **80~140분 (1.3~2.3시간)** |
 
-**주요 변경**: Step 5-0에서 Python 환경 설정 추가 (pip, PyTorch 등)
+### 재실행 시 (이미지/모델이 이미 있을 때)
+
+| 단계 | 예상 시간 |
+|------|----------|
+| Step 4: Docker 이미지 빌드 | 0~1분 (기존 이미지 재사용) |
+| Step 5: 모델 다운로드 & 검증 | 0~1분 (기존 모델 재사용) |
+| **총 소요 시간** | **0~2분** |
+
+---
+
+## 📝 두 가지 빌드 방식
+
+### 방식 A: 분리된 스크립트 사용 (권장 - 효율적)
+
+**장점**: 
+- 이미지와 모델을 독립적으로 관리
+- 불필요한 재구성 제거
+- 빠른 재실행
+
+```bash
+# Step 1: Docker 이미지 빌드 (한 번만 필요)
+bash scripts/build-server-image.sh   # 20~40분
+
+# Step 2: 모델 다운로드 & 검증 (별도로 실행 가능)
+bash scripts/build-server-models.sh  # 50~90분
+```
+
+### 방식 B: 통합 스크립트 사용 (한번에 모든 작업)
+
+**장점**:
+- 한 번의 명령으로 전체 완료
+- 간단한 사용
+
+```bash
+# 전체 빌드 (이미지 + 모델)
+bash scripts/build-server-complete.sh  # 80~140분
+```
 
 ---
 
@@ -821,6 +866,165 @@ Production 서버 (RHEL 8.9):
     - Whisper 검증
     - 모델 마운트 테스트
     - 통합 검증 완료
+```
+
+---
+
+## 🔧 빌드 스크립트 상세 가이드
+
+### 1️⃣ build-server-image.sh (Docker 이미지 빌드)
+
+**목적**: RHEL 8.9 호환 Docker 이미지만 빌드
+
+```bash
+bash scripts/build-server-image.sh
+```
+
+**동작**:
+```
+Step 0: 사전 확인
+  ✅ Docker 설치 확인
+  ✅ git 설치 확인
+  ✅ 디스크 공간 확인 (100GB+)
+  ✅ 인터넷 연결 확인
+
+기존 이미지 확인
+  - 이미지 있음 → 재사용할지 물어봄
+  - 이미지 없음 → 새로 빌드
+
+Step 1: Docker 이미지 빌드 (20~40분)
+  → stt-engine:cuda129-rhel89-v1.2 (7.3GB)
+
+Step 2: 이미지 저장
+  → build/output/stt-engine-cuda129-rhel89-v1.2.tar.gz
+```
+
+**출력 로그**:
+```
+/tmp/build-image-YYYYMMDD-HHMMSS.log
+build/output/BUILD_IMAGE_INFO.txt
+```
+
+**언제 사용**:
+- Docker 이미지 처음 빌드
+- Dockerfile 변경 후 재빌드
+- 이미지 버전 업그레이드
+
+---
+
+### 2️⃣ build-server-models.sh (모델 준비)
+
+**목적**: 모델 다운로드, 변환, 검증
+
+```bash
+bash scripts/build-server-models.sh
+```
+
+**동작**:
+```
+Step 0: 사전 확인
+  ✅ Docker 설치 확인
+  ✅ Docker 이미지 확인 (stt-engine:cuda129-rhel89-v1.2)
+  ✅ 디스크 공간 확인 (50GB+)
+  ✅ 인터넷 연결 확인
+
+Step 1: Python 환경 설정 (처음: 5~15분, 재실행: 0~1분)
+  1. pip 설치 확인 (없으면 설치)
+  2. 설치된 패키지 확인 (이미 있으면 건너뜀)
+  3. 누락된 패키지만 설치
+  → PyTorch 2.6.0, transformers, ctranslate2, etc.
+
+Step 2: 모델 다운로드 및 변환 (처음: 20~30분, 재실행: 0~1분)
+  1. 기존 모델 확인
+     - 있음 → 재사용할지 물어봄
+     - 없음 → 새로 다운로드
+  2. Hugging Face에서 모델 다운로드 (10~15분)
+  3. CTranslate2 포맷 변환 (5~10분)
+  → models/ctranslate2_model/
+  → models/openai_whisper-large-v3-turbo/
+
+Step 3: 모델 구조 검증 (1~2분)
+  ✅ CTranslate2 모델 파일 확인
+  ✅ OpenAI Whisper 모델 파일 확인
+
+Step 4: Docker 테스트 (20~30분)
+  1. 테스트 컨테이너 실행
+  2. CUDA & PyTorch 검증
+  3. Faster-Whisper 로드 테스트
+  4. OpenAI Whisper 로드 테스트
+  5. 컨테이너 종료
+```
+
+**출력 로그**:
+```
+/tmp/build-models-YYYYMMDD-HHMMSS.log
+```
+
+**언제 사용**:
+- 모델 처음 다운로드
+- 모델 재검증 필요
+- 다른 모델로 변경
+
+---
+
+### 3️⃣ build-server-complete.sh (전체 빌드)
+
+**목적**: Docker 이미지 + 모델을 모두 구성
+
+```bash
+bash scripts/build-server-complete.sh
+```
+
+**동작**: 위의 두 스크립트를 순서대로 실행
+- Step 1-2: build-server-image.sh 실행
+- Step 3-6: build-server-models.sh 실행
+
+**언제 사용**:
+- 처음 빌드 서버 구성
+- 한 번에 모든 작업을 끝내고 싶을 때
+
+---
+
+## 📋 빌드 시나리오별 가이드
+
+### 시나리오 1: 처음 빌드
+
+```bash
+# 1단계: Docker 이미지 빌드
+bash scripts/build-server-image.sh
+# 예상: 20~40분
+
+# 또는 2단계를 바로 실행해도 됨 (2단계가 이미지 확인)
+# 2단계: 모델 준비
+bash scripts/build-server-models.sh
+# 예상: 50~90분
+
+# 총: 70~130분
+```
+
+### 시나리오 2: 이미지는 있고 모델만 새로 다운로드
+
+```bash
+# 모델만 다운로드 (1단계 건너뜀)
+bash scripts/build-server-models.sh
+# 예상: 50~90분
+
+# 스크립트가 자동으로:
+# 1. Python 패키지 확인 (이미 있으면 건너뜀)
+# 2. 모델 다운로드
+# 3. 테스트
+```
+
+### 시나리오 3: 재검증 (모든 것이 이미 있음)
+
+```bash
+# 기존 모델로 테스트만 재실행
+bash scripts/build-server-models.sh
+# 프롬프트에서 "사용" 선택 (기존 모델 재사용)
+# 예상: 20~30분 (테스트만)
+
+# 또는 Python 환경 재구성 후 테스트
+# 예상: 30~45분 (Python 재설치 + 테스트)
 ```
 
 ---
