@@ -11,7 +11,7 @@
 # 소요시간: 50~90분 (Python 환경 포함)
 #
 # 선행조건:
-#   1. Docker 이미지 빌드 완료: stt-engine:cuda129-rhel89-v1.2
+#   1. Docker 이미지 빌드 완료: stt-engine:cuda129-rhel89-v1.4
 #   2. RHEL 8.9 EC2 인스턴스
 #   3. 인터넷 연결
 #
@@ -28,7 +28,7 @@ OUTPUT_DIR="${WORKSPACE}/build/output"
 BUILD_LOG="/tmp/build-models-$(date +%Y%m%d-%H%M%S).log"
 
 # 버전 정보
-IMAGE_TAG="stt-engine:cuda129-rhel89-v1.2"
+IMAGE_TAG="stt-engine:cuda129-rhel89-v1.4"
 PYTHON_BIN="python3.11"
 
 # 타이머

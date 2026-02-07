@@ -6,7 +6,7 @@
 #
 # 목적: Docker 이미지 빌드만 수행 (모델 다운로드 제외)
 # 사용: bash scripts/build-server-image.sh
-# 결과: stt-engine:cuda129-rhel89-v1.2 (7.3GB)
+# 결과: stt-engine:cuda129-rhel89-v1.4 (7.3GB)
 #
 # 소요시간: 20~40분 (Docker 빌드만)
 #
@@ -30,9 +30,9 @@ OUTPUT_DIR="${WORKSPACE}/build/output"
 BUILD_LOG="/tmp/build-image-$(date +%Y%m%d-%H%M%S).log"
 
 # 버전 정보
-IMAGE_TAG="stt-engine:cuda129-rhel89-v1.2"
+IMAGE_TAG="stt-engine:cuda129-rhel89-v1.4"
 IMAGE_NAME="stt-engine"
-IMAGE_VERSION="cuda129-rhel89-v1.2"
+IMAGE_VERSION="cuda129-rhel89-v1.4"
 
 # 타이머
 START_TIME=$(date +%s)
@@ -273,7 +273,10 @@ print_summary() {
     echo "   1. 모델 다운로드 및 검증 실행:"
     echo "      bash scripts/build-server-models.sh"
     echo ""
-    echo "   2. (선택) 이미지 저장:"
+    echo "   2. 이미지 기본 검증 (모델 없이):"
+    echo "      docker run --rm $IMAGE_TAG python3.11 -c \"import torch; print('PyTorch:', torch.__version__)\""
+    echo ""
+    echo "   3. (선택) 이미지 저장:"
     echo "      docker save $IMAGE_TAG | gzip > stt-engine-${IMAGE_VERSION}.tar.gz"
     echo ""
     
