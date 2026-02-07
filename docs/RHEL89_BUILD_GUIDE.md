@@ -224,20 +224,51 @@ grep -i "error\|failed\|not found" /tmp/build.log | tail -20
 
 **중요**: EC2 빌드 서버의 **로컬 환경**에서 모델을 다운로드합니다 (Docker가 아님).
 
-### 5-1. 모델 다운로드 및 CTranslate2 변환
+### 5-0. RHEL 8.9 Python 환경 설정 (필수!)
 
 ```bash
 cd ~/stt_engine
 
-# 필수 패키지 설치 (필요시)
-pip install --upgrade huggingface-hub transformers ctranslate2
+# 1️⃣ Python 3.11 및 pip 설치 (RHEL 8.9 특수)
+sudo yum install -y python3.11-pip python3.11-devel
+
+# 또는 pip가 없으면 ensurepip로 설치
+python3.11 -m ensurepip --upgrade
+
+# 2️⃣ pip 업그레이드
+python3.11 -m pip install --upgrade pip setuptools wheel
+
+# 3️⃣ 모델 다운로드/변환에 필요한 핵심 패키지 설치
+# (이미지 내부에는 이미 설치되어 있지만, 호스트에서도 필요)
+python3.11 -m pip install --upgrade \
+    torch==2.6.0 \
+    torchaudio==2.6.0 \
+    transformers \
+    ctranslate2 \
+    huggingface-hub \
+    scipy \
+    numpy \
+    librosa \
+    pydantic \
+    urllib3
+
+# 설치 확인
+python3.11 -c "import torch, transformers, ctranslate2; print('✅ 모든 패키지 설치됨')"
+```
+
+**주의**: 이 단계에서 패키지 설치는 5~15분 정도 소요됩니다.
+
+### 5-1. 모델 다운로드 및 CTranslate2 변환
+
+```bash
+cd ~/stt_engine
 
 # 모델 다운로드 및 변환 실행
 # 이 스크립트는 자동으로:
 #   1. openai/whisper-large-v3-turbo 다운로드 (Hugging Face)
 #   2. CTranslate2 포맷 변환 (model.bin 생성)
 #   3. 모델 구조 검증
-python3 download_model_hf.py 2>&1 | tee /tmp/model_download.log
+python3.11 download_model_hf.py 2>&1 | tee /tmp/model_download.log
 
 # 예상 출력:
 # ========================================================
@@ -249,7 +280,7 @@ python3 download_model_hf.py 2>&1 | tee /tmp/model_download.log
 #
 # 📌 Step 2: Hugging Face에서 모델 다운로드
 # ⏳ openai/whisper-large-v3-turbo 다운로드 중...
-# ✅ 모델 다운로드 완료 (약 3-5분 소요)
+# ✅ 모델 다운로드 완료 (약 10-15분 소요)
 #
 # 📌 Step 3: 모델 파일 검증
 # ✅ config.json 검증 완료
@@ -257,7 +288,7 @@ python3 download_model_hf.py 2>&1 | tee /tmp/model_download.log
 # ✅ tokenizer.json 검증 완료
 #
 # 📌 Step 4: CTranslate2 포맷 변환
-# ⏳ CTranslate2 변환 중... (약 5-10분 소요)
+# ⏳ CTranslate2 변환 중... (약 5~10분 소요)
 # ✅ CTranslate2 변환 완료
 #
 # 📌 Step 5: 모델 구조 검증
@@ -268,6 +299,8 @@ python3 download_model_hf.py 2>&1 | tee /tmp/model_download.log
 #
 # ✅ 모든 단계 완료!
 ```
+
+**예상 소요시간**: 25~45분 (모델 크기 다운로드: 10~15분 + CTranslate2 변환: 5~10분)
 
 ### 5-2. 모델 디렉토리 구조 확인
 
@@ -289,7 +322,7 @@ find models/ -type f -name "*.json" -o -name "*.bin"
 ### 5-3. 모델 파일 검증 (Python)
 
 ```bash
-python3 << 'PYTHON_TEST'
+python3.11 << 'PYTHON_TEST'
 from pathlib import Path
 
 models_base = Path("models")
@@ -651,12 +684,15 @@ exit
 | Step 2: 환경 설정 | 5분 |
 | Step 3: 레포지토리 클론 | 2분 |
 | Step 4: Docker 이미지 빌드 | 20~40분 |
-| Step 5: 모델 다운로드 + 변환 | 25~45분 |
+| **Step 5-0: Python 환경 설정 (NEW)** | **5~15분** |
+| Step 5: 모델 다운로드 + 변환 | 20~30분 |
 | Step 6: 모델 로드 테스트 | 20~30분 |
 | Step 7: 이미지/모델 저장 | 5~10분 |
 | Step 8: 운영 서버 배포 | 5~15분 |
 | Step 9: 이미지 검증 | 5분 |
-| **총 소요 시간** | **90~155분 (1.5~2.5시간)** |
+| **총 소요 시간** | **95~170분 (1.6~2.8시간)** |
+
+**주요 변경**: Step 5-0에서 Python 환경 설정 추가 (pip, PyTorch 등)
 
 ---
 
@@ -717,6 +753,11 @@ Production 서버 (RHEL 8.9):
 
 | 문제 | 해결책 |
 |------|--------|
+| `/usr/bin/python3.11: No module named pip` | `sudo yum install -y python3.11-pip` 또는 `python3.11 -m ensurepip --upgrade` |
+| `ModuleNotFoundError: No module named 'urllib3'` | Step 5-0 의 Python 패키지 설치 완료 확인 |
+| `ModuleNotFoundError: torch` | PyTorch 2.6.0 설치 확인: `python3.11 -m pip install torch==2.6.0` |
+| `ModuleNotFoundError: transformers` | `python3.11 -m pip install transformers` |
+| `ModuleNotFoundError: ctranslate2` | `python3.11 -m pip install ctranslate2` |
 | Docker 빌드 실패 | 인터넷 연결 확인, `grep -i error /tmp/build.log` 확인 |
 | 모델 다운로드 실패 | HuggingFace 접근성 확인, VPN 사용, 프록시 설정 |
 | CUDA 인식 안됨 | 운영 서버의 `nvidia-smi` 확인 |

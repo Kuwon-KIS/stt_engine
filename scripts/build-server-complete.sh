@@ -185,18 +185,62 @@ download_models() {
         log_error "download_model_hf.py를 찾을 수 없습니다"
     fi
     
+    # ============================================================================
+    # Python 환경 설정 (RHEL 8.9 특수)
+    # ============================================================================
+    
+    log_info "Python 3.11 환경 설정..."
+    
+    # 1. pip 설치 확인 및 설치
+    if ! python3.11 -m pip --version &>/dev/null; then
+        log_info "pip 설치 중..."
+        if command -v yum &> /dev/null; then
+            # RHEL/CentOS: python3.11-pip 설치
+            sudo yum install -y python3.11-pip || python3.11 -m ensurepip --upgrade
+        else
+            # 다른 배포판: ensurepip 사용
+            python3.11 -m ensurepip --upgrade
+        fi
+    fi
+    log_success "pip 확인: $(python3.11 -m pip --version)"
+    
+    # 2. pip 업그레이드
+    log_info "pip 업그레이드 중..."
+    python3.11 -m pip install --upgrade pip setuptools wheel -q 2>&1 | grep -v "already satisfied" || true
+    
+    # 3. 핵심 라이브러리 설치 (반드시 필요)
+    log_info "핵심 Python 라이브러리 설치 중..."
+    python3.11 -m pip install --upgrade -q \
+        setuptools \
+        wheel \
+        urllib3 \
+        requests || log_error "기본 라이브러리 설치 실패"
+    
+    log_success "기본 라이브러리 설치 완료"
+    
+    # 4. PyTorch 및 관련 패키지 설치 (오프라인에서 모델 변환하려면 필수)
+    log_info "PyTorch 및 모델 처리 라이브러리 설치 중... (3~5분)"
+    python3.11 -m pip install --upgrade -q \
+        torch==2.6.0 \
+        torchaudio==2.6.0 \
+        transformers \
+        ctranslate2 \
+        huggingface-hub \
+        scipy \
+        numpy \
+        librosa \
+        pydantic 2>&1 | tail -5
+    
+    log_success "PyTorch 및 모델 라이브러리 설치 완료"
+    
+    # ============================================================================
+    # 모델 다운로드
+    # ============================================================================
+    
     # 모델 디렉토리 초기화
     log_info "기존 모델 디렉토리 정리..."
     rm -rf "$WORKSPACE/models" || true
     mkdir -p "$WORKSPACE/models"
-    
-    # Python 의존성 설치
-    log_info "필수 Python 패키지 설치..."
-    python3.11 -m pip install -q --upgrade \
-        huggingface-hub \
-        transformers \
-        ctranslate2 \
-        faster-whisper || log_warn "일부 패키지 설치 실패 (계속 진행)"
     
     # 모델 다운로드 및 변환
     log_info "모델 다운로드 및 변환 실행 중..."
