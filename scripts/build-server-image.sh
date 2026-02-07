@@ -5,9 +5,13 @@
 # 🚀 STT Engine Docker 이미지 빌드 스크립트 (AWS EC2 RHEL 8.9)
 #
 # 목적: Docker 이미지 빌드만 수행 (모델 다운로드 제외)
-# 사용: bash scripts/build-server-image.sh
-# 결과: stt-engine:cuda129-rhel89-v1.4 (7.3GB)
+# 사용: bash scripts/build-server-image.sh [버전]
+# 예시: 
+#   bash scripts/build-server-image.sh          # v1.4 (기본값)
+#   bash scripts/build-server-image.sh v1.5     # v1.5로 빌드
+#   bash scripts/build-server-image.sh v2.0     # v2.0으로 빌드
 #
+# 결과: stt-engine:cuda129-rhel89-[버전] (7.3GB)
 # 소요시간: 20~40분 (Docker 빌드만)
 #
 # 주의사항:
@@ -29,10 +33,12 @@ DOCKER_DIR="${WORKSPACE}/docker"
 OUTPUT_DIR="${WORKSPACE}/build/output"
 BUILD_LOG="/tmp/build-image-$(date +%Y%m%d-%H%M%S).log"
 
-# 버전 정보
-IMAGE_TAG="stt-engine:cuda129-rhel89-v1.4"
+# 버전 정보 (동적 할당)
+DEFAULT_VERSION="v1.4"
+VERSION="${1:-$DEFAULT_VERSION}"
 IMAGE_NAME="stt-engine"
-IMAGE_VERSION="cuda129-rhel89-v1.4"
+IMAGE_VERSION="cuda129-rhel89-${VERSION}"
+IMAGE_TAG="${IMAGE_NAME}:${IMAGE_VERSION}"
 
 # 타이머
 START_TIME=$(date +%s)
@@ -270,13 +276,16 @@ print_summary() {
     echo ""
     
     echo "🎯 다음 단계:"
-    echo "   1. 모델 다운로드 및 검증 실행:"
-    echo "      bash scripts/build-server-models.sh"
+    echo "   1. 동일 버전 모델 다운로드:"
+    echo "      bash scripts/build-server-models.sh $VERSION"
     echo ""
-    echo "   2. 이미지 기본 검증 (모델 없이):"
+    echo "   2. 또는 다른 버전으로 모델 다운로드:"
+    echo "      bash scripts/build-server-models.sh v1.5"
+    echo ""
+    echo "   3. 이미지 기본 검증 (모델 없이):"
     echo "      docker run --rm $IMAGE_TAG python3.11 -c \"import torch; print('PyTorch:', torch.__version__)\""
     echo ""
-    echo "   3. (선택) 이미지 저장:"
+    echo "   4. (선택) 이미지 저장:"
     echo "      docker save $IMAGE_TAG | gzip > stt-engine-${IMAGE_VERSION}.tar.gz"
     echo ""
     

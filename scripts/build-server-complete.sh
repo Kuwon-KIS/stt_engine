@@ -5,9 +5,13 @@
 # 🚀 STT Engine 완전 빌드 & 테스트 스크립트 (AWS EC2 RHEL 8.9)
 #
 # 목적: EC2 빌드 서버에서 Docker 이미지 + 모델 다운로드 + 테스트 완료
-# 사용: bash scripts/build-server-complete.sh
+# 사용: bash scripts/build-server-complete.sh [버전]
+# 예시:
+#   bash scripts/build-server-complete.sh          # v1.4 (기본값)
+#   bash scripts/build-server-complete.sh v1.5     # v1.5로 빌드
+#
 # 결과: 
-#   - Docker 이미지: stt-engine:cuda129-rhel89-v1.2 (7.3GB)
+#   - Docker 이미지: stt-engine:cuda129-rhel89-[버전] (7.3GB)
 #   - 모델 디렉토리: models/ (2.5GB)
 #   - 테스트 완료 및 검증
 #
@@ -33,10 +37,12 @@ DOCKER_DIR="${WORKSPACE}/docker"
 OUTPUT_DIR="${WORKSPACE}/build/output"
 BUILD_LOG="/tmp/build-complete-$(date +%Y%m%d-%H%M%S).log"
 
-# 버전 정보
-IMAGE_TAG="stt-engine:cuda129-rhel89-v1.2"
+# 버전 정보 (동적 할당)
+DEFAULT_VERSION="v1.4"
+VERSION="${1:-$DEFAULT_VERSION}"
 IMAGE_NAME="stt-engine"
-IMAGE_VERSION="cuda129-rhel89-v1.2"
+IMAGE_VERSION="cuda129-rhel89-${VERSION}"
+IMAGE_TAG="${IMAGE_NAME}:${IMAGE_VERSION}"
 
 # 타이머
 START_TIME=$(date +%s)

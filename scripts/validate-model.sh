@@ -5,8 +5,11 @@
 # 🔍 STT Engine 모델 검증 스크립트
 #
 # 목적: Docker 이미지와 독립적으로 모델 로드 및 검증
-# 사용: bash scripts/validate-model.sh [모델_경로] [이미지_태그]
-# 예시: bash scripts/validate-model.sh models stt-engine:cuda129-rhel89-v1.4
+# 사용: bash scripts/validate-model.sh [모델_경로] [버전 또는 이미지_태그]
+# 예시:
+#   bash scripts/validate-model.sh models                      # 기본: models, v1.4
+#   bash scripts/validate-model.sh models v1.5                 # 버전 지정
+#   bash scripts/validate-model.sh models stt-engine:my-tag    # 전체 태그 지정
 #
 # 특징:
 #   - 이미지 빌드와 독립적으로 실행 가능
@@ -23,7 +26,18 @@ set -e
 
 WORKSPACE="${PWD}"
 MODELS_PATH="${1:-.models}"
-IMAGE_TAG="${2:-stt-engine:cuda129-rhel89-v1.4}"
+
+# 이미지 태그 처리 (버전 또는 전체 태그)
+DEFAULT_VERSION="v1.4"
+VERSION_OR_TAG="${2:-$DEFAULT_VERSION}"
+
+# 만약 ":" 포함이면 전체 태그, 아니면 버전 번호로 취급
+if [[ "$VERSION_OR_TAG" == *":"* ]]; then
+    IMAGE_TAG="$VERSION_OR_TAG"
+else
+    IMAGE_TAG="stt-engine:cuda129-rhel89-${VERSION_OR_TAG}"
+fi
+
 PYTHON_BIN="python3.11"
 
 # ============================================================================

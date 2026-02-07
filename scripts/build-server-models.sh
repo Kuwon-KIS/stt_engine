@@ -5,13 +5,16 @@
 # 📦 STT Engine 모델 다운로드 & 검증 스크립트 (AWS EC2 RHEL 8.9)
 #
 # 목적: 모델 다운로드, CTranslate2 변환, 로드 테스트 (Docker 이미지 빌드 제외)
-# 사용: bash scripts/build-server-models.sh
-# 결과: models/ 디렉토리 (2.5GB), 검증 완료
+# 사용: bash scripts/build-server-models.sh [버전]
+# 예시:
+#   bash scripts/build-server-models.sh          # v1.4 (기본값)
+#   bash scripts/build-server-models.sh v1.5     # v1.5 이미지 사용
 #
+# 결과: models/ 디렉토리 (2.5GB), 검증 완료
 # 소요시간: 50~90분 (Python 환경 포함)
 #
 # 선행조건:
-#   1. Docker 이미지 빌드 완료: stt-engine:cuda129-rhel89-v1.4
+#   1. Docker 이미지 빌드 완료: stt-engine:cuda129-rhel89-[버전]
 #   2. RHEL 8.9 EC2 인스턴스
 #   3. 인터넷 연결
 #
@@ -27,8 +30,10 @@ WORKSPACE="${PWD}"
 OUTPUT_DIR="${WORKSPACE}/build/output"
 BUILD_LOG="/tmp/build-models-$(date +%Y%m%d-%H%M%S).log"
 
-# 버전 정보
-IMAGE_TAG="stt-engine:cuda129-rhel89-v1.4"
+# 버전 정보 (동적 할당)
+DEFAULT_VERSION="v1.4"
+VERSION="${1:-$DEFAULT_VERSION}"
+IMAGE_TAG="stt-engine:cuda129-rhel89-${VERSION}"
 PYTHON_BIN="python3.11"
 
 # 타이머
@@ -449,7 +454,9 @@ print_summary() {
     echo ""
     echo "✅ 모델 다운로드 및 검증 완료!"
     echo ""
-    echo "📊 결과:"
+    echo "📊 빌드 정보:"
+    echo "   이미지 버전: $VERSION"
+    echo "   이미지 태그: $IMAGE_TAG"
     
     # 모델 확인
     if [ -d "$WORKSPACE/models" ]; then
@@ -471,9 +478,15 @@ print_summary() {
     echo ""
     
     echo "🎯 다음 단계:"
-    echo "   1. 이미지와 모델을 운영 서버로 전송"
-    echo "   2. 운영 서버에서 Docker 이미지 로드"
-    echo "   3. 모델 디렉토리 마운트하여 컨테이너 실행"
+    echo "   1. 모델 단독 검증:"
+    echo "      bash scripts/validate-model.sh models $VERSION"
+    echo ""
+    echo "   2. 또는 전체 Docker 테스트:"
+    echo "      docker run -v models:/app/models $IMAGE_TAG"
+    echo ""
+    echo "   3. 이미지와 모델을 운영 서버로 전송:"
+    echo "      scp models.tar.gz server:/path/"
+    echo "      docker load < stt-engine-cuda129-rhel89-${VERSION}.tar.gz"
     echo ""
     
     print_elapsed
