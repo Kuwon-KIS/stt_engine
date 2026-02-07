@@ -286,35 +286,44 @@ class WhisperSTT:
         self.compute_type = compute_type
         self.backend = None
         
-        print(f"\n📊 모델 로드 시작")
+        print(f"\n📊 모델 로드 시작 (CTranslate2 + faster-whisper만 지원)")
         print(f"   모델 경로: {self.model_path}")
         print(f"   디바이스: {self.device}")
-        print(f"   사용 가능한 백엔드: faster-whisper={FASTER_WHISPER_AVAILABLE}, whisper={WHISPER_AVAILABLE}\n")
+        print(f"   백엔드: faster-whisper + CTranslate2 (OpenAI Whisper는 custom 모델 미지원)\n")
         
-        # faster-whisper 먼저 시도
+        # faster-whisper만 사용 (OpenAI Whisper는 large-v3-turbo 미지원)
         if FASTER_WHISPER_AVAILABLE:
             self._try_faster_whisper()
+        else:
+            raise RuntimeError(
+                "❌ faster-whisper가 설치되지 않았습니다.\n\n"
+                "🔧 해결 방법:\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                "large-v3-turbo는 faster-whisper + CTranslate2만 지원합니다.\n"
+                "OpenAI Whisper는 공식 모델만 지원합니다.\n\n"
+                "설치:\n"
+                "  pip install 'faster-whisper>=1.2.0'\n"
+                "  pip install 'ctranslate2>=4.0'\n\n"
+                "모델 다운로드 및 변환:\n"
+                "  python download_model_hf.py"
+            )
         
-        # faster-whisper 실패하면 OpenAI Whisper 시도
-        if self.backend is None and WHISPER_AVAILABLE:
-            self._try_whisper()
-        
-        # 둘 다 실패하면 에러
+        # faster-whisper 로드 실패하면 에러
         if self.backend is None:
             raise RuntimeError(
-                "모델 로드 실패: 두 백엔드 모두 실패\n\n"
-                "🔧 운영서버 배포 체크리스트:\n"
+                "❌ faster-whisper 모델 로드 실패\n\n"
+                "🔧 진단 체크리스트:\n"
                 "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                "1. faster-whisper 모델:\n"
+                f"1. 모델 디렉토리 확인:\n"
                 f"   경로: {self.model_path}\n"
-                f"   필수: {self.model_path}/ctranslate2_model/model.bin\n\n"
-                "2. OpenAI Whisper 모델 (large-v3-turbo):\n"
-                "   경로: /app/models (Docker 마운트 포인트)\n"
-                "   구조: pytorch_model.bin, config.json, tokenizer.json\n\n"
-                "3. 모델 배포 방법:\n"
-                "   a) 로컬에서 다운로드: python download_model_hf.py\n"
-                "   b) 운영서버로 복사: rsync -av models/ server:/models/\n"
-                "   c) Docker 실행: docker run -v /models:/app/models stt-engine"
+                f"   필수: {self.model_path}/ctranslate2_model/model.bin (1.5GB+)\n\n"
+                f"2. CTranslate2 변환 완료 확인:\n"
+                f"   ls -lh {self.model_path}/ctranslate2_model/\n"
+                f"   model.bin (1.5GB), config.json (2.2KB), vocabulary.json\n\n"
+                "3. 모델 다운로드/변환:\n"
+                "   python download_model_hf.py  # ~30-45분\n\n"
+                "4. Docker 마운트 확인 (운영서버):\n"
+                "   docker exec stt-engine ls -lh /app/models/ctranslate2_model/"
             )
     
     def _try_faster_whisper(self):
@@ -424,46 +433,32 @@ class WhisperSTT:
                 print(f"      file /app/models/openai_whisper-large-v3-turbo/ctranslate2_model/config.json")
 
     
-    def _try_whisper(self):
+    @staticmethod
+    def _explain_openai_whisper_limitations():
         """
-        OpenAI Whisper로 모델 로드 시도 (로컬 경로만 사용)
+        OpenAI Whisper의 아키텍처 제한사항 설명
+        (이 메서드는 참고 목적으로만 유지됨)
         
-        운영서버 배포:
-        - 모델은 별도 볼륨으로 관리 (Docker와 분리)
-        - 실행: docker run -v /models/large-v3-turbo:/app/models
-        - 모델 파일은 Docker 이미지에 포함되지 않음
+        ⚠️ OpenAI Whisper.load_model()의 제한사항:
+        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        - 공식 모델만 지원: tiny, base, small, medium, large, turbo
+        - 커스텀 모델 지원 안함: large-v3, large-v3-turbo 등
+        - 로컬 PyTorch 모델 직접 로드 불가
+        - 모델명 hardcoding: 화이트리스트에 없는 모델 거부
+        
+        따라서 faster-whisper + CTranslate2가 유일한 솔루션입니다.
         """
-        try:
-            print(f"🔄 OpenAI Whisper 모델 로드 시도... (디바이스: {self.device})")
-            
-            model_path = Path(self.model_path)
-            
-            # 모델 경로 존재 확인
-            if not model_path.exists():
-                print(f"   ⚠️  모델 경로를 찾을 수 없음: {model_path}")
-                print(f"   💡 확인사항:")
-                print(f"      1. 운영서버에 모델이 있는가?")
-                print(f"      2. Docker 실행 시 -v 옵션으로 마운트했는가?")
-                print(f"         예: docker run -v /models/large-v3-turbo:/app/models ...")
-                return
-            
-            # 로컬 경로에서 PyTorch 모델 직접 로드
-            print(f"   📂 로컬 모델 로드: {model_path}")
-            
-            self.model = whisper.load_model(
-                str(model_path),
-                device=self.device,
-                in_memory=False,
-                download_root=None  # 🔒 다운로드 방지
-            )
-            
-            self.backend = "whisper"
-            print(f"✅ OpenAI Whisper 모델 로드 성공")
-            
-        except FileNotFoundError as e:
-            print(f"❌ OpenAI Whisper: 모델 파일을 찾을 수 없음 - {e}")
-        except Exception as e:
-            print(f"❌ OpenAI Whisper 로드 실패: {e}")
+        print("\n❌ OpenAI Whisper 지원 불가 (아키텍처 제한):")
+        print("━" * 60)
+        print("OpenAI Whisper.load_model()은 공식 모델만 지원합니다:")
+        print("  ✓ tiny.en, tiny, base.en, base")
+        print("  ✓ small.en, small, medium.en, medium")
+        print("  ✓ large, turbo (일부)")
+        print("\nHugging Face 커스텀 모델 미지원:")
+        print("  ✗ large-v3, large-v3-turbo (이 프로젝트의 모델)")
+        print("  ✗ 로컬 PyTorch 모델 직접 로드 불가")
+        print("\n💡 솔루션: faster-whisper + CTranslate2 사용")
+        print("━" * 60)
     
     @staticmethod
     def _is_cuda_available() -> bool:
