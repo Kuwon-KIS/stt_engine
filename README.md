@@ -4,7 +4,14 @@
 
 OpenAI Whisper 기반 실시간 음성-텍스트 변환 엔진
 
-## 📋 빠른 시작
+## � 문서
+
+- **[QUICKSTART.md](QUICKSTART.md)** - 5분 안에 시작하기
+- **[docs/README_KO.md](docs/README_KO.md)** - 전체 문서 가이드
+- **[docs/deployment/](docs/deployment/)** - 배포 및 설치 가이드
+- **[docs/architecture/](docs/architecture/)** - 아키텍처 및 모델 정보
+
+## �📋 빠른 시작
 
 ### 1️⃣ 로컬 개발 (macOS/Linux)
 
