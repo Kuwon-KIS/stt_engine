@@ -258,10 +258,11 @@ if not conversion_success:
         # HF 모델 ID를 사용하여 변환
         converter = TransformersConverter("openai/whisper-large-v3-turbo")
         
+        # 안정적인 변환 파라미터
         converter.convert(
             output_dir=str(output_dir),
-            quantization="int8",
-            force=True
+            force=True,
+            # quantization은 제거 (호환성 문제 해결)
         )
         
         print_success("✅ CTranslate2 모델 변환 완료!")
@@ -278,22 +279,30 @@ if not conversion_success:
 print()
 if conversion_success and output_dir.exists():
     bin_files = list(output_dir.glob("*.bin"))
+    config_files = list(output_dir.glob("*.json"))
     
+    print("✅ 변환된 CTranslate2 모델 파일:")
+    
+    # 바이너리 파일
     if bin_files:
-        print("✅ 변환된 CTranslate2 모델 파일:")
         total_size = 0
-        
         for bin_file in sorted(bin_files):
             size = bin_file.stat().st_size / (1024**2)
             total_size += size
             print(f"   ✓ {bin_file.name} ({size:.2f}MB)")
-        
         print(f"\n   📏 합계: {total_size:.2f}MB")
-        
-        # model.bin 심링크 생성 (faster-whisper 호환성)
-        print()
-        print("⏳ 심링크 생성 중...")
-        
+    
+    # 설정 파일
+    if config_files:
+        print("\n   ✓ 설정 파일:")
+        for cfg_file in sorted(config_files):
+            print(f"     - {cfg_file.name}")
+    
+    # model.bin 심링크 생성 (faster-whisper 호환성)
+    print()
+    print("⏳ 심링크 생성 중...")
+    
+    if bin_files:
         model_bin_src = bin_files[0]
         model_bin_link = model_specific_dir / "model.bin"
         
@@ -304,21 +313,28 @@ if conversion_success and output_dir.exists():
         print_success("✅ model.bin 심링크 생성 완료")
         print(f"   소스: {model_bin_src.name}")
         print(f"   대상: model.bin")
-        
     else:
-        print("⚠️  변환된 파일을 찾을 수 없습니다")
+        print("⚠️  변환된 바이너리 파일을 찾을 수 없습니다")
         print()
-        print("💡 수동 변환 시도:")
-        print(f"   conda activate stt-py311")
-        print(f"   ct2-transformers-converter --model openai/whisper-large-v3-turbo \\")
-        print(f"     --output_dir {output_dir} --force --quantization int8")
+        print(f"📁 변환 디렉토리 내용:")
+        if output_dir.exists():
+            for file in output_dir.iterdir():
+                size = file.stat().st_size / (1024**2) if file.is_file() else 0
+                print(f"   - {file.name} ({size:.2f}MB)" if file.is_file() else f"   - {file.name}/")
+    
 else:
     print("⚠️  CTranslate2 변환 실패")
     print()
-    print("💡 수동 변환 시도:")
-    print(f"   conda activate stt-py311")
-    print(f"   ct2-transformers-converter --model openai/whisper-large-v3-turbo \\")
-    print(f"     --output_dir {output_dir} --force --quantization int8")
+    print("💡 해결 방법:")
+    print("   1. 패키지 버전 확인:")
+    print("      pip list | grep -E 'ctranslate2|faster-whisper'")
+    print()
+    print("   2. 패키지 업그레이드:")
+    print("      pip install --upgrade ctranslate2 faster-whisper transformers")
+    print()
+    print("   3. 수동 변환 시도:")
+    print(f"      ct2-transformers-converter --model openai/whisper-large-v3-turbo \\")
+    print(f"        --output_dir {output_dir} --force")
 
 # ============================================================================
 # Step 5: 모델 파일 압축 (tar.gz)

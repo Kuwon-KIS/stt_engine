@@ -162,14 +162,14 @@ setup_python_environment() {
     
     log_info "설치된 패키지 확인 중..."
     
-    # 핵심 패키지 목록
+    # 핵심 패키지 목록 (호환성 버전)
     declare -A packages=(
         ["torch"]="torch==2.6.0"
         ["torchaudio"]="torchaudio==2.6.0"
-        ["transformers"]="transformers"
-        ["ctranslate2"]="ctranslate2"
-        ["faster_whisper"]="faster-whisper"
-        ["huggingface_hub"]="huggingface-hub"
+        ["transformers"]="transformers>=4.37.0"
+        ["ctranslate2"]="ctranslate2>=4.0.0,<5.0.0"
+        ["faster_whisper"]="faster-whisper>=0.10.0,<1.0.0"
+        ["huggingface_hub"]="huggingface-hub>=0.20.0"
     )
     
     missing_packages=()
@@ -211,8 +211,8 @@ setup_python_environment() {
     # 모델 처리 라이브러리
     log_info "모델 처리 라이브러리 설치 중..."
     $PYTHON_BIN -m pip install --upgrade -q \
-        transformers ctranslate2 faster-whisper huggingface-hub \
-        scipy numpy librosa pydantic 2>&1 | tail -3
+        'transformers>=4.37.0' 'ctranslate2>=4.0.0,<5.0.0' 'faster-whisper>=0.10.0,<1.0.0' \
+        'huggingface-hub>=0.20.0' scipy numpy librosa pydantic 2>&1 | tail -3
     
     log_success "Python 패키지 설치 완료"
 }
