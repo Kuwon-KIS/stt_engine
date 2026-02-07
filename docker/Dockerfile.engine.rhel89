@@ -246,6 +246,14 @@ COPY --chown=stt-user:stt-user api_server.py /app/
 COPY --chown=stt-user:stt-user stt_engine.py /app/
 COPY --chown=stt-user:stt-user requirements.txt /app/
 
+# 캐시 디렉토리 생성 및 권한 설정 (whisper 모델 캐싱용)
+RUN mkdir -p /opt/app-root/src/.cache && \
+    chown -R stt-user:stt-user /opt/app-root/src/.cache && \
+    chmod -R 755 /opt/app-root/src/.cache && \
+    mkdir -p /app/models && \
+    chown -R stt-user:stt-user /app/models && \
+    chmod -R 755 /app/models
+
 # Python 환경 변수
 ENV PYTHONUNBUFFERED=1
 ENV HF_HOME=/app/models
