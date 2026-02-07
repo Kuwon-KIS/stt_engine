@@ -459,10 +459,12 @@ try:
     print()
     
     # CTranslate2 변환된 모델 로드
+    # 주의: compute_type을 float32로 설정하여 호환성 보장
+    # int8 양자화는 더 빠르지만 일부 환경에서 호환성 문제가 있을 수 있음
     model = WhisperModel(
         model_size_or_path=str(ct2_model_dir),
         device="cpu",
-        compute_type="int8"
+        compute_type="float32"  # INT8 대신 float32 사용 (호환성)
     )
     
     print_success("✅ faster-whisper 모델 로드 성공!")
@@ -473,16 +475,41 @@ try:
     print(f"   ✓ 모델 타입: Whisper Large-v3-Turbo")
     print(f"   ✓ 형식: CTranslate2 바이너리 (model.bin)")
     print(f"   ✓ 디바이스: CPU")
-    print(f"   ✓ 양자화: INT8 (메모리 효율적)")
+    print(f"   ✓ Compute Type: FP32 (호환성 보장)")
     print()
     
-    # 더미 오디오로 추론 테스트
+    # 더미 오디오로 추론 테스트 (더 다양한 시나리오)
     print("⏳ 추론 테스트 중 (더미 오디오)...")
     
-    # 1초의 더미 오디오 생성 (16kHz, 모노)
-    dummy_audio = np.zeros((16000,), dtype=np.float32)
+    # 시나리오 1: 짧은 오디오 (0.5초)
+    try:
+        dummy_audio_short = np.zeros((8000,), dtype=np.float32)
+        segments_short, info_short = model.transcribe(dummy_audio_short, language="ko")
+        list(segments_short)  # consume generator
+        print("   ✓ 짧은 오디오 테스트 (0.5초) 성공")
+    except Exception as e:
+        print(f"   ⚠️  짧은 오디오 테스트 실패: {e}")
     
-    # 추론 실행
+    # 시나리오 2: 중간 길이 오디오 (3초)
+    try:
+        dummy_audio_medium = np.zeros((48000,), dtype=np.float32)
+        segments_medium, info_medium = model.transcribe(dummy_audio_medium, language="ko")
+        list(segments_medium)  # consume generator
+        print("   ✓ 중간 오디오 테스트 (3초) 성공")
+    except Exception as e:
+        print(f"   ⚠️  중간 오디오 테스트 실패: {e}")
+    
+    # 시나리오 3: 긴 오디오 (10초)
+    try:
+        dummy_audio_long = np.zeros((160000,), dtype=np.float32)
+        segments_long, info_long = model.transcribe(dummy_audio_long, language="ko")
+        list(segments_long)  # consume generator
+        print("   ✓ 긴 오디오 테스트 (10초) 성공")
+    except Exception as e:
+        print(f"   ⚠️  긴 오디오 테스트 실패: {e}")
+    
+    # 최종 추론으로 결과 출력
+    dummy_audio = np.zeros((16000,), dtype=np.float32)
     segments, info = model.transcribe(dummy_audio, language="ko")
     
     print_success("✅ 추론 테스트 성공!")
@@ -514,7 +541,7 @@ except FileNotFoundError as e:
     print()
     print("   conda activate stt-py311")
     print(f"   ct2-transformers-converter --model openai/whisper-large-v3-turbo \\")
-    print(f"     --output_dir {ct2_model_dir} --force --quantization int8")
+    print(f"     --output_dir {ct2_model_dir} --force")
     print()
     
 except ImportError:
@@ -524,15 +551,40 @@ except ImportError:
     print()
     
 except Exception as e:
-    print(f"⚠️  모델 로드 중 오류: {e}")
+    error_msg = str(e)
+    print(f"⚠️  모델 로드 중 오류: {error_msg}")
     print()
-    print("📝 디버깅:")
-    print("   1. CTranslate2 변환 상태 확인:")
-    print(f"      ls -lh {model_specific_dir}/ctranslate2_model/")
-    print()
-    print("   2. 패키지 버전 확인:")
-    print("      pip list | grep -E 'faster-whisper|ctranslate2'")
-    print()
-    print("   3. 패키지 업그레이드:")
-    print("      pip install --upgrade faster-whisper ctranslate2 torch")
+    
+    # 특정 오류 메시지에 대한 대처 방법
+    if "shape" in error_msg.lower() or "features" in error_msg.lower():
+        print("💡 원인: Mel-spectrogram 입력 차원 불일치")
+        print("   이는 CTranslate2 변환 호환성 문제일 수 있습니다.")
+        print()
+        print("해결 방법:")
+        print("   1. 모델 재변환 (quantization 제거):")
+        print(f"      ct2-transformers-converter --model openai/whisper-large-v3-turbo \\")
+        print(f"        --output_dir {ct2_model_dir} --force")
+        print()
+        print("   2. 패키지 버전 확인:")
+        print("      pip list | grep -E 'faster-whisper|ctranslate2'")
+        print()
+        print("   3. 패키지 재설치:")
+        print("      pip uninstall -y faster-whisper ctranslate2")
+        print("      pip install faster-whisper==1.2.1 ctranslate2==4.7.1")
+        print()
+    else:
+        print("📝 디버깅:")
+        print("   1. CTranslate2 변환 상태 확인:")
+        print(f"      ls -lh {model_specific_dir}/ctranslate2_model/")
+        print()
+        print("   2. 패키지 버전 확인:")
+        print("      pip list | grep -E 'faster-whisper|ctranslate2'")
+        print()
+        print("   3. 패키지 재설치:")
+        print("      pip install --upgrade faster-whisper==1.2.1 ctranslate2==4.7.1")
+        print()
+    
+    import traceback
+    print("상세 오류 정보:")
+    traceback.print_exc()
     print()
