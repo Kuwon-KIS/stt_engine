@@ -235,10 +235,31 @@ os.system("find /usr/local -name 'libcusparseLt*' 2>/dev/null")
 
 EOF
 
+# ============================================================================
+# Step 10: 디렉토리 생성 및 권한 설정 (ROOT로 실행)
+# 
+# 주의: USER 전환 BEFORE 모든 디렉토리/권한 설정 완료
+# ROOT 권한이 필요한 mkdir/chown은 USER 전환 전에 완료해야 함
+# ============================================================================
+
+RUN mkdir -p /opt/app-root/src/.cache && \
+    mkdir -p /app/models && \
+    mkdir -p /app/logs && \
+    mkdir -p /app/audio && \
+    chown -R stt-user:stt-user /opt/app-root/src/.cache && \
+    chown -R stt-user:stt-user /app/models && \
+    chown -R stt-user:stt-user /app/logs && \
+    chown -R stt-user:stt-user /app/audio && \
+    chmod -R 755 /opt/app-root/src/.cache && \
+    chmod -R 755 /app/models && \
+    chmod -R 755 /app/logs && \
+    chmod -R 755 /app/audio && \
+    chmod 755 /app
+
 USER stt-user
 
 # ============================================================================
-# Step 10: 애플리케이션 파일 복사 (stt-user 권한)
+# Step 11: 애플리케이션 파일 복사 (stt-user 권한)
 # ============================================================================
 
 # 애플리케이션 파일 복사
@@ -246,21 +267,13 @@ COPY --chown=stt-user:stt-user api_server.py /app/
 COPY --chown=stt-user:stt-user stt_engine.py /app/
 COPY --chown=stt-user:stt-user requirements.txt /app/
 
-# 캐시 디렉토리 생성 및 권한 설정 (whisper 모델 캐싱용)
-RUN mkdir -p /opt/app-root/src/.cache && \
-    chown -R stt-user:stt-user /opt/app-root/src/.cache && \
-    chmod -R 755 /opt/app-root/src/.cache && \
-    mkdir -p /app/models && \
-    chown -R stt-user:stt-user /app/models && \
-    chmod -R 755 /app/models
-
 # Python 환경 변수
 ENV PYTHONUNBUFFERED=1
 ENV HF_HOME=/app/models
 ENV STT_DEVICE=cpu
 
 # ============================================================================
-# Step 11: 헬스 체크 및 포트 노출
+# Step 12: 헬스 체크 및 포트 노출
 # ============================================================================
 
 # Health check: 30초마다 체크, 10초 타임아웃, 3번 실패 시 unhealthy
@@ -271,7 +284,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 EXPOSE 8003
 
 # ============================================================================
-# Step 12: 시작 명령어
+# Step 13: 시작 명령어
 # ============================================================================
 
 CMD ["python3.11", "api_server.py"]
