@@ -263,6 +263,7 @@ USER stt-user
 # ============================================================================
 
 # 애플리케이션 파일 복사
+COPY --chown=stt-user:stt-user main.py /app/
 COPY --chown=stt-user:stt-user api_server.py /app/
 COPY --chown=stt-user:stt-user stt_engine.py /app/
 COPY --chown=stt-user:stt-user requirements.txt /app/
@@ -287,4 +288,4 @@ EXPOSE 8003
 # Step 13: 시작 명령어
 # ============================================================================
 
-CMD ["python3.11", "api_server.py"]
+CMD ["python3.11", "main.py"]
