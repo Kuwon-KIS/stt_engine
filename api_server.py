@@ -10,7 +10,15 @@ from fastapi import FastAPI, File, UploadFile, HTTPException
 from pathlib import Path
 import tempfile
 import os
+import logging
 from stt_engine import WhisperSTT
+
+# 로깅 설정
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Whisper STT API",
@@ -23,15 +31,41 @@ app = FastAPI(
 try:
     model_path = Path(__file__).parent / "models" / "openai_whisper-large-v3-turbo"
     device = os.getenv("STT_DEVICE", "cpu")
-    compute_type = "float16" if device == "cuda" else "int8"  # CPU는 int8이 더 효율적
+    compute_type = "float16" if device == "cuda" else "float32"  # CPU는 float32가 더 안정적
+    
+    logger.info(f"모델 로드 시작")
+    logger.info(f"  모델 경로: {model_path}")
+    logger.info(f"  디바이스: {device}")
+    logger.info(f"  Compute Type: {compute_type}")
     
     stt = WhisperSTT(
         str(model_path),
         device=device,
         compute_type=compute_type
     )
+    logger.info(f"✅ STT 모델 로드 완료 (Backend: {stt.backend})")
     print(f"✅ STT 모델 로드 완료 (Device: {device}, Backend: {stt.backend})")
+    
+except FileNotFoundError as e:
+    logger.error(f"모델 파일을 찾을 수 없음: {e}")
+    logger.error(f"  확인 사항:")
+    logger.error(f"  1. 모델이 다운로드되었는가? (download_model_hf.py 실행)")
+    logger.error(f"  2. models/openai_whisper-large-v3-turbo/ 폴더가 존재하는가?")
+    logger.error(f"  3. Docker 실행 시 -v 옵션으로 마운트했는가?")
+    print(f"❌ 모델 로드 실패: {e}")
+    stt = None
+    
+except RuntimeError as e:
+    logger.error(f"모델 로드 실패: {e}")
+    logger.error(f"  이것은 CTranslate2 변환 문제일 가능성이 있습니다.")
+    logger.error(f"  해결 방법:")
+    logger.error(f"  1. EC2에서 모델 재다운로드: python3 download_model_hf.py")
+    logger.error(f"  2. Docker 이미지 재빌드: bash scripts/build-server-image.sh")
+    print(f"❌ 모델 로드 실패: {e}")
+    stt = None
+    
 except Exception as e:
+    logger.error(f"예상치 못한 오류: {type(e).__name__}: {e}")
     print(f"❌ 모델 로드 실패: {e}")
     stt = None
 
