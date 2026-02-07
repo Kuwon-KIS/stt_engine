@@ -1,37 +1,38 @@
 version: '3.8'
 
 services:
-  whisper-api:
+  stt-engine-api:
     build:
       context: ..
-      dockerfile: docker/Dockerfile.gpu  # GPU 최적화 버전
-      # dockerfile: docker/Dockerfile    # CPU 버전 (더 가볍지만 느림)
-    image: whisper-stt:latest
-    container_name: whisper-stt
+      dockerfile: docker/Dockerfile
+      # RHEL 8.9용 빌드:
+      # dockerfile: docker/Dockerfile.engine.rhel89
+    image: stt-engine:latest
+    container_name: stt-engine-api
     
     ports:
       - "8003:8003"
     
     volumes:
-      - ../models:/app/models              # 로컬 모델 마운트
-      - ../audio:/app/audio                # 음성 파일
-      - ../logs:/app/logs                  # 로그
+      - ../models:/app/models              # 모델 디렉토리
+      - ../audio:/app/audio                # 입력 오디오 파일
+      - ../logs:/app/logs                  # 로그 파일
     
     environment:
-      - WHISPER_DEVICE=cuda               # GPU 사용
-      - SERVER_HOST=0.0.0.0
-      - SERVER_PORT=8003
+      - PYTHONUNBUFFERED=1
+      - HF_HOME=/app/models
+      - STT_DEVICE=cpu                     # GPU 사용 시 cuda로 변경
     
     restart: unless-stopped
     
-    # GPU 사용 설정 (NVIDIA Docker)
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+    # GPU 사용 설정 (NVIDIA Docker - 필요할 때만 활성화)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
     
     # 헬스 체크
     healthcheck:
