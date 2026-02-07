@@ -401,7 +401,7 @@ def calculate_md5(file_path):
     return md5.hexdigest()
 
 md5_value = calculate_md5(compressed_path)
-md5_path = compressed_path.with_suffix('.tar.gz.md5')
+md5_path = compressed_path.parent / f"{compressed_path.name}.md5"
 
 with open(md5_path, 'w') as f:
     f.write(f"{md5_value}  {compressed_path.name}\n")
