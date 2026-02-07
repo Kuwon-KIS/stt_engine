@@ -162,14 +162,14 @@ setup_python_environment() {
     
     log_info "설치된 패키지 확인 중..."
     
-    # 핵심 패키지 목록 (호환성 버전)
+    # 핵심 패키지 목록 (requirements.txt 및 Dockerfile과 동일한 버전)
     declare -A packages=(
         ["torch"]="torch==2.6.0"
         ["torchaudio"]="torchaudio==2.6.0"
-        ["transformers"]="transformers>=4.37.0"
-        ["ctranslate2"]="ctranslate2>=4.0.0,<5.0.0"
-        ["faster_whisper"]="faster-whisper>=0.10.0,<1.0.0"
-        ["huggingface_hub"]="huggingface-hub>=0.20.0"
+        ["transformers"]="transformers>=4.30,<6"
+        ["ctranslate2"]="ctranslate2==4.7.1"
+        ["faster_whisper"]="faster-whisper==1.2.1"
+        ["huggingface_hub"]="huggingface-hub>=0.21"
     )
     
     missing_packages=()
@@ -211,8 +211,8 @@ setup_python_environment() {
     # 모델 처리 라이브러리
     log_info "모델 처리 라이브러리 설치 중..."
     $PYTHON_BIN -m pip install --upgrade -q \
-        'transformers>=4.37.0' 'ctranslate2>=4.0.0,<5.0.0' 'faster-whisper>=0.10.0,<1.0.0' \
-        'huggingface-hub>=0.20.0' scipy numpy librosa pydantic 2>&1 | tail -3
+        'transformers>=4.30,<6' ctranslate2==4.7.1 faster-whisper==1.2.1 \
+        'huggingface-hub>=0.21' scipy==1.12.0 numpy==1.24.3 librosa==0.10.0 pydantic==2.5.3 2>&1 | tail -3
     
     log_success "Python 패키지 설치 완료"
 }
