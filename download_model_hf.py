@@ -34,6 +34,32 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # 환경 변수 설정
 os.environ['HF_HUB_DISABLE_TELEMETRY'] = '1'
 
+# ============================================================================
+# faster-whisper 설치 확인
+# ============================================================================
+
+def check_and_install_faster_whisper():
+    """faster-whisper 설치 여부 확인, 없으면 설치"""
+    try:
+        import faster_whisper
+        return True
+    except ImportError:
+        print("⚠️  faster-whisper가 설치되어 있지 않습니다")
+        print("설치 중...")
+        
+        try:
+            import subprocess
+            subprocess.check_call([
+                sys.executable, "-m", "pip", "install", 
+                "-q", "faster-whisper"
+            ])
+            print("✅ faster-whisper 설치 완료")
+            return True
+        except Exception as e:
+            print(f"❌ faster-whisper 설치 실패: {e}")
+            print("수동 설치: pip install faster-whisper")
+            return False
+
 def print_header(msg):
     print("\n" + "=" * 60)
     print(msg)
@@ -50,6 +76,17 @@ def print_error(msg):
     sys.exit(1)
 
 print_header("🚀 STT Engine 모델 준비 (다운로드 + 변환 + 압축)")
+
+# ============================================================================
+# 사전 확인: faster-whisper 설치
+# ============================================================================
+
+print_step("사전 확인: 필수 패키지 확인")
+
+if not check_and_install_faster_whisper():
+    print_error("faster-whisper 설치 필수")
+
+print_success("필수 패키지 확인 완료")
 
 # 모델 저장 경로 설정
 BASE_DIR = Path(__file__).parent.absolute()
