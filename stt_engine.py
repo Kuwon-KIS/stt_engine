@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
 """
-STT 모듈 - faster-whisper / OpenAI Whisper 자동 선택
-faster-whisper 우선 시도 → 실패 시 OpenAI Whisper로 폴백
+STT 모듈 - 3가지 백엔드 자동 선택
+
+우선순위:
+1. faster-whisper + CTranslate2 (가장 빠름, 권장)
+2. transformers WhisperForConditionalGeneration (HF 모델 직접 지원)
+3. OpenAI Whisper (공식 모델만 지원, 대체용)
+
+지원 모델 형식:
+- CTranslate2: .tar.gz (변환됨)
+- transformers: Hugging Face 형식 (PyTorch/SafeTensors)
+- OpenAI Whisper: 공식 모델명만 (tiny, base, small, medium, large)
 """
 
 import os
@@ -9,12 +18,18 @@ from pathlib import Path
 from typing import Optional, Dict
 import tarfile
 
-# 두 가지 백엔드 시도
+# 세 가지 백엔드 시도
 try:
     from faster_whisper import WhisperModel
     FASTER_WHISPER_AVAILABLE = True
 except ImportError:
     FASTER_WHISPER_AVAILABLE = False
+
+try:
+    from transformers import WhisperProcessor, WhisperForConditionalGeneration
+    TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    TRANSFORMERS_AVAILABLE = False
 
 try:
     import openai_whisper as whisper
@@ -26,8 +41,13 @@ except ImportError:
     except ImportError:
         WHISPER_AVAILABLE = False
 
-if not FASTER_WHISPER_AVAILABLE and not WHISPER_AVAILABLE:
-    raise ImportError("faster-whisper 또는 openai-whisper(whisper) 패키지가 설치되어야 합니다")
+if not (FASTER_WHISPER_AVAILABLE or TRANSFORMERS_AVAILABLE or WHISPER_AVAILABLE):
+    raise ImportError(
+        "다음 중 최소 하나의 패키지가 필요합니다:\n"
+        "  1. faster-whisper + ctranslate2 (권장)\n"
+        "  2. transformers (HF 모델 지원)\n"
+        "  3. openai-whisper / whisper (공식 모델만 지원)"
+    )
 
 
 def diagnose_faster_whisper_model(model_path: str) -> dict:
@@ -264,11 +284,16 @@ class WhisperSTT:
         Args:
             model_path: 모델 경로 (예: "models")
             device: 사용할 디바이스 ('cpu', 'cuda', 또는 'auto')
-            compute_type: 계산 타입 (faster-whisper용, 'float32', 'float16', 'int8')
+            compute_type: 계산 타입 ('float32', 'float16', 'int8')
         
         Raises:
             FileNotFoundError: 모델을 찾을 수 없음
-            RuntimeError: 모델 로드 실패
+            RuntimeError: 모든 백엔드 로드 실패
+        
+        지원 모델 형식:
+        - CTranslate2: ctranslate2_model/ 폴더 (model.bin)
+        - transformers: PyTorch/SafeTensors (pytorch_model.bin 또는 model.safetensors)
+        - OpenAI Whisper: 공식 모델명만 (tiny, base, small, medium, large)
         """
         # 모델이 압축되어 있으면 자동 해제
         models_dir = str(Path(model_path).parent)
@@ -286,28 +311,49 @@ class WhisperSTT:
         self.compute_type = compute_type
         self.backend = None
         
-        print(f"\n📊 모델 로드 시작 (CTranslate2 + faster-whisper만 지원)")
+        print(f"\n📊 STT 모델 로드 시작")
         print(f"   모델 경로: {self.model_path}")
         print(f"   디바이스: {self.device}")
-        print(f"   백엔드: faster-whisper + CTranslate2 (OpenAI Whisper는 custom 모델 미지원)\n")
+        print(f"   사용 가능한 백엔드:")
+        print(f"     - faster-whisper: {FASTER_WHISPER_AVAILABLE}")
+        print(f"     - transformers: {TRANSFORMERS_AVAILABLE}")
+        print(f"     - openai-whisper: {WHISPER_AVAILABLE}\n")
         
-        # faster-whisper만 사용 (OpenAI Whisper는 large-v3-turbo 미지원)
+        # 1️⃣ faster-whisper 시도 (CTranslate2 모델, 가장 빠름)
         if FASTER_WHISPER_AVAILABLE:
             self._try_faster_whisper()
-        else:
+        
+        # 2️⃣ transformers 시도 (PyTorch/HF 모델)
+        if self.backend is None and TRANSFORMERS_AVAILABLE:
+            self._try_transformers()
+        
+        # 3️⃣ OpenAI Whisper 시도 (공식 모델만)
+        if self.backend is None and WHISPER_AVAILABLE:
+            self._try_whisper()
+        
+        # 모두 실패
+        if self.backend is None:
+            available = []
+            if FASTER_WHISPER_AVAILABLE:
+                available.append("faster-whisper")
+            if TRANSFORMERS_AVAILABLE:
+                available.append("transformers")
+            if WHISPER_AVAILABLE:
+                available.append("openai-whisper")
+            
             raise RuntimeError(
-                "❌ faster-whisper가 설치되지 않았습니다.\n\n"
-                "🔧 해결 방법:\n"
+                f"❌ 모든 백엔드 로드 실패 (사용 가능: {', '.join(available)})\n\n"
+                "🔧 진단 체크리스트:\n"
                 "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                "large-v3-turbo는 faster-whisper + CTranslate2만 지원합니다.\n"
-                "OpenAI Whisper는 공식 모델만 지원합니다.\n\n"
-                "설치:\n"
-                "  pip install 'faster-whisper>=1.2.0'\n"
-                "  pip install 'ctranslate2>=4.0'\n\n"
-                "모델 다운로드 및 변환:\n"
-                "  python download_model_hf.py"
+                f"1. 모델 경로: {self.model_path}\n"
+                f"2. 필요한 파일:\n"
+                f"   - CTranslate2: {self.model_path}/ctranslate2_model/model.bin\n"
+                f"   - PyTorch: {self.model_path}/pytorch_model.bin 또는 model.safetensors\n"
+                f"3. 모델 다운로드: python download_model_hf.py\n"
+                f"4. 로컬 캐시에서 복사: cp -r ~/.cache/huggingface/hub/models--openai--whisper-large-v3-turbo/snapshots/*/  {self.model_path}"
             )
         
+
         # faster-whisper 로드 실패하면 에러
         if self.backend is None:
             raise RuntimeError(
@@ -433,6 +479,189 @@ class WhisperSTT:
                 print(f"      file /app/models/openai_whisper-large-v3-turbo/ctranslate2_model/config.json")
 
     
+    def _try_transformers(self):
+        """
+        transformers WhisperForConditionalGeneration으로 모델 로드 시도
+        
+        특징:
+        - Hugging Face 모델 직접 지원 (PyTorch/SafeTensors)
+        - large-v3-turbo 포함 모든 HF Whisper 모델 지원
+        - GPU 가속 가능
+        - 더 느림 (faster-whisper 대비 2-3배)
+        
+        지원 파일:
+        - pytorch_model.bin (PyTorch 형식)
+        - model.safetensors (SafeTensors 형식, 더 빠름)
+        - config.json, tokenizer.json 등
+        """
+        try:
+            print(f"🔄 transformers로 모델 로드 시도... (디바이스: {self.device})")
+            
+            from transformers import WhisperProcessor, WhisperForConditionalGeneration
+            import torch
+            
+            model_path = Path(self.model_path)
+            
+            # PyTorch 모델 파일 확인
+            has_pytorch = (model_path / "pytorch_model.bin").exists()
+            has_safetensors = (model_path / "model.safetensors").exists()
+            
+            if not (has_pytorch or has_safetensors):
+                print(f"   ⚠️  PyTorch 모델 파일 없음 (pytorch_model.bin 또는 model.safetensors 필요)")
+                return
+            
+            # 로컬 캐시에서 로드 (HF 허브 접근 방지)
+            processor = WhisperProcessor.from_pretrained(str(model_path), local_files_only=True)
+            model = WhisperForConditionalGeneration.from_pretrained(str(model_path), local_files_only=True)
+            
+            # GPU로 이동
+            if self.device == "cuda" and torch.cuda.is_available():
+                model = model.to(self.device)
+            
+            # 평가 모드
+            model.eval()
+            
+            self.backend = type('TransformersBackend', (), {
+                'processor': processor,
+                'model': model,
+                'device': self.device,
+                'transcribe': self._transcribe_with_transformers
+            })()
+            
+            print(f"   ✅ transformers 모델 로드 성공!")
+            print(f"      타입: WhisperForConditionalGeneration")
+            print(f"      파일: {'SafeTensors' if has_safetensors else 'PyTorch'}")
+            
+        except FileNotFoundError as e:
+            print(f"   ⚠️  로컬 캐시 실패: {e}")
+            print(f"      시도: Hugging Face 허브에서 다운로드...")
+            
+            try:
+                from transformers import WhisperProcessor, WhisperForConditionalGeneration
+                import torch
+                
+                processor = WhisperProcessor.from_pretrained("openai/whisper-large-v3-turbo")
+                model = WhisperForConditionalGeneration.from_pretrained("openai/whisper-large-v3-turbo")
+                
+                if self.device == "cuda" and torch.cuda.is_available():
+                    model = model.to(self.device)
+                
+                model.eval()
+                
+                self.backend = type('TransformersBackend', (), {
+                    'processor': processor,
+                    'model': model,
+                    'device': self.device,
+                    'transcribe': self._transcribe_with_transformers
+                })()
+                
+                print(f"   ✅ HF 허브에서 모델 로드 성공!")
+                
+            except Exception as e2:
+                print(f"   ❌ HF 허브 로드 실패: {type(e2).__name__}")
+                
+        except Exception as e:
+            print(f"   ❌ transformers 로드 실패: {type(e).__name__}")
+            print(f"      에러: {str(e)[:150]}")
+    
+    def _transcribe_with_transformers(self, audio_path: str, language: Optional[str] = None) -> Dict:
+        """
+        transformers를 사용한 음성 인식
+        """
+        import librosa
+        import torch
+        
+        try:
+            # 음성 로드
+            audio, sr = librosa.load(audio_path, sr=16000)
+            
+            # 프로세싱
+            input_features = self.backend.processor(audio, sampling_rate=16000, return_tensors="pt").input_features
+            
+            if self.device == "cuda":
+                input_features = input_features.to(self.device)
+            
+            # 추론
+            with torch.no_grad():
+                predicted_ids = self.backend.model.generate(input_features)
+            
+            # 디코딩
+            transcription = self.backend.processor.batch_decode(predicted_ids, skip_special_tokens=True)
+            
+            return {
+                "text": transcription[0] if transcription else "",
+                "language": language or "auto",
+                "backend": "transformers"
+            }
+        
+        except Exception as e:
+            return {
+                "text": "",
+                "error": f"transformers transcription failed: {e}",
+                "backend": "transformers"
+            }
+
+    
+    def _try_whisper(self):
+        """
+        OpenAI Whisper로 모델 로드 시도
+        
+        ⚠️ 공식 모델만 지원 (tiny, base, small, medium, large)
+        large-v3-turbo는 OpenAI 공식 모델이 아니므로 불가능합니다.
+        """
+        try:
+            print(f"🔄 OpenAI Whisper 시도... (공식 모델만 지원)")
+            
+            import whisper
+            
+            # OpenAI Whisper 지원 모델 확인
+            supported_models = whisper.available_models()
+            
+            model_path = Path(self.model_path)
+            model_name = model_path.name
+            
+            # large-v3-turbo는 OpenAI 공식 모델이 아님
+            if "turbo" in model_name.lower() or "v3-turbo" in model_name.lower():
+                print(f"   ⚠️  '{model_name}'은(는) OpenAI 공식 모델이 아님")
+                print(f"       지원 모델: {supported_models}")
+                return
+            
+            # 공식 모델인지 확인
+            if not any(m in model_name for m in ['tiny', 'base', 'small', 'medium', 'large']):
+                print(f"   ⚠️  '{model_name}'은(는) 공식 모델이 아님")
+                print(f"       지원 모델: {supported_models}")
+                return
+            
+            # 로드 시도
+            model = whisper.load_model("large", device=self.device)
+            
+            self.backend = type('WhisperBackend', (), {
+                'model': model,
+                'device': self.device,
+                'transcribe': self._transcribe_with_whisper
+            })()
+            
+            print(f"   ✅ OpenAI Whisper 모델 로드 성공! (large)")
+            
+        except Exception as e:
+            print(f"   ❌ OpenAI Whisper 로드 실패: {type(e).__name__}")
+    
+    def _transcribe_with_whisper(self, audio_path: str, language: Optional[str] = None) -> Dict:
+        """OpenAI Whisper를 사용한 음성 인식"""
+        try:
+            result = self.backend.model.transcribe(audio_path, language=language)
+            return {
+                "text": result.get("text", ""),
+                "language": result.get("language", ""),
+                "backend": "whisper"
+            }
+        except Exception as e:
+            return {
+                "text": "",
+                "error": f"whisper transcription failed: {e}",
+                "backend": "whisper"
+            }
+    
     @staticmethod
     def _explain_openai_whisper_limitations():
         """
@@ -457,8 +686,9 @@ class WhisperSTT:
         print("\nHugging Face 커스텀 모델 미지원:")
         print("  ✗ large-v3, large-v3-turbo (이 프로젝트의 모델)")
         print("  ✗ 로컬 PyTorch 모델 직접 로드 불가")
-        print("\n💡 솔루션: faster-whisper + CTranslate2 사용")
+        print("\n💡 솔루션: faster-whisper + CTranslate2 또는 transformers 사용")
         print("━" * 60)
+
     
     @staticmethod
     def _is_cuda_available() -> bool:
@@ -488,13 +718,29 @@ class WhisperSTT:
             if not Path(audio_path).exists():
                 raise FileNotFoundError(f"파일을 찾을 수 없습니다: {audio_path}")
             
-            # 백엔드별 처리
-            if self.backend == "faster-whisper":
+            # 백엔드 타입 확인 및 처리
+            if self.backend is None:
+                raise RuntimeError("모델이 로드되지 않았습니다")
+            
+            # 백엔드 타입에 따라 처리
+            backend_type = type(self.backend).__name__
+            
+            if backend_type == 'WhisperModel':
+                # faster-whisper
                 return self._transcribe_faster_whisper(audio_path, language, **kwargs)
-            elif self.backend == "whisper":
-                return self._transcribe_whisper(audio_path, language, **kwargs)
+            elif backend_type == 'TransformersBackend':
+                # transformers
+                return self._transcribe_with_transformers(audio_path, language)
+            elif backend_type == 'WhisperBackend':
+                # OpenAI Whisper
+                return self._transcribe_with_whisper(audio_path, language)
             else:
-                raise RuntimeError(f"알 수 없는 백엔드: {self.backend}")
+                # 제네릭 백엔드 객체 처리
+                if hasattr(self.backend, 'transcribe'):
+                    result = self.backend.transcribe(audio_path, language)
+                    return result
+                else:
+                    raise RuntimeError(f"지원하지 않는 백엔드: {backend_type}")
         
         except Exception as e:
             print(f"❌ 오류: {e}")
@@ -505,8 +751,8 @@ class WhisperSTT:
             }
     
     def _transcribe_faster_whisper(self, audio_path: str, language: Optional[str] = None, **kwargs) -> Dict:
-        """faster-whisper로 변환"""
-        segments, info = self.model.transcribe(
+        """faster-whisper (WhisperModel)로 변환"""
+        segments, info = self.backend.transcribe(
             audio_path,
             language=language,
             beam_size=kwargs.get("beam_size", 5),

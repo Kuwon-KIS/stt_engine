@@ -2,11 +2,15 @@
 """
 FastAPI를 사용한 STT(Speech-to-Text) 서버
 
-백엔드: faster-whisper + CTranslate2 (유일하게 지원되는 조합)
-- 모델 형식: CTranslate2 (model.bin)
-- 지원 모델: Hugging Face 커스텀 모델 (large-v3-turbo 포함)
+지원 백엔드 (우선순위):
+1. faster-whisper + CTranslate2 (가장 빠름, 권장)
+2. transformers WhisperForConditionalGeneration (HF 모델 직접 지원)
+3. OpenAI Whisper (공식 모델만 지원)
 
-참고: OpenAI Whisper는 공식 모델만 지원하므로 large-v3-turbo 사용 불가
+모델 형식:
+- CTranslate2: model.bin (매우 빠름)
+- PyTorch/SafeTensors: pytorch_model.bin, model.safetensors (더 느림)
+- OpenAI Whisper: 공식 모델명만 (tiny, base, small, medium, large)
 """
 
 from fastapi import FastAPI, File, UploadFile, HTTPException
@@ -26,7 +30,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="Whisper STT API",
     version="1.0.0",
-    description="faster-whisper + CTranslate2를 사용한 음성 인식 API"
+    description="다중 백엔드 STT API (faster-whisper, transformers, OpenAI Whisper)"
 )
 
 # 모델 초기화
@@ -36,41 +40,48 @@ try:
     device = os.getenv("STT_DEVICE", "cpu")
     compute_type = "float16" if device == "cuda" else "float32"  # CPU는 float32가 더 안정적
     
-    logger.info(f"STT 모델 로드 시작")
+    logger.info(f"STT 모델 로드 시작 (다중 백엔드)")
     logger.info(f"  모델: openai_whisper-large-v3-turbo")
-    logger.info(f"  백엔드: faster-whisper + CTranslate2")
     logger.info(f"  경로: {model_path}")
     logger.info(f"  디바이스: {device}")
     logger.info(f"  Compute Type: {compute_type}")
+    logger.info(f"  우선순위:")
+    logger.info(f"    1. faster-whisper (CTranslate2)")
+    logger.info(f"    2. transformers (PyTorch/SafeTensors)")
+    logger.info(f"    3. OpenAI Whisper (공식 모델만)")
     
     stt = WhisperSTT(
         str(model_path),
         device=device,
         compute_type=compute_type
     )
-    logger.info(f"✅ STT 모델 로드 완료 (Backend: {stt.backend})")
-    print(f"✅ STT 모델 로드 완료 (Device: {device}, Backend: {stt.backend})")
+    
+    # 로드된 백엔드 타입 확인
+    backend_type = type(stt.backend).__name__
+    logger.info(f"✅ STT 모델 로드 완료")
+    logger.info(f"   Backend Type: {backend_type}")
+    logger.info(f"   Device: {device}")
+    print(f"✅ STT 모델 로드 완료 (Backend: {backend_type}, Device: {device})")
     
 except FileNotFoundError as e:
     logger.error(f"❌ 모델 파일을 찾을 수 없음: {e}")
     logger.error(f"  확인 사항:")
     logger.error(f"  1. 모델이 다운로드되었는가? (python3 download_model_hf.py)")
-    logger.error(f"  2. models/openai_whisper-large-v3-turbo/ 폴더가 존재하는가?")
-    logger.error(f"  3. ctranslate2_model/model.bin이 1.5GB 이상인가?")
-    logger.error(f"  4. Docker 실행 시 -v 옵션으로 마운트했는가?")
+    logger.error(f"  2. 필요한 파일들:")
+    logger.error(f"     - CTranslate2: models/openai_whisper-large-v3-turbo/ctranslate2_model/model.bin")
+    logger.error(f"     - PyTorch: models/openai_whisper-large-v3-turbo/pytorch_model.bin 또는 model.safetensors")
+    logger.error(f"  3. Docker 실행 시 마운트:")
     logger.error(f"     docker run -v /path/to/models:/app/models ...")
     print(f"❌ 모델 로드 실패: {e}")
     stt = None
     
 except RuntimeError as e:
-    logger.error(f"❌ 모델 로드 실패 (CTranslate2 문제): {e}")
+    logger.error(f"❌ 모든 백엔드 로드 실패: {e}")
     logger.error(f"  해결 방법:")
-    logger.error(f"  1. EC2에서 모델 삭제 및 재다운로드:")
-    logger.error(f"     rm -rf models/openai_whisper-large-v3-turbo build/output/*")
-    logger.error(f"     python3 download_model_hf.py  (30-45분)")
-    logger.error(f"  2. 모델 파일 검증:")
-    logger.error(f"     ls -lh models/openai_whisper-large-v3-turbo/ctranslate2_model/")
-    logger.error(f"     필수: model.bin (1.5GB+), config.json (2.2KB), vocabulary.json")
+    logger.error(f"  1. EC2에서 모델 다운로드 및 변환:")
+    logger.error(f"     python3 download_model_hf.py")
+    logger.error(f"  2. 변환된 모델 확인:")
+    logger.error(f"     ls -lh models/openai_whisper-large-v3-turbo/")
     logger.error(f"  3. Docker 이미지 재빌드:")
     logger.error(f"     bash scripts/build-server-image.sh")
     print(f"❌ 모델 로드 실패: {e}")
