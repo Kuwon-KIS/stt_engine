@@ -33,44 +33,81 @@ if not FASTER_WHISPER_AVAILABLE and not WHISPER_AVAILABLE:
 def validate_faster_whisper_model(model_path: str) -> bool:
     """
     faster-whisper 모델 유효성 검증 (CTranslate2 모델 형식)
-    필수 파일: model.bin, config.json
+    faster-whisper는 model_path 내에서 ctranslate2_model 폴더를 찾습니다.
+    필수 폴더: model_path/ctranslate2_model/
+    필수 파일: model.bin, config.json, vocabulary.json, tokenizer.json 등
     
     Args:
-        model_path: 모델 폴더 경로
+        model_path: 모델 폴더 경로 (예: /app/models/openai_whisper-large-v3-turbo)
     
     Returns:
         True if 유효, False otherwise
     """
     model_dir = Path(model_path)
+    ct_model_dir = model_dir / "ctranslate2_model"
     
-    required_files = ["model.bin", "config.json"]
-    missing_files = []
+    print(f"   📂 faster-whisper 모델 검증: {model_path}")
     
-    for file in required_files:
-        file_path = model_dir / file
-        if not file_path.exists():
-            missing_files.append(file)
-    
-    if missing_files:
-        print(f"   ⚠️  faster-whisper 모델 파일 누락: {', '.join(missing_files)}")
+    # ctranslate2_model 폴더 확인
+    if not ct_model_dir.exists():
+        print(f"   ⚠️  ctranslate2_model 폴더 없음: {ct_model_dir}")
         return False
     
-    print(f"   ✓ faster-whisper 모델 구조 유효 (model.bin, config.json 확인됨)")
+    # ctranslate2_model 내 파일 확인
+    ct_files = list(ct_model_dir.glob("*"))
+    if not ct_files:
+        print(f"   ⚠️  ctranslate2_model 폴더가 비어있음: {ct_model_dir}")
+        return False
+    
+    print(f"   ✓ ctranslate2_model 폴더 있음 ({len(ct_files)}개 파일)")
+    
+    # 필수 파일 확인 (너무 엄격하지 않게)
+    critical_files = ["model.bin"]
+    missing_critical = []
+    
+    for file in critical_files:
+        file_path = ct_model_dir / file
+        if not file_path.exists():
+            missing_critical.append(file)
+    
+    if missing_critical:
+        print(f"   ⚠️  필수 파일 누락: {', '.join(missing_critical)}")
+        return False
+    
+    # model.bin 파일 크기 확인 (손상 여부 판단)
+    model_bin = ct_model_dir / "model.bin"
+    size_mb = model_bin.stat().st_size / (1024 * 1024)
+    print(f"   ✓ model.bin 있음 ({size_mb:.1f} MB)")
+    
+    if size_mb < 100:  # 100MB 미만이면 손상 가능성
+        print(f"   ⚠️  경고: model.bin 파일이 너무 작음 ({size_mb:.1f} MB) - 손상되었을 수 있음")
+        return False
+    
+    print(f"   ✓ faster-whisper 모델 구조 유효")
     return True
 
 
 def validate_whisper_model(model_path: str) -> bool:
     """
     OpenAI Whisper 모델 유효성 검증 (PyTorch 모델 형식)
-    필수 파일: pytorch_model.bin 또는 model.safetensors, config.json, vocab.json
+    
+    주의: OpenAI Whisper는 공식적으로 다음 모델만 지원합니다:
+    - tiny, base, small, medium, large
+    
+    "large-v3", "large-v3-turbo" 같은 변형은 huggingface에서만 가능하므로
+    운영서버 오프라인 환경에서는 사용 불가합니다.
     
     Args:
-        model_path: 모델 폴더 경로
+        model_path: 모델 폴더 경로 (참고용)
     
     Returns:
         True if 유효, False otherwise
     """
     model_dir = Path(model_path)
+    
+    if not model_dir.exists():
+        print(f"   ⚠️  모델 경로를 찾을 수 없음: {model_path}")
+        return False
     
     # pytorch_model.bin 또는 model.safetensors 중 하나 필요
     has_pytorch = (model_dir / "pytorch_model.bin").exists()
@@ -80,8 +117,8 @@ def validate_whisper_model(model_path: str) -> bool:
         print(f"   ⚠️  Whisper 모델 파일 누락: pytorch_model.bin 또는 model.safetensors 필요")
         return False
     
-    # config.json, vocab.json 필수
-    required_files = ["config.json", "vocab.json"]
+    # config.json, tokens.json 필수
+    required_files = ["config.json", "tokenizer.json"]
     missing_files = []
     
     for file in required_files:
@@ -93,7 +130,7 @@ def validate_whisper_model(model_path: str) -> bool:
         print(f"   ⚠️  Whisper 모델 파일 누락: {', '.join(missing_files)}")
         return False
     
-    print(f"   ✓ Whisper 모델 구조 유효 (pytorch_model.bin/safetensors, config.json, vocab.json 확인됨)")
+    print(f"   ✓ Whisper 모델 구조 유효")
     return True
 
 
@@ -195,13 +232,20 @@ class WhisperSTT:
         # 둘 다 실패하면 에러
         if self.backend is None:
             raise RuntimeError(
-                "모델 로드 실패: faster-whisper와 whisper 모두 실패\n"
-                "확인 사항:\n"
-                f"1. 모델 경로 확인: {self.model_path}\n"
-                "2. 모델 구조 확인:\n"
-                "   - faster-whisper용: model.bin, config.json\n"
-                "   - OpenAI Whisper용: pytorch_model.bin/safetensors, config.json, vocab.json\n"
-                "3. 모델 파일이 손상되지 않았는지 확인"
+                "모델 로드 실패: 두 백엔드 모두 실패\n\n"
+                "🔧 운영서버(오프라인) 배포 체크리스트:\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                "1. faster-whisper 모델 (추천):\n"
+                f"   경로: {self.model_path}\n"
+                f"   필수: {self.model_path}/ctranslate2_model/model.bin\n"
+                "   검증: 모델 파일 크기 100MB 이상인지 확인\n\n"
+                "2. OpenAI Whisper (대체):\n"
+                "   지원 모델: tiny, base, small, medium, large\n"
+                "   주의: large-v3-turbo는 운영서버에서 불가능\n"
+                "   대신 'large' 모델을 사용합니다 (자동 다운로드)\n\n"
+                "3. 모델 파일 확인:\n"
+                f"   faster-whisper: find {self.model_path} -name 'model.bin'\n"
+                f"   파일이 없거나 100MB 미만이면 손상됨"
             )
     
     def _try_faster_whisper(self):
@@ -236,37 +280,40 @@ class WhisperSTT:
             print(f"   → OpenAI Whisper로 폴백 시도...")
     
     def _try_whisper(self):
-        """OpenAI Whisper로 모델 로드 시도 (로컬 모델만 사용)"""
+        """OpenAI Whisper로 모델 로드 시도 (오프라인 환경 고려)"""
         try:
             print(f"🔄 OpenAI Whisper 모델 로드 시도... (디바이스: {self.device})")
             
             model_path = Path(self.model_path)
             
-            # 로컬 모델 경로 존재 확인
-            if not model_path.exists():
-                raise FileNotFoundError(f"모델 경로를 찾을 수 없음: {self.model_path}")
+            # 운영서버 오프라인 환경: 로컬 모델 경로 지원 없음
+            # OpenAI Whisper는 공식적으로 다음 모델만 지원:
+            # tiny, base, small, medium, large
+            #
+            # "large-v3-turbo" 같은 커스텀 모델은 huggingface에서만 사용 가능합니다.
+            # 따라서 운영서버에서는 다운로드 가능한 공식 모델을 사용해야 합니다.
             
-            # 모델 구조 먼저 검증
-            if not validate_whisper_model(str(model_path)):
-                print(f"   → Whisper 모델 구조 검증 실패")
-                return
+            available_models = ["tiny", "base", "small", "medium", "large"]
             
-            # 로컬 모델 경로를 직접 사용
-            # openai-whisper는 로컬 경로를 모델 이름으로 인식 가능
-            print(f"   📂 로컬 모델 로드: {self.model_path}")
+            print(f"   📝 OpenAI Whisper 공식 지원 모델: {', '.join(available_models)}")
+            print(f"   ⚠️  주의: large-v3-turbo 같은 커스텀 모델은 운영서버에서 지원되지 않습니다")
+            print(f"   → 대신 'large' 모델을 사용하려고 시도합니다")
             
+            # 공식 모델 'large' 사용
             self.model = whisper.load_model(
-                str(model_path),
+                "large",
                 device=self.device,
                 in_memory=False,
-                download_root=None  # 🔒 다운로드 방지
+                download_root=None
             )
             
             self.backend = "whisper"
-            print(f"✅ OpenAI Whisper 모델 로드 성공")
+            print(f"✅ OpenAI Whisper 모델 로드 성공 (모델: large)")
             
         except FileNotFoundError as e:
             print(f"❌ OpenAI Whisper: 모델을 찾을 수 없음 - {e}")
+            print(f"   💡 팁: 운영서버에서 커스텀 모델(large-v3-turbo)을 사용하려면")
+            print(f"        모델을 Docker 이미지에 포함시켜야 합니다")
         except Exception as e:
             print(f"❌ OpenAI Whisper 로드 실패: {e}")
     
