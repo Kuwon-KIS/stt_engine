@@ -570,8 +570,32 @@ else:
                 with open(vocab_json, 'r') as f:
                     vocab_data = json.load(f)
                 vocab_size = vocab_json.stat().st_size
-                vocab_count = len(vocab_data) if isinstance(vocab_data, dict) else 0
-                print(f"   ✓ vocabulary.json 유효 ({vocab_size} bytes, {vocab_count} tokens)")
+                # ★ 수정: dict와 list 모두 지원
+                vocab_count = len(vocab_data) if isinstance(vocab_data, (dict, list)) else 0
+                
+                # ★ 핵심: vocabulary.json이 비어있으면 안 됨!
+                if vocab_count == 0:
+                    print(f"   ❌ vocabulary.json이 비어있습니다! ({vocab_size} bytes, 0 tokens)")
+                    print()
+                    print("   [vocabulary.json 파일 내용]")
+                    with open(vocab_json, 'r') as f:
+                        content = f.read()[:500]  # 처음 500자
+                        print(f"   {content}")
+                    print()
+                    print_error(f"❌ CTranslate2 변환 실패: vocabulary.json에 데이터가 없습니다!")
+                    print()
+                    print("   원인 분석:")
+                    print("   1. CTranslate2 변환이 불완전했을 수 있습니다")
+                    print("   2. Whisper 모델의 특정 버전 호환성 문제")
+                    print("   3. 토크나이저 처리 오류")
+                    print()
+                    print("   해결책:")
+                    print(f"   1. CTranslate2 버전 확인: conda list | grep ctranslate2")
+                    print(f"   2. 모델 재생성: rm -rf {output_dir} && python download_model_hf.py")
+                    print()
+                    sys.exit(1)
+                else:
+                    print(f"   ✓ vocabulary.json 유효 ({vocab_size} bytes, {vocab_count} tokens)")
             except Exception as e:
                 print(f"   ❌ vocabulary.json 오류: {e}")
         else:
@@ -598,71 +622,59 @@ else:
         print(f"   1. 디렉토리 삭제: rm -rf {output_dir}")
         print("   2. 다시 실행: python download_model_hf.py")
         sys.exit(1)
-        
-        # model.bin 준비 (상대 경로 심링크 또는 카피)
-        # 중요: 상대 경로를 사용하여 Docker(/app/models)와 운영 서버(/data/models) 모두 호환
-        print()
-        print("⏳ model.bin 파일 준비 중...")
-        
-        model_bin_link = model_specific_dir / "model.bin"
-        model_bin_created = False
-        
-        if bin_files:
-            model_bin_src = bin_files[0]
-            
-            # 기존 파일 정리
-            if model_bin_link.exists() or model_bin_link.is_symlink():
-                try:
-                    model_bin_link.unlink()
-                except Exception as e:
-                    print(f"⚠️  기존 파일 삭제 실패: {e}")
-            
-            # 상대 경로 심링크 생성 시도
-            try:
-                # 상대 경로: ctranslate2_model 디렉토리 안의 bin 파일을 부모 디렉토리에서 참조
-                relative_path = model_bin_src.relative_to(model_specific_dir)
-                model_bin_link.symlink_to(relative_path)
-                print_success("✅ model.bin 상대 경로 심링크 생성 완료")
-                print(f"   소스: {relative_path}")
-                print(f"   대상: model.bin")
-                print(f"   (Docker: /app/models → 운영: /data/models에서도 작동)")
-                model_bin_created = True
-            except Exception as e:
-                # 심링크 실패 시 파일 복사 (Windows/권한 문제 해결)
-                print(f"⚠️  심링크 생성 실패: {e}")
-                print("   파일 복사로 대체합니다...")
-                try:
-                    import shutil
-                    shutil.copy2(model_bin_src, model_bin_link)
-                    print_success("✅ model.bin 파일 복사 완료")
-                    print(f"   소스: {model_bin_src.name}")
-                    print(f"   대상: model.bin")
-                    model_bin_created = True
-                except Exception as copy_e:
-                    print_error(f"❌ model.bin 파일 생성 실패: {copy_e}\n다시 다운로드해주세요:\n  rm -rf {model_specific_dir}\n  python download_model_hf.py")
-        else:
-            print_error("❌ 변환된 바이너리 파일을 찾을 수 없습니다")
-        
-        # model.bin 생성 확인
-        if not model_bin_created:
-            print_error(f"❌ model.bin 파일을 생성할 수 없습니다")
-        
-        if not model_bin_link.exists():
-            print_error(f"❌ model.bin 파일이 생성되지 않았습니다: {model_bin_link}")
     
+    # model.bin 준비 (상대 경로 심링크 또는 카피)
+    # 중요: 상대 경로를 사용하여 Docker(/app/models)와 운영 서버(/data/models) 모두 호환
+    print()
+    print("⏳ model.bin 파일 준비 중...")
+    
+    model_bin_link = model_specific_dir / "model.bin"
+    model_bin_created = False
+    
+    bin_files = list(output_dir.glob("*.bin"))
+    
+    if bin_files:
+        model_bin_src = bin_files[0]
+        
+        # 기존 파일 정리
+        if model_bin_link.exists() or model_bin_link.is_symlink():
+            try:
+                model_bin_link.unlink()
+            except Exception as e:
+                print(f"⚠️  기존 파일 삭제 실패: {e}")
+        
+        # 상대 경로 심링크 생성 시도
+        try:
+            # 상대 경로: ctranslate2_model 디렉토리 안의 bin 파일을 부모 디렉토리에서 참조
+            relative_path = model_bin_src.relative_to(model_specific_dir)
+            model_bin_link.symlink_to(relative_path)
+            print_success("✅ model.bin 상대 경로 심링크 생성 완료")
+            print(f"   소스: {relative_path}")
+            print(f"   대상: model.bin")
+            print(f"   (Docker: /app/models → 운영: /data/models에서도 작동)")
+            model_bin_created = True
+        except Exception as e:
+            # 심링크 실패 시 파일 복사 (Windows/권한 문제 해결)
+            print(f"⚠️  심링크 생성 실패: {e}")
+            print("   파일 복사로 대체합니다...")
+            try:
+                import shutil
+                shutil.copy2(model_bin_src, model_bin_link)
+                print_success("✅ model.bin 파일 복사 완료")
+                print(f"   소스: {model_bin_src.name}")
+                print(f"   대상: model.bin")
+                model_bin_created = True
+            except Exception as copy_e:
+                print_error(f"❌ model.bin 파일 생성 실패: {copy_e}\n다시 다운로드해주세요:\n  rm -rf {model_specific_dir}\n  python download_model_hf.py")
     else:
-        print("⚠️  CTranslate2 변환 실패")
-        print()
-        print("💡 해결 방법:")
-        print("   1. 패키지 버전 확인:")
-        print("      pip list | grep -E 'ctranslate2|faster-whisper'")
-        print()
-        print("   2. 패키지 업그레이드:")
-        print("      pip install --upgrade ctranslate2 faster-whisper transformers")
-        print()
-        print("   3. 수동 변환 시도:")
-        print(f"      ct2-transformers-converter --model openai/whisper-large-v3-turbo \\")
-        print(f"        --output_dir {output_dir} --force")
+        print_error("❌ 변환된 바이너리 파일을 찾을 수 없습니다")
+    
+    # model.bin 생성 확인
+    if not model_bin_created:
+        print_error(f"❌ model.bin 파일을 생성할 수 없습니다")
+    
+    if not model_bin_link.exists():
+        print_error(f"❌ model.bin 파일이 생성되지 않았습니다: {model_bin_link}")
 
 # ============================================================================
 # Step 5: 모델 파일 압축 (tar.gz) - 조건부
