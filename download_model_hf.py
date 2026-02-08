@@ -189,14 +189,14 @@ try:
         try:
             print(f"⏳ 다운로드 시도 {attempt}/{MAX_RETRIES}...")
             
+            # snapshot_download 최신 API (deprecated 인자 제거)
+            # - resume_download: deprecated (항상 resume)
+            # - local_dir_use_symlinks: deprecated (symlink 미사용)
+            # - timeout: 지원하지 않음
             model_path = snapshot_download(
                 repo_id=MODEL_REPO,
                 cache_dir=None,
-                local_dir=str(model_specific_dir),
-                local_dir_use_symlinks=False,
-                resume_download=True,
-                force_download=False,
-                timeout=300  # 5분 타임아웃
+                local_dir=str(model_specific_dir)
             )
             
             print_success(f"✅ 다운로드 완료 (시도 {attempt})")
