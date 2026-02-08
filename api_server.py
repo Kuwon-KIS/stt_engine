@@ -98,10 +98,16 @@ async def health():
     """헬스 체크"""
     if stt is None:
         return {"status": "error", "message": "STT 모델을 로드할 수 없음"}
+    
+    # 백엔드 타입 확인
+    backend_type = type(stt.backend).__name__ if stt.backend else "None"
+    
     return {
         "status": "ok",
         "version": "1.0.0",
-        "backend": stt.backend
+        "backend": backend_type,
+        "model": "openai_whisper-large-v3-turbo",
+        "device": stt.device
     }
 
 
