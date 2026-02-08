@@ -5,6 +5,11 @@
 ```
 scripts/
 ├── README.md                    # 이 파일
+│
+├── 🆕 EC2 배포 (권장!)
+│   ├── ec2_prepare_model.sh     # 1️⃣ 모델 다운로드 & 준비 (10-20분)
+│   └── build-ec2-engine-image.sh # 2️⃣ Docker 이미지 빌드 (5-10분)
+│
 ├── models/                      # 🆕 모델 관리 스크립트
 │   ├── download/               # 모델 다운로드
 │   │   ├── download_model.py
@@ -29,7 +34,6 @@ scripts/
 │   ├── docker_model_fix_analysis.py
 │   └── compress_model.py
 │
-├── build-engine-image.sh        # ⭐ Docker 이미지 빌드 (메인)
 ├── setup.sh                     # 초기 설정 스크립트
 ├── download-model.sh            # 모델 다운로드 (레거시)
 ├── migrate-to-gpu-server.sh     # GPU 서버 마이그레이션
@@ -49,12 +53,86 @@ scripts/
 
 ## 메인 스크립트
 
-### ⭐ build-engine-image.sh (필수)
-**목적**: STT Engine Docker 이미지 빌드  
-**사용처**: macOS/Linux에서 Docker 이미지 생성
+### 🆕 EC2 배포 (권장!)
+
+#### 1️⃣ ec2_prepare_model.sh
+**목적**: EC2에서 STT 모델 다운로드 및 준비  
+**권장 대상**: EC2 인스턴스 초기 설정
 
 ```bash
-bash scripts/build-engine-image.sh
+bash scripts/ec2_prepare_model.sh
+```
+
+**기능**:
+- Python 3.11 환경 확인
+- 필수 패키지 검증 (huggingface-hub, faster-whisper, ctranslate2)
+- Whisper 모델 Hugging Face에서 다운로드
+- CTranslate2 포맷 변환 (model.bin 생성)
+- 상대 경로 심링크 자동 생성
+- 모델 로드 테스트
+
+**옵션**:
+```bash
+bash scripts/ec2_prepare_model.sh --skip-test      # 테스트 스킵
+bash scripts/ec2_prepare_model.sh --skip-compress  # 압축 스킵
+bash scripts/ec2_prepare_model.sh --no-convert     # 변환 스킵
+```
+
+**시간**: 10-20분  
+**결과**: `models/openai_whisper-large-v3-turbo/` (완전 준비됨)
+
+---
+
+#### 2️⃣ build-ec2-engine-image.sh
+**목적**: STT Engine Docker 이미지 빌드  
+**권장 대상**: `ec2_prepare_model.sh` 이후 실행
+
+```bash
+bash scripts/build-ec2-engine-image.sh
+```
+
+**기능**:
+- Docker 이미지 자동 빌드
+- 오프라인 모드 지원
+- tar 파일로 저장 (build/output/)
+
+**시간**: 5-10분  
+**결과**: `build/output/stt-engine-linux-x86_64.tar` (1.2GB)
+
+---
+
+### EC2 배포 완전 가이드
+
+```bash
+# EC2 인스턴스에서 다음을 순서대로 실행:
+
+# 1단계: 모델 준비 (10-20분)
+bash scripts/ec2_prepare_model.sh
+
+# 2단계: Docker 이미지 빌드 (5-10분)
+bash scripts/build-ec2-engine-image.sh
+
+# 3단계: Docker 실행
+docker run -p 8003:8003 -v $(pwd)/models:/app/models stt-engine:latest
+
+# 4단계: 다른 터미널에서 테스트
+curl -X POST http://localhost:8003/transcribe -F "file=@audio/samples/short_0.5s.wav"
+```
+
+**특징:**
+- ✅ 상대 경로 심링크로 Docker/운영 경로 모두 호환
+- ✅ 자동 진단 및 복구 기능 포함
+- ✅ Python 3.11 검증
+- ✅ 원클릭 배포
+
+---
+
+### ⭐ build-ec2-engine-image.sh (독립 실행 가능)
+**목적**: STT Engine Docker 이미지 빌드  
+**사용처**: 이미 모델이 준비된 환경에서 이미지만 빌드
+
+```bash
+bash scripts/build-ec2-engine-image.sh
 ```
 
 **기능**:

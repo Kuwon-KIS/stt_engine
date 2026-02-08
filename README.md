@@ -43,11 +43,35 @@ cd /home/user/stt_engine/deployment_package
 python3.11 api_server.py
 ```
 
-### 3️⃣ Docker 배포
+### 3️⃣ EC2 배포 (권장! ⭐)
+
+EC2 인스턴스에서 한 번에 모델 준비 + 엔진 빌드:
+
+```bash
+# EC2 접속
+ssh -i your-key.pem ec2-user@your-ec2-ip
+
+# 1단계: 모델 다운로드 및 준비 (10-20분)
+bash scripts/ec2_prepare_model.sh
+
+# 2단계: Docker 이미지 빌드 (5-10분)
+bash scripts/build-ec2-engine-image.sh
+
+# 3단계: 실행
+docker run -p 8003:8003 -v $(pwd)/models:/app/models stt-engine:latest
+```
+
+**특징:**
+- ✅ 상대 경로 심링크로 Docker/운영 경로 모두 호환
+- ✅ 자동 진단 및 복구 기능 포함
+- ✅ model.bin 파일 자동 생성
+- ✅ Python 3.11 검증
+
+### 4️⃣ Docker 배포 (로컬 빌드)
 
 ```bash
 # 로컬: Docker 이미지 빌드 (1.2GB)
-bash scripts/build-engine-image.sh
+bash scripts/build-ec2-engine-image.sh
 
 # 로컬: tar 파일로 저장됨 (build/output/)
 
@@ -86,7 +110,8 @@ stt_engine/
 │   └── ...                           # 기타 Dockerfile
 │
 ├── 🛠️  scripts/                       # 개발/빌드 스크립트
-│   ├── build-engine-image.sh         # Docker 이미지 빌드
+│   ├── ec2_prepare_model.sh          # 🆕 EC2 모델 준비 (권장)
+│   ├── build-ec2-engine-image.sh     # Docker 이미지 빌드 (EC2용)
 │   ├── setup.sh                      # 초기 설정
 │   ├── models/
 │   │   ├── download/                 # 🆕 모델 다운로드 (4개 스크립트)
@@ -124,8 +149,9 @@ stt_engine/
 
 | 방법 | 시간 | 권장 | 명령 |
 |------|------|------|------|
-| **오프라인** | 5-10분 | ⭐⭐⭐⭐⭐ | `cd deployment_package && ./deploy.sh` |
-| **Docker** | 15-30분 | ⭐⭐⭐ | `bash scripts/build-engine-image.sh` |
+| **EC2 (원클릭)** | 15-30분 | ⭐⭐⭐⭐⭐ | `bash scripts/ec2_prepare_model.sh && bash scripts/build-ec2-engine-image.sh` |
+| **오프라인** | 5-10분 | ⭐⭐⭐⭐ | `cd deployment_package && ./deploy.sh` |
+| **Docker** | 10-20분 | ⭐⭐⭐ | `bash scripts/build-ec2-engine-image.sh` |
 | **개발 환경** | 5분 | ⭐⭐⭐⭐ | `pip install -r requirements.txt` |
 
 ---
