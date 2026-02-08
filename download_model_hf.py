@@ -682,7 +682,7 @@ else:
 
 print_step("Step 6: 모델 로드 테스트")
 
-if should_skip_test:
+if not should_test:
     print("⏭️  모델 로드 테스트 스킵 (--skip-test 옵션 사용)")
     print()
 else:
