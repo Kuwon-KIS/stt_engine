@@ -767,6 +767,9 @@ else:
         print(f"   ✓ Model size: large-v3-turbo")
         print()
         
+        # ✅ 검증 성공 표시
+        validation_passed = True
+        
     except Exception as e:
         error_msg = str(e)
         print_error(f"❌ 모델 로드 실패: {error_msg}")
