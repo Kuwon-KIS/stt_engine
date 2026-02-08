@@ -691,7 +691,9 @@ else:
     print()
     
     # vocabulary.json 형식 검증 및 변환
-    vocab_json = model_specific_dir / "ctranslate2_model" / "vocabulary.json"
+    ct2_model_dir = model_specific_dir / "ctranslate2_model"
+    vocab_json = ct2_model_dir / "vocabulary.json"
+    
     if vocab_json.exists():
         print(f"📋 vocabulary.json 형식 검증 중...")
         try:
@@ -721,19 +723,40 @@ else:
             print_error(f"❌ vocabulary.json 형식 검증 실패: {e}")
             sys.exit(1)
         print()
+        
+        # Hugging Face tokenizer 파일을 ctranslate2_model/로 복사 (faster-whisper가 찾을 수 있도록)
+        print(f"📋 Hugging Face 토크나이저 파일 복사 중...")
+        tokenizer_files = [
+            "tokenizer.json",
+            "tokenizer_config.json",
+            "special_tokens_map.json",
+            "normalizer.json"
+        ]
+        
+        for tokenizer_file in tokenizer_files:
+            src_file = model_specific_dir / tokenizer_file
+            dst_file = ct2_model_dir / tokenizer_file
+            
+            if src_file.exists() and not dst_file.exists():
+                try:
+                    shutil.copy2(src_file, dst_file)
+                    print(f"   ✓ {tokenizer_file} 복사됨")
+                except Exception as e:
+                    print(f"   ⚠️  {tokenizer_file} 복사 실패: {e}")
+        print()
     
     try:
         from faster_whisper import WhisperModel
         
-        # faster-whisper가 Hugging Face 토크나이저를 로드하도록 상위 디렉토리 전달
-        # CTranslate2 모델은 ctranslate2_model/ 서브디렉토리에서 자동 감지
-        print(f"📁 모델 경로: {model_specific_dir}")
+        # CTranslate2 모델이 있는 서브디렉토리에서 로드
+        # faster-whisper가 tokenizer 파일을 이 디렉토리에서 찾음
+        print(f"📁 모델 경로: {ct2_model_dir}")
         print(f"🔍 로드 중...")
         
-        model = WhisperModel(str(model_specific_dir), device="cpu")
+        model = WhisperModel(str(ct2_model_dir), device="cpu")
         
         print_success("✅ faster-whisper 모델 로드 성공!")
-        print(f"   ✓ Model: WhisperModel (CTranslate2 + HF Tokenizer)")
+        print(f"   ✓ Model: WhisperModel (CTranslate2)")
         print(f"   ✓ Device: CPU")
         print(f"   ✓ vocabulary.json: 51,866 tokens 로드됨")
         print()
