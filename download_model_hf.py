@@ -690,6 +690,36 @@ else:
     print("   (이 단계는 1-2분 걸릴 수 있습니다)")
     print()
     
+    # vocabulary.json 형식 검증 및 변환
+    vocab_json = model_specific_dir / "ctranslate2_model" / "vocabulary.json"
+    if vocab_json.exists():
+        print(f"📋 vocabulary.json 형식 검증 중...")
+        try:
+            with open(vocab_json, 'r') as f:
+                vocab_data = json.load(f)
+            
+            # 형식 체크: list → dict 변환 필요한지 확인
+            if isinstance(vocab_data, list):
+                print(f"   ⚠️  vocabulary.json이 배열 형식입니다. dict로 변환합니다...")
+                # list → dict 변환: token을 key, index를 value로
+                vocab_dict = {token: idx for idx, token in enumerate(vocab_data)}
+                
+                # 파일 덮어쓰기
+                with open(vocab_json, 'w') as f:
+                    json.dump(vocab_dict, f, ensure_ascii=False, indent=2)
+                
+                print(f"   ✓ 변환 완료: {len(vocab_dict)} tokens")
+                vocab_data = vocab_dict
+            elif isinstance(vocab_data, dict):
+                print(f"   ✓ vocabulary.json이 dict 형식입니다 (OK)")
+            else:
+                print_error(f"❌ vocabulary.json의 형식이 예상하지 못한 형식입니다: {type(vocab_data)}")
+                sys.exit(1)
+        except Exception as e:
+            print_error(f"❌ vocabulary.json 형식 검증 실패: {e}")
+            sys.exit(1)
+        print()
+    
     try:
         from faster_whisper import WhisperModel
         
@@ -702,7 +732,7 @@ else:
         print_success("✅ faster-whisper 모델 로드 성공!")
         print(f"   ✓ Model: WhisperModel")
         print(f"   ✓ Device: CPU")
-        print(f"   ✓ vocabulary.json: 51,866 tokens 로드됨")
+        print(f"   ✓ vocabulary.json: 로드됨")
         print()
         
         # 모델 정보 출력
