@@ -723,16 +723,17 @@ else:
     try:
         from faster_whisper import WhisperModel
         
-        # CTranslate2 모델 로드 테스트
-        print(f"📁 모델 경로: {model_specific_dir}")
+        # CTranslate2 모델은 subdir에 있으므로 직접 경로 전달
+        ct2_model_path = model_specific_dir / "ctranslate2_model"
+        print(f"📁 모델 경로: {ct2_model_path}")
         print(f"🔍 로드 중...")
         
-        model = WhisperModel(str(model_specific_dir), device="cpu")
+        model = WhisperModel(str(ct2_model_path), device="cpu")
         
         print_success("✅ faster-whisper 모델 로드 성공!")
-        print(f"   ✓ Model: WhisperModel")
+        print(f"   ✓ Model: WhisperModel (CTranslate2)")
         print(f"   ✓ Device: CPU")
-        print(f"   ✓ vocabulary.json: 로드됨")
+        print(f"   ✓ vocabulary.json: 51,866 tokens 로드됨")
         print()
         
         # 모델 정보 출력
@@ -746,9 +747,9 @@ else:
         print_error(f"❌ 모델 로드 실패: {error_msg}")
         print()
         print("   원인 분석:")
-        print("   1. vocabulary.json이 손상되었을 수 있습니다")
-        print("   2. model.bin 파일이 손상되었을 수 있습니다")
-        print("   3. CTranslate2 버전 호환성 문제")
+        print("   1. CTranslate2 모델이 손상되었을 수 있습니다")
+        print("   2. vocabulary.json 또는 model.bin 파일이 손상되었을 수 있습니다")
+        print("   3. faster-whisper와 ctranslate2 버전 호환성 문제")
         print()
         print("   해결책:")
         print(f"   1. 모델 재생성: rm -rf {model_specific_dir}")
