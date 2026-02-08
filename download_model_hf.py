@@ -1,17 +1,29 @@
 #!/usr/bin/env python3
 """
-STT Engine 모델 준비 스크립트 (Complete)
+STT Engine 모델 준비 스크립트 (옵션 포함)
 
 목적:
   1. 기존 모델 파일 정리
   2. Hugging Face에서 openai/whisper-large-v3-turbo 모델 다운로드
-  3. CTranslate2 포맷 변환 (model.bin 생성)
-  4. 모델 파일 압축 (tar.gz)
+  3. CTranslate2 포맷 변환 (model.bin 생성) - 옵션
+  4. 모델 파일 압축 (tar.gz) - 옵션
   5. 서버 전송 준비
 
 사용:
   conda activate stt-py311
-  python download_model_hf.py
+  python download_model_hf.py [옵션]
+
+옵션:
+  --no-convert        CTranslate2 변환 스킵 (PyTorch 모델만 다운로드)
+  --skip-compress     모델 파일 압축 스킵
+  --skip-test         모델 로드 테스트 스킵
+  --help              도움말 출력
+
+예시:
+  python download_model_hf.py                 # 모든 단계 실행 (기본값, 권장)
+  python download_model_hf.py --no-convert    # CTranslate2 변환 스킵
+  python download_model_hf.py --skip-test     # 테스트 스킵
+  python download_model_hf.py --skip-compress # 압축 스킵
 
 ⚠️  패키지 버전 호환성:
   이 스크립트는 다음 버전과 호환성이 검증되었습니다:
@@ -28,8 +40,8 @@ import sys
 import ssl
 import shutil
 import subprocess
-import gzip
 import tarfile
+import argparse
 from pathlib import Path
 from datetime import datetime
 
@@ -44,8 +56,55 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 os.environ['HF_HUB_DISABLE_TELEMETRY'] = '1'
 
 # ============================================================================
-# faster-whisper 설치 확인
+# 명령줄 인수 처리
 # ============================================================================
+
+parser = argparse.ArgumentParser(
+    description='STT Engine 모델 준비 스크립트',
+    formatter_class=argparse.RawDescriptionHelpFormatter,
+    epilog="""
+예시:
+  python download_model_hf.py                 # 모든 단계 실행 (기본값, 권장)
+  python download_model_hf.py --no-convert    # CTranslate2 변환 스킵
+  python download_model_hf.py --skip-test     # 로드 테스트 스킵
+  python download_model_hf.py --skip-compress # 압축 스킵
+    """
+)
+parser.add_argument('--no-convert', action='store_true', 
+                    help='CTranslate2 변환 스킵 (PyTorch 모델만 다운로드)')
+parser.add_argument('--skip-compress', action='store_true',
+                    help='모델 파일 압축 스킵')
+parser.add_argument('--skip-test', action='store_true',
+                    help='모델 로드 테스트 스킵')
+
+args = parser.parse_args()
+
+# 옵션이 없으면 모든 단계 실행 (기본값)
+should_convert = not args.no_convert
+should_compress = not args.skip_compress
+should_test = not args.skip_test
+
+# ============================================================================
+# 유틸리티 함수
+# ============================================================================
+
+def print_header(msg):
+    print("\n" + "=" * 60)
+    print(msg)
+    print("=" * 60 + "\n")
+
+def print_step(msg):
+    print(f"\n📌 {msg}")
+
+def print_success(msg):
+    print(f"✅ {msg}")
+
+def print_error(msg):
+    print(f"❌ {msg}")
+    sys.exit(1)
+
+def print_warn(msg):
+    print(f"⚠️  {msg}")
 
 def check_and_install_faster_whisper():
     """faster-whisper 설치 여부 확인, 없으면 설치"""
@@ -69,38 +128,13 @@ def check_and_install_faster_whisper():
             print("수동 설치: pip install faster-whisper")
             return False
 
-def print_header(msg):
-    print("\n" + "=" * 60)
-    print(msg)
-    print("=" * 60 + "\n")
-
-def print_step(msg):
-    print(f"\n📌 {msg}")
-
-def print_success(msg):
-    print(f"✅ {msg}")
-
-def print_error(msg):
-    print(f"❌ {msg}")
-    sys.exit(1)
-
-def print_warn(msg):
-    print(f"⚠️  {msg}")
-
-print_header("🚀 STT Engine 모델 준비 (다운로드 + 변환 + 압축)")
-
 # ============================================================================
-# 사전 확인: faster-whisper 설치
+# 메인 스크립트 시작
 # ============================================================================
 
-print_step("사전 확인: 필수 패키지 확인")
+print_header("🚀 STT Engine 모델 준비 (다운로드 + 옵션 변환 + 압축)")
 
-if not check_and_install_faster_whisper():
-    print_error("faster-whisper 설치 필수")
-
-print_success("필수 패키지 확인 완료")
-
-# 모델 저장 경로 설정
+# 기본 경로 설정
 BASE_DIR = Path(__file__).parent.absolute()
 models_dir = BASE_DIR / "models"
 model_specific_dir = models_dir / "openai_whisper-large-v3-turbo"
@@ -108,6 +142,7 @@ model_specific_dir = models_dir / "openai_whisper-large-v3-turbo"
 print(f"📁 기본 경로: {BASE_DIR}")
 print(f"📁 모델 저장 경로: {models_dir}")
 print(f"📁 모델 특정 경로: {model_specific_dir}")
+print()
 
 # ============================================================================
 # Step 1: 기존 모델 파일 정리
@@ -123,7 +158,6 @@ if model_specific_dir.exists():
 else:
     print(f"기존 모델 디렉토리 없음 (신규 설치)")
 
-# 모델 디렉토리 생성
 models_dir.mkdir(parents=True, exist_ok=True)
 model_specific_dir.mkdir(parents=True, exist_ok=True)
 
@@ -138,17 +172,6 @@ print_step("Step 2: Hugging Face에서 모델 다운로드")
 try:
     from huggingface_hub import snapshot_download
     
-    # ========== SSL 검증 완전 비활성화 ==========
-    import requests
-    from requests.packages.urllib3.exceptions import InsecureRequestWarning
-    
-    # urllib3 경고 무시
-    requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
-    
-    # 환경 변수로도 비활성화
-    os.environ['REQUESTS_CA_BUNDLE'] = ''
-    os.environ['CURL_CA_BUNDLE'] = ''
-    
     MODEL_REPO = "openai/whisper-large-v3-turbo"
     
     print(f"📦 모델: {MODEL_REPO}")
@@ -160,16 +183,15 @@ try:
         repo_id=MODEL_REPO,
         cache_dir=None,
         local_dir=str(model_specific_dir),
-        local_dir_use_symlinks=False,  # 🔑 심링크 사용 안 함
-        resume_download=True,           # 중단된 다운로드 재개
-        force_download=False            # 이미 있으면 스킵
+        local_dir_use_symlinks=False,
+        resume_download=True,
+        force_download=False
     )
     
     print_success("모델 다운로드 완료")
     
 except ImportError:
     print_error("huggingface-hub이 설치되어 있지 않습니다. 설치: pip install huggingface-hub")
-    
 except Exception as e:
     print_error(f"다운로드 중 오류: {e}")
 
@@ -183,7 +205,6 @@ print(f"\n📁 다운로드된 파일:")
 if not any(model_specific_dir.iterdir()):
     print_error("모델 파일을 찾을 수 없습니다")
 
-# 필수 파일 확인
 REQUIRED_FILES = [
     "config.json",
     "model.safetensors",
@@ -212,202 +233,204 @@ print(f"\n📏 전체 크기: {total_size:.2f}MB")
 print_success("파일 검증 완료")
 
 # ============================================================================
-# Step 4: CTranslate2 포맷 변환 (model.bin 생성)
+# Step 4: CTranslate2 포맷 변환 (model.bin 생성) - 조건부
 # ============================================================================
 
 print_step("Step 4: CTranslate2 포맷 변환 (model.bin 생성)")
 
-print("⏳ PyTorch 모델을 CTranslate2 바이너리 포맷으로 변환 중...")
-print("   (이 단계는 5-15분 걸릴 수 있습니다)")
-print()
-
-output_dir = model_specific_dir / "ctranslate2_model"
-conversion_success = False
-
-# CTranslate2 CLI 도구로 변환 (Hugging Face 모델 ID 사용)
-try:
-    print("⏳ ct2-transformers-converter CLI 도구로 변환 중...")
-    print("   모델: openai/whisper-large-v3-turbo")
-    print(f"   출력: {output_dir}")
+if not should_convert:
+    print("⏭️  CTranslate2 변환 스킵 (--no-convert 옵션 사용)")
     print()
-    
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
-    # CLI 도구 실행
-    cmd = [
-        "conda", "run", "-n", "stt-py311",
-        "ct2-transformers-converter",
-        "--model", "openai/whisper-large-v3-turbo",
-        "--output_dir", str(output_dir),
-        "--force",
-        "--quantization", "int8"
-    ]
-    
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
-    
-    if result.returncode == 0:
-        print_success("✅ CTranslate2 모델 변환 완료!")
-        conversion_success = True
-    else:
-        # CLI 도구 실패 시 Python API로 재시도
-        print(f"⚠️  CLI 도구 실패, Python API로 재시도...")
-        print()
-        
-except Exception as e:
-    print(f"⚠️  CLI 도구 오류: {e}")
-    print("   Python API로 재시도...")
+    print("⚠️  주의: CTranslate2 모델 파일이 없어서 다음과 같이 작동합니다:")
+    print("   • faster-whisper 백엔드 사용 불가")
+    print("   • transformers 또는 OpenAI Whisper 백엔드로 폴백")
     print()
-
-# 파이썬 API 사용 (HF 모델 ID)
-if not conversion_success:
-    try:
-        from ctranslate2.converters.transformers import TransformersConverter
-        
-        print("⏳ Python API(TransformersConverter)로 변환 중...")
-        print("   모델: openai/whisper-large-v3-turbo (Hugging Face)")
-        print()
-        
-        # HF 모델 ID를 사용하여 변환
-        converter = TransformersConverter("openai/whisper-large-v3-turbo")
-        
-        # 안정적인 변환 파라미터
-        converter.convert(
-            output_dir=str(output_dir),
-            force=True,
-            # quantization은 제거 (호환성 문제 해결)
-        )
-        
-        print_success("✅ CTranslate2 모델 변환 완료!")
-        conversion_success = True
-        
-    except Exception as e:
-        error_msg = str(e)
-        if len(error_msg) > 300:
-            error_msg = error_msg[:300] + "..."
-        print(f"⚠️  변환 중 오류: {error_msg}")
-        print()
-
-# 변환 결과 확인
-print()
-if conversion_success and output_dir.exists():
-    bin_files = list(output_dir.glob("*.bin"))
-    config_files = list(output_dir.glob("*.json"))
-    
-    print("✅ 변환된 CTranslate2 모델 파일:")
-    
-    # 바이너리 파일
-    if bin_files:
-        total_size = 0
-        for bin_file in sorted(bin_files):
-            size = bin_file.stat().st_size / (1024**2)
-            total_size += size
-            print(f"   ✓ {bin_file.name} ({size:.2f}MB)")
-        print(f"\n   📏 합계: {total_size:.2f}MB")
-    
-    # 설정 파일
-    if config_files:
-        print("\n   ✓ 설정 파일:")
-        for cfg_file in sorted(config_files):
-            print(f"     - {cfg_file.name}")
-    
-    # model.bin 심링크 생성 (faster-whisper 호환성)
-    print()
-    print("⏳ 심링크 생성 중...")
-    
-    if bin_files:
-        model_bin_src = bin_files[0]
-        model_bin_link = model_specific_dir / "model.bin"
-        
-        if model_bin_link.exists() or model_bin_link.is_symlink():
-            model_bin_link.unlink()
-        
-        model_bin_link.symlink_to(model_bin_src)
-        print_success("✅ model.bin 심링크 생성 완료")
-        print(f"   소스: {model_bin_src.name}")
-        print(f"   대상: model.bin")
-    else:
-        print("⚠️  변환된 바이너리 파일을 찾을 수 없습니다")
-        print()
-        print(f"📁 변환 디렉토리 내용:")
-        if output_dir.exists():
-            for file in output_dir.iterdir():
-                size = file.stat().st_size / (1024**2) if file.is_file() else 0
-                print(f"   - {file.name} ({size:.2f}MB)" if file.is_file() else f"   - {file.name}/")
-    
+    conversion_success = False
 else:
-    print("⚠️  CTranslate2 변환 실패")
+    print("⏳ PyTorch 모델을 CTranslate2 바이너리 포맷으로 변환 중...")
+    print("   (이 단계는 5-15분 걸릴 수 있습니다)")
     print()
-    print("💡 해결 방법:")
-    print("   1. 패키지 버전 확인:")
-    print("      pip list | grep -E 'ctranslate2|faster-whisper'")
+
+    output_dir = model_specific_dir / "ctranslate2_model"
+    conversion_success = False
+
+    # CTranslate2 CLI 도구로 변환
+    try:
+        print("⏳ ct2-transformers-converter CLI 도구로 변환 중...")
+        print("   모델: openai/whisper-large-v3-turbo")
+        print(f"   출력: {output_dir}")
+        print()
+        
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        cmd = [
+            "conda", "run", "-n", "stt-py311",
+            "ct2-transformers-converter",
+            "--model", "openai/whisper-large-v3-turbo",
+            "--output_dir", str(output_dir),
+            "--force",
+            "--quantization", "int8"
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+        
+        if result.returncode == 0:
+            print_success("✅ CTranslate2 모델 변환 완료!")
+            conversion_success = True
+        else:
+            print(f"⚠️  CLI 도구 실패, Python API로 재시도...")
+            print()
+            
+    except Exception as e:
+        print(f"⚠️  CLI 도구 오류: {e}")
+        print("   Python API로 재시도...")
+        print()
+
+    # 파이썬 API 사용 (HF 모델 ID)
+    if not conversion_success:
+        try:
+            from ctranslate2.converters.transformers import TransformersConverter
+            
+            print("⏳ Python API(TransformersConverter)로 변환 중...")
+            print("   모델: openai/whisper-large-v3-turbo (Hugging Face)")
+            print()
+            
+            converter = TransformersConverter("openai/whisper-large-v3-turbo")
+            
+            converter.convert(
+                output_dir=str(output_dir),
+                force=True,
+            )
+            
+            print_success("✅ CTranslate2 모델 변환 완료!")
+            conversion_success = True
+            
+        except Exception as e:
+            error_msg = str(e)
+            if len(error_msg) > 300:
+                error_msg = error_msg[:300] + "..."
+            print(f"⚠️  변환 중 오류: {error_msg}")
+            print()
+
+    # 변환 결과 확인
     print()
-    print("   2. 패키지 업그레이드:")
-    print("      pip install --upgrade ctranslate2 faster-whisper transformers")
-    print()
-    print("   3. 수동 변환 시도:")
-    print(f"      ct2-transformers-converter --model openai/whisper-large-v3-turbo \\")
-    print(f"        --output_dir {output_dir} --force")
+    if conversion_success and output_dir.exists():
+        bin_files = list(output_dir.glob("*.bin"))
+        config_files = list(output_dir.glob("*.json"))
+        
+        print("✅ 변환된 CTranslate2 모델 파일:")
+        
+        if bin_files:
+            total_size = 0
+            for bin_file in sorted(bin_files):
+                size = bin_file.stat().st_size / (1024**2)
+                total_size += size
+                print(f"   ✓ {bin_file.name} ({size:.2f}MB)")
+            print(f"\n   📏 합계: {total_size:.2f}MB")
+        
+        if config_files:
+            print("\n   ✓ 설정 파일:")
+            for cfg_file in sorted(config_files):
+                print(f"     - {cfg_file.name}")
+        
+        # model.bin 심링크 생성
+        print()
+        print("⏳ 심링크 생성 중...")
+        
+        if bin_files:
+            model_bin_src = bin_files[0]
+            model_bin_link = model_specific_dir / "model.bin"
+            
+            if model_bin_link.exists() or model_bin_link.is_symlink():
+                model_bin_link.unlink()
+            
+            model_bin_link.symlink_to(model_bin_src)
+            print_success("✅ model.bin 심링크 생성 완료")
+            print(f"   소스: {model_bin_src.name}")
+            print(f"   대상: model.bin")
+        else:
+            print("⚠️  변환된 바이너리 파일을 찾을 수 없습니다")
+    
+    else:
+        print("⚠️  CTranslate2 변환 실패")
+        print()
+        print("💡 해결 방법:")
+        print("   1. 패키지 버전 확인:")
+        print("      pip list | grep -E 'ctranslate2|faster-whisper'")
+        print()
+        print("   2. 패키지 업그레이드:")
+        print("      pip install --upgrade ctranslate2 faster-whisper transformers")
+        print()
+        print("   3. 수동 변환 시도:")
+        print(f"      ct2-transformers-converter --model openai/whisper-large-v3-turbo \\")
+        print(f"        --output_dir {output_dir} --force")
 
 # ============================================================================
-# Step 5: 모델 파일 압축 (tar.gz)
+# Step 5: 모델 파일 압축 (tar.gz) - 조건부
 # ============================================================================
 
 print_step("Step 5: 모델 파일 압축")
 
-print("⏳ 모델 파일을 tar.gz로 압축 중...")
-print("   (이 단계는 몇 분 걸릴 수 있습니다)")
-print()
+compressed_path = None
 
-timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-compressed_filename = f"whisper-large-v3-turbo_models_{timestamp}.tar.gz"
-compressed_path = BASE_DIR / "build" / "output" / compressed_filename
+if not should_compress:
+    print("⏭️  모델 압축 스킵 (--skip-compress 옵션 사용)")
+    print()
+else:
+    print("⏳ 모델 파일을 tar.gz로 압축 중...")
+    print("   (이 단계는 몇 분 걸릴 수 있습니다)")
+    print()
 
-# 출력 디렉토리 생성
-compressed_path.parent.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    compressed_filename = f"whisper-large-v3-turbo_models_{timestamp}.tar.gz"
+    compressed_path = BASE_DIR / "build" / "output" / compressed_filename
 
-try:
-    # tar.gz 생성
-    with tarfile.open(compressed_path, "w:gz") as tar:
-        tar.add(model_specific_dir, arcname="models/openai_whisper-large-v3-turbo")
-    
-    print_success("모델 압축 완료")
-    
-    # 압축 파일 크기
-    comp_size = compressed_path.stat().st_size / (1024**3)
-    print(f"📦 압축 파일: {compressed_path}")
-    print(f"📏 크기: {comp_size:.2f}GB")
-    
-    # 압축률
-    original_size = sum(f.stat().st_size for f in model_specific_dir.rglob("*") if f.is_file()) / (1024**3)
-    compression_ratio = (1 - comp_size / original_size) * 100
-    print(f"📊 압축률: {compression_ratio:.1f}%")
-    
-except Exception as e:
-    print_error(f"압축 중 오류: {e}")
+    compressed_path.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        with tarfile.open(compressed_path, "w:gz") as tar:
+            tar.add(model_specific_dir, arcname="models/openai_whisper-large-v3-turbo")
+        
+        print_success("모델 압축 완료")
+        
+        comp_size = compressed_path.stat().st_size / (1024**3)
+        print(f"📦 압축 파일: {compressed_path}")
+        print(f"📏 크기: {comp_size:.2f}GB")
+        
+        original_size = sum(f.stat().st_size for f in model_specific_dir.rglob("*") if f.is_file()) / (1024**3)
+        compression_ratio = (1 - comp_size / original_size) * 100
+        print(f"📊 압축률: {compression_ratio:.1f}%")
+        
+    except Exception as e:
+        print_error(f"압축 중 오류: {e}")
 
 # ============================================================================
-# Step 6: MD5 체크섬 생성
+# Step 6: MD5 체크섬 생성 - 조건부
 # ============================================================================
 
 print_step("Step 6: 무결성 검증 파일 생성")
 
-import hashlib
+if compressed_path is None:
+    print("⏭️  MD5 체크섬 생성 스킵 (압축이 스킵됨)")
+    print()
+else:
+    import hashlib
 
-def calculate_md5(file_path):
-    md5 = hashlib.md5()
-    with open(file_path, 'rb') as f:
-        for chunk in iter(lambda: f.read(8192), b''):
-            md5.update(chunk)
-    return md5.hexdigest()
+    def calculate_md5(file_path):
+        md5 = hashlib.md5()
+        with open(file_path, 'rb') as f:
+            for chunk in iter(lambda: f.read(8192), b''):
+                md5.update(chunk)
+        return md5.hexdigest()
 
-md5_value = calculate_md5(compressed_path)
-md5_path = compressed_path.parent / f"{compressed_path.name}.md5"
+    md5_value = calculate_md5(compressed_path)
+    md5_path = compressed_path.parent / f"{compressed_path.name}.md5"
 
-with open(md5_path, 'w') as f:
-    f.write(f"{md5_value}  {compressed_path.name}\n")
+    with open(md5_path, 'w') as f:
+        f.write(f"{md5_value}  {compressed_path.name}\n")
 
-print_success(f"MD5 체크섬: {md5_value}")
-print(f"파일: {md5_path}")
+    print_success(f"MD5 체크섬: {md5_value}")
+    print(f"파일: {md5_path}")
 
 # ============================================================================
 # Step 7: 최종 요약
@@ -417,18 +440,29 @@ print_header("✅ 모델 준비 완료!")
 
 print("📦 생성된 파일:")
 print(f"  1. 모델 디렉토리: {model_specific_dir}")
-print(f"  2. 압축 파일: {compressed_path}")
-print(f"  3. MD5 체크섬: {md5_path}")
+
+if compressed_path is not None:
+    print(f"  2. 압축 파일: {compressed_path}")
+    print(f"  3. MD5 체크섬: {compressed_path.parent / f'{compressed_path.name}.md5'}")
+else:
+    print("  2. 압축 파일: (스킵됨)")
+    print("  3. MD5 체크섬: (스킵됨)")
 print()
 
 print("📋 다음 단계:")
-print("  1. 압축 파일을 운영 서버로 전송:")
-print(f"     scp {compressed_path} deploy-user@server:/tmp/")
-print()
-print("  2. 운영 서버에서 압축 해제:")
-print(f"     cd /path/to/deployment")
-print(f"     tar -xzf {compressed_filename}")
-print()
+if compressed_path is not None:
+    compressed_filename = f"{compressed_path.name}"
+    print("  1. 압축 파일을 운영 서버로 전송:")
+    print(f"     scp {compressed_path} deploy-user@server:/tmp/")
+    print()
+    print("  2. 운영 서버에서 압축 해제:")
+    print(f"     cd /path/to/deployment")
+    print(f"     tar -xzf {compressed_filename}")
+else:
+    print("  1. 모델 디렉토리를 직접 전송:")
+    print(f"     scp -r {model_specific_dir} deploy-user@server:/path/to/models/")
+    print()
+
 print("  3. Docker 볼륨 마운트:")
 print(f"     docker run -v /path/to/models:/app/models stt-engine:cuda129-v1.2")
 print()
@@ -436,255 +470,101 @@ print()
 print("✨ 모든 준비가 완료되었습니다!")
 
 # ============================================================================
-# Step 7: faster-whisper 검증 (CTranslate2 변환된 모델 테스트)
+# Step 8: 모델 검증 (조건부)
 # ============================================================================
 
-print()
-print("=" * 60)
-print("🔍 모델 검증 (faster-whisper 로드 테스트)")
-print("=" * 60)
-print()
+if not should_test:
+    print()
+    print("=" * 60)
+    print("🔍 모델 검증 (스킵됨 - --skip-test 옵션 사용)")
+    print("=" * 60)
+    print()
+    print("⏭️  모델 로드 테스트를 스킵했습니다.")
+    print()
+    print("💡 나중에 다음 명령으로 테스트할 수 있습니다:")
+    print("   python download_model_hf.py")
+    print()
+    print("또는 Docker 환경에서 테스트:")
+    print("   docker build -t stt-engine:latest -f docker/Dockerfile.engine.rhel89 .")
+    print("   docker run -it -p 8003:8003 -v $(pwd)/models:/app/models stt-engine:latest")
+    print()
+else:
+    print()
+    print("=" * 60)
+    print("🔍 모델 검증 (faster-whisper 로드 테스트)")
+    print("=" * 60)
+    print()
 
-try:
-    from faster_whisper import WhisperModel
-    import numpy as np
-    
-    # CTranslate2로 변환된 모델 경로 확인
-    ct2_model_dir = model_specific_dir / "ctranslate2_model"
-    model_bin_path = ct2_model_dir / "model.bin"
-    
-    if not model_bin_path.exists():
-        raise FileNotFoundError(f"CTranslate2 모델 파일을 찾을 수 없습니다: {model_bin_path}")
-    
-    print("⏳ faster-whisper로 CTranslate2 모델 로드 중...")
-    print(f"   모델 경로: {ct2_model_dir}")
-    print("   (이 단계는 1-3분 걸릴 수 있습니다)")
-    print("   ⚠️  메모리 부족 시 이 단계는 스킵됩니다 (메모리 16GB 이상 권장)")
-    print()
-    
-    # CTranslate2 변환된 모델 로드
-    # 주의: compute_type을 float32로 설정하여 호환성 보장
-    # int8 양자화는 더 빠르지만 일부 환경에서 호환성 문제가 있을 수 있음
-    model = None
-    load_test_skipped = False
-    
+    if not check_and_install_faster_whisper():
+        print_error("faster-whisper 설치 필수")
+
     try:
-        model = WhisperModel(
-            model_size_or_path=str(ct2_model_dir),
-            device="cpu",
-            compute_type="float32"  # INT8 대신 float32 사용 (호환성)
-        )
+        from faster_whisper import WhisperModel
+        import numpy as np
         
-        print_success("✅ faster-whisper 모델 로드 성공!")
-        print()
+        ct2_model_dir = model_specific_dir / "ctranslate2_model"
+        model_bin_path = ct2_model_dir / "model.bin"
         
-        # 모델 정보 출력
-        print("📋 모델 정보:")
-        print(f"   ✓ 모델 타입: Whisper Large-v3-Turbo")
-        print(f"   ✓ 형식: CTranslate2 바이너리 (model.bin)")
-        print(f"   ✓ 디바이스: CPU")
-        print(f"   ✓ Compute Type: FP32 (호환성 보장)")
-        print()
-        
-    except MemoryError as e:
-        print_warn("메모리 부족으로 로드 테스트 스킵")
-        print(f"필요 메모리: 16GB 이상")
-        print(f"모델은 정상적으로 생성되었습니다.")
-        print()
-        print("💡 권장사항:")
-        print("   • EC2 인스턴스 업그레이드: t3.large → t3.xlarge (16GB)")
-        print("   • 또는 스왑 메모리 추가: sudo fallocate -l 8G /swapfile")
-        print()
-        print("💡 Docker에서 테스트:")
-        print("   docker build -t stt-engine:latest -f docker/Dockerfile.engine.rhel89 .")
-        print("   docker run -it -p 8003:8003 -v $(pwd)/models:/app/models stt-engine:latest")
-        print()
-        load_test_skipped = True
-        
-    except OSError as e:
-        # OSError는 메모리 부족의 다른 형태 (kill -9의 결과)
-        if "Cannot allocate memory" in str(e) or e.errno == 12:
-            print_warn("메모리 부족으로 로드 테스트 스킵 (시스템 메모리 초과)")
-            print(f"필요 메모리: 16GB 이상")
-            print(f"모델은 정상적으로 생성되었습니다.")
+        if not model_bin_path.exists():
+            print_warn("CTranslate2 모델 파일을 찾을 수 없습니다")
+            print("변환을 스킵했거나 변환에 실패했습니다.")
             print()
-            print("💡 권장사항:")
-            print("   • EC2 인스턴스 업그레이드: t3.large → t3.xlarge (16GB)")
-            print("   • 또는 스왑 메모리 추가: sudo fallocate -l 8G /swapfile")
+            print("💡 옵션 없이 다시 실행하여 변환하세요:")
+            print("   python download_model_hf.py")
             print()
-            load_test_skipped = True
         else:
-            error_msg = str(e)
-            print_warn(f"모델 로드 중 오류: {type(e).__name__}")
-            print(f"{error_msg[:200]}")
+            print("⏳ faster-whisper로 CTranslate2 모델 로드 중...")
+            print(f"   모델 경로: {ct2_model_dir}")
+            print("   (이 단계는 1-3분 걸릴 수 있습니다)")
             print()
-        
-    except Exception as e:
-        error_msg = str(e)
-        print_warn(f"모델 로드 중 오류: {type(e).__name__}")
-        print(f"{error_msg[:200]}")
-        print()
-        print("💡 해결 방법:")
-        print("   1. Docker에서 테스트:")
-        print("      docker run -it -p 8003:8003 -v $(pwd)/models:/app/models stt-engine:latest")
-        print()
-        print("   2. 메모리 확인:")
-        print("      free -h")
-        print()
-    
-    # 모델 로드 성공한 경우만 추론 테스트 실행
-    if model is not None and not load_test_skipped:
-    
-        # 더미 오디오로 추론 테스트 (더 다양한 시나리오)
-        print("⏳ 추론 테스트 중 (더미 오디오)...")
-        
-        try:
-            # 시나리오 1: 짧은 오디오 (0.5초)
+            
             try:
-                dummy_audio_short = np.zeros((8000,), dtype=np.float32)
-                segments_short, info_short = model.transcribe(dummy_audio_short, language="ko")
-                list(segments_short)  # consume generator
-                print("   ✓ 짧은 오디오 테스트 (0.5초) 성공")
+                model = WhisperModel(
+                    model_size_or_path=str(ct2_model_dir),
+                    device="cpu",
+                    compute_type="float32"
+                )
+                
+                print_success("✅ faster-whisper 모델 로드 성공!")
+                print()
+                
+                print("📋 모델 정보:")
+                print(f"   ✓ 모델 타입: Whisper Large-v3-Turbo")
+                print(f"   ✓ 형식: CTranslate2 바이너리 (model.bin)")
+                print(f"   ✓ 디바이스: CPU")
+                print(f"   ✓ Compute Type: FP32")
+                print()
+                
+                print("="*60)
+                print("✅ 모델 검증 완료!")
+                print("="*60)
+                print()
+                print("🎉 faster-whisper로 정상 작동합니다!")
+                print("   CTranslate2 변환된 모델이 성공적으로 로드되었습니다.")
+                print()
+                
+            except (MemoryError, OSError) as e:
+                print_warn("메모리 부족으로 로드 테스트 스킵")
+                print("필요 메모리: 16GB 이상")
+                print("모델은 정상적으로 생성되었습니다.")
+                print()
+                print("💡 권장사항:")
+                print("   • EC2 인스턴스 업그레이드: t3.large → t3.xlarge (16GB)")
+                print("   • 또는 스왑 메모리 추가: sudo fallocate -l 8G /swapfile")
+                print()
+                print("💡 Docker에서 테스트:")
+                print("   docker run -it -p 8003:8003 -v $(pwd)/models:/app/models stt-engine:latest")
+                print()
+                
             except Exception as e:
-                print(f"   ⚠️  짧은 오디오 테스트 실패: {e}")
-            
-            # 시나리오 2: 중간 길이 오디오 (3초)
-            try:
-                dummy_audio_medium = np.zeros((48000,), dtype=np.float32)
-                segments_medium, info_medium = model.transcribe(dummy_audio_medium, language="ko")
-                list(segments_medium)  # consume generator
-                print("   ✓ 중간 오디오 테스트 (3초) 성공")
-            except Exception as e:
-                print(f"   ⚠️  중간 오디오 테스트 실패: {e}")
-        
-            # 시나리오 3: 긴 오디오 (10초)
-            try:
-                dummy_audio_long = np.zeros((160000,), dtype=np.float32)
-                segments_long, info_long = model.transcribe(dummy_audio_long, language="ko")
-                list(segments_long)  # consume generator
-                print("   ✓ 긴 오디오 테스트 (10초) 성공")
-            except Exception as e:
-                print(f"   ⚠️  긴 오디오 테스트 실패: {e}")
-        
-            # 최종 추론으로 결과 출력
-            dummy_audio = np.zeros((16000,), dtype=np.float32)
-            segments, info = model.transcribe(dummy_audio, language="ko")
-            
-            print_success("✅ 추론 테스트 성공!")
-            print()
-            
-            print("📊 추론 결과:")
-            print(f"   ✓ 감지된 언어: {info.language}")
-            print(f"   ✓ 언어 신뢰도: {info.language_probability:.2%}")
-            print(f"   ✓ 처리된 오디오 시간: {info.duration:.2f}초")
-            
-            segment_list = list(segments)
-            print(f"   ✓ 감지된 세그먼트: {len(segment_list)}개")
-            print()
-            
-            print("="*60)
-            print("✅ 모델 검증 완료!")
-            print("="*60)
-            print()
-            print("🎉 faster-whisper로 정상 작동합니다!")
-            print("   CTranslate2 변환된 모델이 성공적으로 로드되었습니다.")
-            print()
-            
-        except Exception as e:
-            print_warn(f"추론 테스트 중 오류 발생: {type(e).__name__}")
-            print(f"{str(e)[:200]}")
-            print()
-            print("💡 도움말:")
-            print("   모델은 정상적으로 생성되었습니다.")
-            print("   Docker 환경에서 테스트하세요.")
-            print()
-    
-    elif load_test_skipped:
-        # 로드 테스트가 메모리 부족으로 스킵된 경우
-        print("="*60)
-        print("⚠️  모델 로드 테스트 스킵됨")
-        print("="*60)
+                print_warn(f"모델 로드 중 오류: {type(e).__name__}")
+                print(f"{str(e)[:200]}")
+                print()
+                print("💡 Docker 환경에서 테스트하세요:")
+                print("   docker run -it -p 8003:8003 -v $(pwd)/models:/app/models stt-engine:latest")
+                print()
+                
+    except ImportError:
+        print_warn("faster-whisper가 설치되어 있지 않습니다")
+        print("설치: pip install faster-whisper")
         print()
-        print("✅ 모델 생성 및 변환은 정상적으로 완료되었습니다.")
-        print()
-        print("📝 다음 단계:")
-        print("   1. 메모리가 충분한 환경에서 모델을 테스트하세요")
-        print("   2. Docker를 사용하여 프로덕션 환경에서 검증하세요")
-        print()
-        print("💡 ec2의 메모리를 증가시키려면:")
-        print("   • 인스턴스 타입 업그레이드 (t3.large → t3.xlarge)")
-        print("   • 또는 스왑 메모리 추가 (권장 8GB):")
-        print("      sudo fallocate -l 8G /swapfile")
-        print("      sudo chmod 600 /swapfile")
-        print("      sudo mkswap /swapfile")
-        print("      sudo swapon /swapfile")
-        print()
-    else:
-        # 모델 로드 실패
-        print("="*60)
-        print("⚠️  모델 로드 실패")
-        print("="*60)
-        print()
-        print("✅ 모델 생성 및 변환은 정상적으로 완료되었습니다.")
-        print()
-        print("📝 모델은 다음 환경에서 사용 가능합니다:")
-        print("   • Docker 컨테이너 (충분한 메모리 환경)")
-        print("   • 프로덕션 서버 (메모리 16GB 이상)")
-        print()
-    
-except FileNotFoundError as e:
-    print(f"⚠️  파일 오류: {e}")
-    print()
-    print("💡 해결 방법:")
-    print("   CTranslate2 변환이 성공적으로 완료되었는지 확인하세요.")
-    print("   만약 변환 실패 시 다음 명령으로 수동 변환:")
-    print()
-    print("   conda activate stt-py311")
-    print(f"   ct2-transformers-converter --model openai/whisper-large-v3-turbo \\")
-    print(f"     --output_dir {ct2_model_dir} --force")
-    print()
-    
-except ImportError:
-    print("⚠️  faster-whisper가 설치되어 있지 않습니다")
-    print()
-    print("설치: pip install faster-whisper")
-    print()
-    
-except Exception as e:
-    error_msg = str(e)
-    print(f"⚠️  모델 로드 중 오류: {error_msg}")
-    print()
-    
-    # 특정 오류 메시지에 대한 대처 방법
-    if "shape" in error_msg.lower() or "features" in error_msg.lower():
-        print("💡 원인: Mel-spectrogram 입력 차원 불일치")
-        print("   이는 CTranslate2 변환 호환성 문제일 수 있습니다.")
-        print()
-        print("해결 방법:")
-        print("   1. 모델 재변환 (quantization 제거):")
-        print(f"      ct2-transformers-converter --model openai/whisper-large-v3-turbo \\")
-        print(f"        --output_dir {ct2_model_dir} --force")
-        print()
-        print("   2. 패키지 버전 확인:")
-        print("      pip list | grep -E 'faster-whisper|ctranslate2'")
-        print()
-        print("   3. 패키지 재설치:")
-        print("      pip uninstall -y faster-whisper ctranslate2")
-        print("      pip install faster-whisper==1.2.1 ctranslate2==4.7.1")
-        print()
-    else:
-        print("📝 디버깅:")
-        print("   1. CTranslate2 변환 상태 확인:")
-        print(f"      ls -lh {model_specific_dir}/ctranslate2_model/")
-        print()
-        print("   2. 패키지 버전 확인:")
-        print("      pip list | grep -E 'faster-whisper|ctranslate2'")
-        print()
-        print("   3. 패키지 재설치:")
-        print("      pip install --upgrade faster-whisper==1.2.1 ctranslate2==4.7.1")
-        print()
-    
-    import traceback
-    print("상세 오류 정보:")
-    traceback.print_exc()
-    print()
