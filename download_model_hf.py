@@ -323,8 +323,8 @@ else:
             
             output_dir.mkdir(parents=True, exist_ok=True)
             
+            # 직접 실행 (conda 없이)
             cmd = [
-                "conda", "run", "-n", "stt-py311",
                 "ct2-transformers-converter",
                 "--model", "openai/whisper-large-v3-turbo",
                 "--output_dir", str(output_dir),
