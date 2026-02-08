@@ -7,6 +7,7 @@ models/
 # Audio files (except samples)
 audio/
 !audio/samples/
+!audio/README.md
 *.wav
 *.mp3
 *.flac
