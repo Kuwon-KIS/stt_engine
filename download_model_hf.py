@@ -698,20 +698,22 @@ else:
             with open(vocab_json, 'r') as f:
                 vocab_data = json.load(f)
             
-            # 형식 체크: list → dict 변환 필요한지 확인
-            if isinstance(vocab_data, list):
-                print(f"   ⚠️  vocabulary.json이 배열 형식입니다. dict로 변환합니다...")
-                # list → dict 변환: token을 key, index를 value로
-                vocab_dict = {token: idx for idx, token in enumerate(vocab_data)}
+            # 형식 체크: dict → list 변환이 필요했는지 확인
+            if isinstance(vocab_data, dict):
+                print(f"   ⚠️  vocabulary.json이 dict 형식입니다. 배열로 복원합니다...")
+                # dict → list 변환: key를 index로 정렬해서 배열로
+                vocab_list = [None] * len(vocab_data)
+                for token, idx in vocab_data.items():
+                    vocab_list[idx] = token
                 
                 # 파일 덮어쓰기
                 with open(vocab_json, 'w') as f:
-                    json.dump(vocab_dict, f, ensure_ascii=False, indent=2)
+                    json.dump(vocab_list, f, ensure_ascii=False)
                 
-                print(f"   ✓ 변환 완료: {len(vocab_dict)} tokens")
-                vocab_data = vocab_dict
-            elif isinstance(vocab_data, dict):
-                print(f"   ✓ vocabulary.json이 dict 형식입니다 (OK)")
+                print(f"   ✓ 복원 완료: {len(vocab_list)} tokens (배열 형식)")
+                vocab_data = vocab_list
+            elif isinstance(vocab_data, list):
+                print(f"   ✓ vocabulary.json이 배열 형식입니다 (OK)")
             else:
                 print_error(f"❌ vocabulary.json의 형식이 예상하지 못한 형식입니다: {type(vocab_data)}")
                 sys.exit(1)
@@ -723,15 +725,15 @@ else:
     try:
         from faster_whisper import WhisperModel
         
-        # CTranslate2 모델은 subdir에 있으므로 직접 경로 전달
-        ct2_model_path = model_specific_dir / "ctranslate2_model"
-        print(f"📁 모델 경로: {ct2_model_path}")
+        # faster-whisper가 Hugging Face 토크나이저를 로드하도록 상위 디렉토리 전달
+        # CTranslate2 모델은 ctranslate2_model/ 서브디렉토리에서 자동 감지
+        print(f"📁 모델 경로: {model_specific_dir}")
         print(f"🔍 로드 중...")
         
-        model = WhisperModel(str(ct2_model_path), device="cpu")
+        model = WhisperModel(str(model_specific_dir), device="cpu")
         
         print_success("✅ faster-whisper 모델 로드 성공!")
-        print(f"   ✓ Model: WhisperModel (CTranslate2)")
+        print(f"   ✓ Model: WhisperModel (CTranslate2 + HF Tokenizer)")
         print(f"   ✓ Device: CPU")
         print(f"   ✓ vocabulary.json: 51,866 tokens 로드됨")
         print()
