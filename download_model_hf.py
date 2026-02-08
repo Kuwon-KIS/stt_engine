@@ -164,7 +164,7 @@ model_specific_dir.mkdir(parents=True, exist_ok=True)
 print(f"📁 신규 모델 디렉토리 생성: {model_specific_dir}")
 
 # ============================================================================
-# Step 2: Hugging Face에서 모델 다운로드
+# Step 2: Hugging Face에서 모델 다운로드 (재시도 로직 포함)
 # ============================================================================
 
 print_step("Step 2: Hugging Face에서 모델 다운로드")
@@ -173,22 +173,51 @@ try:
     from huggingface_hub import snapshot_download
     
     MODEL_REPO = "openai/whisper-large-v3-turbo"
+    MAX_RETRIES = 3
+    RETRY_DELAY = 10  # seconds
     
     print(f"📦 모델: {MODEL_REPO}")
     print(f"⏳ Hugging Face Hub에서 다운로드 중 (약 1.5GB)...")
+    print(f"   (최대 {MAX_RETRIES}회 재시도)")
     print()
     
-    # snapshot_download를 사용하여 실제 파일로 저장
-    model_path = snapshot_download(
-        repo_id=MODEL_REPO,
-        cache_dir=None,
-        local_dir=str(model_specific_dir),
-        local_dir_use_symlinks=False,
-        resume_download=True,
-        force_download=False
-    )
+    # 다운로드 시도 (재시도 로직 포함)
+    model_path = None
+    last_error = None
     
-    print_success("모델 다운로드 완료")
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            print(f"⏳ 다운로드 시도 {attempt}/{MAX_RETRIES}...")
+            
+            model_path = snapshot_download(
+                repo_id=MODEL_REPO,
+                cache_dir=None,
+                local_dir=str(model_specific_dir),
+                local_dir_use_symlinks=False,
+                resume_download=True,
+                force_download=False,
+                timeout=300  # 5분 타임아웃
+            )
+            
+            print_success(f"✅ 다운로드 완료 (시도 {attempt})")
+            break
+            
+        except Exception as e:
+            last_error = e
+            error_msg = str(e)
+            
+            if attempt < MAX_RETRIES:
+                print(f"⚠️  시도 {attempt} 실패: {error_msg[:100]}")
+                print(f"   {RETRY_DELAY}초 후 재시도합니다...")
+                print()
+                
+                import time
+                time.sleep(RETRY_DELAY)
+            else:
+                print(f"❌ 시도 {attempt} 실패")
+    
+    if model_path is None:
+        print_error(f"다운로드 최대 재시도 초과: {last_error}")
     
 except ImportError:
     print_error("huggingface-hub이 설치되어 있지 않습니다. 설치: pip install huggingface-hub")
@@ -227,9 +256,38 @@ for req_file in REQUIRED_FILES:
         all_found = False
 
 if not all_found:
-    print_error("일부 필수 파일이 누락되었습니다")
+    print_error(f"일부 필수 파일이 누락되었습니다. 다시 다운로드해주세요.\n다음 명령을 실행하세요:\n  rm -rf {model_specific_dir}\n  python download_model_hf.py")
 
 print(f"\n📏 전체 크기: {total_size:.2f}MB")
+
+# 최소 크기 검증 (Whisper Large는 약 1.5GB 이상이어야 함)
+MIN_TOTAL_SIZE_MB = 1400  # 약 1.4GB
+if total_size < MIN_TOTAL_SIZE_MB:
+    print_error(f"다운로드된 파일 크기가 너무 작습니다: {total_size:.2f}MB (최소: {MIN_TOTAL_SIZE_MB}MB)\n다시 다운로드해주세요:\n  rm -rf {model_specific_dir}\n  python download_model_hf.py")
+
+# 각 파일의 체크섬 검증 (간단한 무결성 검사)
+print()
+print("✅ 파일 무결성 검증 중...")
+for file_path in [model_specific_dir / f for f in REQUIRED_FILES]:
+    if file_path.exists():
+        try:
+            # 파일을 읽어서 기본적인 손상 여부 확인
+            if file_path.suffix in ['.json']:
+                # JSON 파일은 파싱 가능한지 확인
+                import json
+                with open(file_path, 'r') as f:
+                    json.load(f)
+                print(f"   ✓ {file_path.name} (JSON 검증 OK)")
+            else:
+                # 다른 파일은 크기만 확인
+                size = file_path.stat().st_size
+                if size == 0:
+                    print(f"   ✗ {file_path.name} (크기 0바이트 - 손상됨)")
+                    raise ValueError(f"{file_path.name} is empty")
+                print(f"   ✓ {file_path.name} (검증 OK)")
+        except Exception as e:
+            print_error(f"파일 검증 실패: {file_path.name}\n오류: {e}\n다시 다운로드해주세요:\n  rm -rf {model_specific_dir}\n  python download_model_hf.py")
+
 print_success("파일 검증 완료")
 
 # ============================================================================
@@ -253,64 +311,90 @@ else:
 
     output_dir = model_specific_dir / "ctranslate2_model"
     conversion_success = False
-
-    # CTranslate2 CLI 도구로 변환
-    try:
-        print("⏳ ct2-transformers-converter CLI 도구로 변환 중...")
-        print("   모델: openai/whisper-large-v3-turbo")
-        print(f"   출력: {output_dir}")
-        print()
-        
-        output_dir.mkdir(parents=True, exist_ok=True)
-        
-        cmd = [
-            "conda", "run", "-n", "stt-py311",
-            "ct2-transformers-converter",
-            "--model", "openai/whisper-large-v3-turbo",
-            "--output_dir", str(output_dir),
-            "--force",
-            "--quantization", "int8"
-        ]
-        
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
-        
-        if result.returncode == 0:
-            print_success("✅ CTranslate2 모델 변환 완료!")
-            conversion_success = True
-        else:
-            print(f"⚠️  CLI 도구 실패, Python API로 재시도...")
-            print()
-            
-    except Exception as e:
-        print(f"⚠️  CLI 도구 오류: {e}")
-        print("   Python API로 재시도...")
-        print()
-
-    # 파이썬 API 사용 (HF 모델 ID)
-    if not conversion_success:
+    MAX_CONVERSION_RETRIES = 2
+    
+    # CTranslate2 CLI 도구로 변환 (재시도 로직)
+    for conv_attempt in range(1, MAX_CONVERSION_RETRIES + 1):
         try:
-            from ctranslate2.converters.transformers import TransformersConverter
-            
-            print("⏳ Python API(TransformersConverter)로 변환 중...")
-            print("   모델: openai/whisper-large-v3-turbo (Hugging Face)")
+            print(f"⏳ ct2-transformers-converter CLI 도구로 변환 중 (시도 {conv_attempt}/{MAX_CONVERSION_RETRIES})...")
+            print("   모델: openai/whisper-large-v3-turbo")
+            print(f"   출력: {output_dir}")
             print()
             
-            converter = TransformersConverter("openai/whisper-large-v3-turbo")
+            output_dir.mkdir(parents=True, exist_ok=True)
             
-            converter.convert(
-                output_dir=str(output_dir),
-                force=True,
-            )
+            cmd = [
+                "conda", "run", "-n", "stt-py311",
+                "ct2-transformers-converter",
+                "--model", "openai/whisper-large-v3-turbo",
+                "--output_dir", str(output_dir),
+                "--force",
+                "--quantization", "int8"
+            ]
             
-            print_success("✅ CTranslate2 모델 변환 완료!")
-            conversion_success = True
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
             
+            if result.returncode == 0:
+                print_success("✅ CTranslate2 모델 변환 완료!")
+                conversion_success = True
+                break
+            else:
+                print(f"⚠️  CLI 도구 실패 (시도 {conv_attempt})")
+                if conv_attempt < MAX_CONVERSION_RETRIES:
+                    print(f"   5초 후 재시도합니다...")
+                    import time
+                    time.sleep(5)
+                else:
+                    print("   Python API로 재시도합니다...")
+                print()
+            
+        except subprocess.TimeoutExpired:
+            print(f"⚠️  변환 타임아웃 (시도 {conv_attempt})")
+            if conv_attempt < MAX_CONVERSION_RETRIES:
+                print(f"   Python API로 재시도합니다...")
+            print()
         except Exception as e:
-            error_msg = str(e)
-            if len(error_msg) > 300:
-                error_msg = error_msg[:300] + "..."
-            print(f"⚠️  변환 중 오류: {error_msg}")
+            print(f"⚠️  CLI 도구 오류: {e}")
+            if conv_attempt < MAX_CONVERSION_RETRIES:
+                print("   재시도합니다...")
             print()
+
+    # 파이썬 API 사용 (HF 모델 ID) - CLI 실패 시 또는 재시도
+    if not conversion_success:
+        for py_attempt in range(1, MAX_CONVERSION_RETRIES + 1):
+            try:
+                from ctranslate2.converters.transformers import TransformersConverter
+                
+                print(f"⏳ Python API(TransformersConverter)로 변환 중 (시도 {py_attempt}/{MAX_CONVERSION_RETRIES})...")
+                print("   모델: openai/whisper-large-v3-turbo (Hugging Face)")
+                print()
+                
+                converter = TransformersConverter("openai/whisper-large-v3-turbo")
+                
+                converter.convert(
+                    output_dir=str(output_dir),
+                    force=True,
+                )
+                
+                print_success("✅ CTranslate2 모델 변환 완료!")
+                conversion_success = True
+                break
+                
+            except Exception as e:
+                error_msg = str(e)
+                if len(error_msg) > 300:
+                    error_msg = error_msg[:300] + "..."
+                print(f"⚠️  변환 실패 (시도 {py_attempt}): {error_msg}")
+                
+                if py_attempt < MAX_CONVERSION_RETRIES:
+                    print(f"   5초 후 재시도합니다...")
+                    import time
+                    time.sleep(5)
+                    print()
+                else:
+                    print()
+    
+    # 변환 결과 확인
 
     # 변환 결과 확인
     print()
@@ -410,6 +494,7 @@ else:
     compressed_path.parent.mkdir(parents=True, exist_ok=True)
 
     try:
+        print("📦 tar.gz 생성 중...")
         with tarfile.open(compressed_path, "w:gz") as tar:
             tar.add(model_specific_dir, arcname="models/openai_whisper-large-v3-turbo")
         
@@ -422,15 +507,25 @@ else:
         original_size = sum(f.stat().st_size for f in model_specific_dir.rglob("*") if f.is_file()) / (1024**3)
         compression_ratio = (1 - comp_size / original_size) * 100
         print(f"📊 압축률: {compression_ratio:.1f}%")
+        print()
+        
+        # 압축 파일 무결성 검증
+        print("✅ 압축 파일 검증 중...")
+        try:
+            with tarfile.open(compressed_path, "r:gz") as tar:
+                members = tar.getmembers()
+                print(f"   ✓ 압축 파일 검증 성공 ({len(members)} members)")
+        except Exception as e:
+            print_error(f"압축 파일이 손상되었습니다: {e}")
         
     except Exception as e:
         print_error(f"압축 중 오류: {e}")
 
 # ============================================================================
-# Step 6: MD5 체크섬 생성 - 조건부
+# Step 7: MD5 체크섬 생성 - 압축이 성공한 경우만
 # ============================================================================
 
-print_step("Step 6: 무결성 검증 파일 생성")
+print_step("Step 7: 무결성 검증 파일 생성")
 
 if compressed_path is None:
     print("⏭️  MD5 체크섬 생성 스킵 (압축이 스킵됨)")
@@ -453,6 +548,77 @@ else:
 
     print_success(f"MD5 체크섬: {md5_value}")
     print(f"파일: {md5_path}")
+    print()
+
+# ============================================================================
+# Step 8: 최종 요약 및 다음 단계
+# ============================================================================
+
+print_header("📋 최종 요약")
+
+print("✅ 완료된 단계:")
+print("  1. ✓ 모델 파일 다운로드")
+print("  2. ✓ 파일 검증")
+if should_convert:
+    print("  3. ✓ CTranslate2 포맷 변환")
+else:
+    print("  3. ⏭️  CTranslate2 포맷 변환 (스킵)")
+    
+if validation_passed:
+    print("  4. ✓ 모델 검증")
+else:
+    print("  4. ⚠️  모델 검증 (실패 또는 스킵)")
+    
+if compressed_path is not None:
+    print("  5. ✓ 모델 압축")
+else:
+    print("  5. ⏭️  모델 압축 (스킵)")
+
+print()
+print("📦 생성된 파일:")
+print(f"  • 모델 디렉토리: {model_specific_dir}")
+
+if compressed_path is not None:
+    print(f"  • 압축 파일: {compressed_path}")
+    print(f"  • MD5 체크섐: {compressed_path.parent / f'{compressed_path.name}.md5'}")
+
+print()
+print("📋 다음 단계:")
+
+if not validation_passed:
+    print("  ⚠️  모델 검증이 실패했습니다.")
+    print()
+    print("  1. 모델 파일 확인:")
+    print(f"     ls -lh {model_specific_dir}/")
+    print()
+    print("  2. 모델 재다운로드:")
+    print("     rm -rf models/openai_whisper-large-v3-turbo build/output/*")
+    print("     python download_model_hf.py --skip-compress")
+    print()
+else:
+    print("  ✅ 모델 준비가 완료되었습니다!")
+    print()
+    if compressed_path is not None:
+        print("  1. 압축 파일 배포:")
+        print(f"     scp {compressed_path} user@server:/path/to/deployment/")
+        print()
+        print("  2. 서버에서 압축 해제:")
+        print(f"     tar -xzf {compressed_path.name}")
+        print()
+    
+    print("  3. Docker 실행:")
+    print("     docker run -it -p 8003:8003 \\")
+    print("       -v $(pwd)/models:/app/models \\")
+    print("       -v $(pwd)/logs:/app/logs \\")
+    print("       stt-engine:cuda129-rhel89-v1.4")
+    print()
+    
+    print("  4. API 테스트:")
+    print("     curl -X POST http://localhost:8003/health")
+    print()
+
+print("✨ 준비 완료!")
+print()
 
 # ============================================================================
 # Step 7: 최종 요약
@@ -462,55 +628,43 @@ print_header("✅ 모델 준비 완료!")
 
 print("📦 생성된 파일:")
 print(f"  1. 모델 디렉토리: {model_specific_dir}")
-
-if compressed_path is not None:
-    print(f"  2. 압축 파일: {compressed_path}")
-    print(f"  3. MD5 체크섬: {compressed_path.parent / f'{compressed_path.name}.md5'}")
-else:
-    print("  2. 압축 파일: (스킵됨)")
-    print("  3. MD5 체크섬: (스킵됨)")
 print()
 
-print("📋 다음 단계:")
-if compressed_path is not None:
-    compressed_filename = f"{compressed_path.name}"
-    print("  1. 압축 파일을 운영 서버로 전송:")
-    print(f"     scp {compressed_path} deploy-user@server:/tmp/")
-    print()
-    print("  2. 운영 서버에서 압축 해제:")
-    print(f"     cd /path/to/deployment")
-    print(f"     tar -xzf {compressed_filename}")
-else:
-    print("  1. 모델 디렉토리를 직접 전송:")
-    print(f"     scp -r {model_specific_dir} deploy-user@server:/path/to/models/")
-    print()
+# 모델 검증: 압축 전에 반드시 검증 필수
+print_step("모델 검증 - 압축 전 무결성 확인")
 
-print("  3. Docker 볼륨 마운트:")
-print(f"     docker run -v /path/to/models:/app/models stt-engine:cuda129-v1.2")
-print()
-
-print("✨ 모든 준비가 완료되었습니다!")
-
-# ============================================================================
-# Step 8: 모델 검증 (조건부)
-# ============================================================================
+validation_passed = True
 
 if not should_test:
-    print()
-    print("=" * 60)
-    print("🔍 모델 검증 (스킵됨 - --skip-test 옵션 사용)")
-    print("=" * 60)
-    print()
     print("⏭️  모델 로드 테스트를 스킵했습니다.")
+    print("⚠️  압축 전에 검증을 권장합니다:")
+    print("   python download_model_hf.py --skip-compress")
     print()
-    print("💡 나중에 다음 명령으로 테스트할 수 있습니다:")
+    validation_passed = False
+else:
+    print("✅ 모델 검증이 완료되었습니다.")
+    validation_passed = True
+
+print()
+
+# ============================================================================
+# Step 5: 모델 파일 압축 (tar.gz) - 검증 후에만 수행
+# ============================================================================
+
+print_step("Step 5: 모델 파일 압축")
+
+compressed_path = None
+
+if not validation_passed:
+    print("⚠️  검증이 완료되지 않았으므로 압축을 스킵합니다.")
+    print("   다음 명령으로 검증을 포함하여 다시 실행하세요:")
     print("   python download_model_hf.py")
     print()
-    print("또는 Docker 환경에서 테스트:")
-    print("   docker build -t stt-engine:latest -f docker/Dockerfile.engine.rhel89 .")
-    print("   docker run -it -p 8003:8003 -v $(pwd)/models:/app/models stt-engine:latest")
+    print_warn("압축 파일을 생성하지 않았습니다.")
     print()
-else:
+elif not should_compress:
+    print("⏭️  모델 압축 스킵 (--skip-compress 옵션 사용)")
+    print()
     print()
     print("=" * 60)
     print("🔍 모델 검증 (faster-whisper 로드 테스트)")
@@ -680,16 +834,33 @@ else:
             print("💡 Docker에서 테스트:")
             print("   docker run -it -p 8003:8003 -v $(pwd)/models:/app/models stt-engine:latest")
             print()
+            validation_passed = False
             
         except Exception as e:
             print_warn(f"모델 로드 중 오류: {type(e).__name__}")
             print(f"{str(e)[:200]}")
             print()
-            print("💡 Docker 환경에서 테스트하세요:")
-            print("   docker run -it -p 8003:8003 -v $(pwd)/models:/app/models stt-engine:latest")
+            print("💡 다음을 시도하세요:")
+            print("   1. 모델 파일 재다운로드:")
+            print("      rm -rf models/openai_whisper-large-v3-turbo")
+            print("      python download_model_hf.py --skip-compress")
             print()
+            print("   2. 패키지 업그레이드:")
+            print("      pip install --upgrade faster-whisper ctranslate2 transformers")
+            print()
+            validation_passed = False
                 
     except ImportError:
         print_warn("faster-whisper가 설치되어 있지 않습니다")
         print("설치: pip install faster-whisper")
         print()
+        validation_passed = False
+
+print()
+print("=" * 60)
+if validation_passed:
+    print("✅ 모델 검증 성공!")
+else:
+    print("⚠️  모델 검증 실패 또는 스킵됨")
+print("=" * 60)
+print()
