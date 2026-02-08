@@ -42,6 +42,7 @@ import shutil
 import subprocess
 import tarfile
 import argparse
+import json
 from pathlib import Path
 from datetime import datetime
 
@@ -324,6 +325,39 @@ else:
     print("⏳ PyTorch 모델을 CTranslate2 바이너리 포맷으로 변환 중...")
     print("   (이 단계는 5-15분 걸릴 수 있습니다)")
     print()
+    
+    # 변환 전 PyTorch 모델 상태 확인
+    print("📁 변환 전 PyTorch 모델 상태:")
+    pytorch_dir = model_specific_dir
+    pytorch_files = list(pytorch_dir.glob("*.bin")) + list(pytorch_dir.glob("*.json"))
+    for f in sorted(pytorch_files):
+        size = f.stat().st_size / (1024**2) if f.stat().st_size > 1024*1024 else f.stat().st_size / 1024
+        unit = "MB" if f.stat().st_size > 1024*1024 else "KB"
+        print(f"   ✓ {f.name} ({size:.2f}{unit})")
+    print()
+    
+    # CTranslate2 환경 정보 출력
+    print("🔧 CTranslate2 환경 정보:")
+    try:
+        import ctranslate2
+        print(f"   ✓ ctranslate2 버전: {ctranslate2.__version__}")
+    except Exception as e:
+        print(f"   ❌ ctranslate2 import 실패: {e}")
+    
+    # ct2-transformers-converter 명령어 존재 확인
+    try:
+        result = subprocess.run(["which", "ct2-transformers-converter"], 
+                              capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            converter_path = result.stdout.strip()
+            print(f"   ✓ ct2-transformers-converter 위치: {converter_path}")
+        else:
+            print(f"   ⚠️  ct2-transformers-converter를 PATH에서 찾을 수 없습니다")
+            print(f"      Python API로 대신 사용할 예정입니다")
+    except Exception as e:
+        print(f"   ⚠️  명령어 확인 실패: {e}")
+    
+    print()
 
     output_dir = model_specific_dir / "ctranslate2_model"
     conversion_success = False
@@ -360,14 +394,35 @@ else:
                     "--quantization", "int8"
                 ]
             
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+            print("   [실행 중...]")
+            result = subprocess.run(cmd, capture_output=False, text=True, timeout=900)
+            
+            print()
+            print("=" * 80)
+            print(f"변환 명령 실행 결과: 반환코드 {result.returncode}")
+            print("=" * 80)
+            print()
             
             if result.returncode == 0:
+                # 변환 후 생성된 파일 확인
+                print("📁 변환 후 생성된 파일 확인 중...")
+                if output_dir.exists():
+                    created_files = list(output_dir.rglob('*'))
+                    print(f"   생성된 항목 수: {len([f for f in created_files if f.is_file()])}")
+                    for f in sorted(created_files):
+                        if f.is_file():
+                            size = f.stat().st_size
+                            if size > 1024*1024:
+                                print(f"     {f.relative_to(output_dir)}: {size/(1024*1024):.2f}MB")
+                            else:
+                                print(f"     {f.relative_to(output_dir)}: {size} bytes")
+                
                 print_success("✅ CTranslate2 모델 변환 완료!")
                 conversion_success = True
                 break
             else:
-                print(f"⚠️  CLI 도구 실패 (시도 {conv_attempt})")
+                print(f"⚠️  CLI 도구 실패 (반환코드: {result.returncode})")
+                print(f"⚠️  시도 {conv_attempt}/{MAX_CONVERSION_RETRIES}")
                 if conv_attempt < MAX_CONVERSION_RETRIES:
                     print(f"   5초 후 재시도합니다...")
                     import time
@@ -395,6 +450,7 @@ else:
                 
                 print(f"⏳ Python API(TransformersConverter)로 변환 중 (시도 {py_attempt}/{MAX_CONVERSION_RETRIES})...")
                 print("   모델: openai/whisper-large-v3-turbo (Hugging Face)")
+                print("   [변환 진행 중...]")
                 print()
                 
                 converter = TransformersConverter("openai/whisper-large-v3-turbo")
@@ -403,6 +459,20 @@ else:
                     output_dir=str(output_dir),
                     force=True,
                 )
+                
+                # 변환 후 생성된 파일 확인
+                print()
+                print("📁 변환 후 생성된 파일 확인 중...")
+                if output_dir.exists():
+                    created_files = list(output_dir.rglob('*'))
+                    print(f"   생성된 항목 수: {len([f for f in created_files if f.is_file()])}")
+                    for f in sorted(created_files):
+                        if f.is_file():
+                            size = f.stat().st_size
+                            if size > 1024*1024:
+                                print(f"     {f.relative_to(output_dir)}: {size/(1024*1024):.2f}MB")
+                            else:
+                                print(f"     {f.relative_to(output_dir)}: {size} bytes")
                 
                 print_success("✅ CTranslate2 모델 변환 완료!")
                 conversion_success = True
@@ -426,47 +496,72 @@ else:
 
     # 변환 결과 확인
     print()
+    print("="*80)
+    print("변환 결과 분석")
+    print("="*80)
+    print()
+    
     if conversion_success and output_dir.exists():
-        bin_files = list(output_dir.glob("*.bin"))
-        config_files = list(output_dir.glob("*.json"))
-        vocab_files = list(output_dir.glob("vocabulary*"))
+        print(f"✅ CTranslate2 변환 성공 - 출력 디렉토리: {output_dir}")
+        print()
         
-        print("✅ 변환된 CTranslate2 모델 파일:")
+        # 모든 파일 나열
+        print("📁 변환된 모든 파일:")
+        all_files = []
+        for f in sorted(output_dir.rglob('*')):
+            if f.is_file():
+                all_files.append(f)
+                size = f.stat().st_size
+                if size > 1024*1024:
+                    print(f"   ✓ {f.relative_to(output_dir)} ({size/(1024*1024):.2f}MB)")
+                elif size > 1024:
+                    print(f"   ✓ {f.relative_to(output_dir)} ({size/1024:.1f}KB)")
+                else:
+                    print(f"   ✓ {f.relative_to(output_dir)} ({size} bytes)")
         
-        if not bin_files:
-            print_error("❌ 변환된 바이너리 파일을 찾을 수 없습니다. CTranslate2 변환이 실패했을 수 있습니다.")
+        if not all_files:
+            print("   ❌ 파일이 없습니다! 변환이 실패했을 수 있습니다.")
         
-        if bin_files:
-            total_size = 0
-            for bin_file in sorted(bin_files):
-                size = bin_file.stat().st_size / (1024**2)
-                total_size += size
-                print(f"   ✓ {bin_file.name} ({size:.2f}MB)")
-            print(f"\n   📏 합계: {total_size:.2f}MB")
+        print()
         
-        if config_files:
-            print("\n   ✓ 설정 파일:")
-            for cfg_file in sorted(config_files):
-                size = cfg_file.stat().st_size / 1024  # KB로 표시
-                print(f"     - {cfg_file.name} ({size:.1f}KB)")
+        # 필수 파일 확인
+        required_files = {
+            'model.bin': '바이너리 모델 파일',
+            'config.json': '모델 설정',
+            'vocabulary.json': '어휘 사전'
+        }
         
-        # 필수 파일 검증 (vocabulary.json)
-        if not vocab_files:
-            print_error(f"❌ vocabulary 파일을 찾을 수 없습니다!\nCTranslate2 변환이 완전하지 않습니다.\n다시 실행해주세요:\n  rm -rf {output_dir}\n  python download_model_hf.py")
+        print("✅ 필수 파일 검증:")
+        for filename, desc in required_files.items():
+            filepath = output_dir / filename
+            if filepath.exists():
+                size = filepath.stat().st_size
+                if size > 1024*1024:
+                    print(f"   ✓ {filename} ({desc}) - {size/(1024*1024):.2f}MB")
+                elif size > 1024:
+                    print(f"   ✓ {filename} ({desc}) - {size/1024:.1f}KB")
+                else:
+                    print(f"   ✓ {filename} ({desc}) - {size} bytes")
+            else:
+                print(f"   ❌ {filename} ({desc}) - 누락됨!")
         
-        # CTranslate2 config.json 검증
-        ct2_config = output_dir / "config.json"
-        if ct2_config.exists():
-            import json
+        print()
+        
+        # 각 파일의 상세 검증
+        print("📋 파일 무결성 검증:")
+        
+        # config.json 검증
+        config_json = output_dir / "config.json"
+        if config_json.exists():
             try:
-                with open(ct2_config, 'r') as f:
+                with open(config_json, 'r') as f:
                     config_data = json.load(f)
-                config_size = ct2_config.stat().st_size
-                if config_size < 500:  # 500바이트 미만이면 손상된 것으로 의심
-                    print_error(f"❌ config.json이 손상되었을 수 있습니다 ({config_size} bytes)\n다시 실행해주세요:\n  python download_model_hf.py")
-                print(f"   ✓ config.json 검증 OK")
-            except json.JSONDecodeError as e:
-                print_error(f"❌ config.json이 유효한 JSON이 아닙니다: {e}\n다시 실행해주세요:\n  python download_model_hf.py")
+                config_size = config_json.stat().st_size
+                print(f"   ✓ config.json 유효 ({config_size} bytes)")
+            except Exception as e:
+                print(f"   ❌ config.json 오류: {e}")
+        else:
+            print(f"   ❌ config.json 누락!")
         
         # vocabulary.json 검증
         vocab_json = output_dir / "vocabulary.json"
@@ -474,11 +569,35 @@ else:
             try:
                 with open(vocab_json, 'r') as f:
                     vocab_data = json.load(f)
-                if not isinstance(vocab_data, dict) or len(vocab_data) == 0:
-                    print_error(f"❌ vocabulary.json이 비어있거나 유효하지 않습니다\n다시 실행해주세요:\n  python download_model_hf.py")
-                print(f"   ✓ vocabulary.json 검증 OK ({len(vocab_data)} tokens)")
-            except json.JSONDecodeError as e:
-                print_error(f"❌ vocabulary.json이 유효한 JSON이 아닙니다: {e}\n다시 실행해주세요:\n  python download_model_hf.py")
+                vocab_size = vocab_json.stat().st_size
+                vocab_count = len(vocab_data) if isinstance(vocab_data, dict) else 0
+                print(f"   ✓ vocabulary.json 유효 ({vocab_size} bytes, {vocab_count} tokens)")
+            except Exception as e:
+                print(f"   ❌ vocabulary.json 오류: {e}")
+        else:
+            print(f"   ❌ vocabulary.json 누락!")
+        
+        # model.bin 검증
+        model_bin = output_dir / "model.bin"
+        if model_bin.exists():
+            try:
+                size = model_bin.stat().st_size
+                print(f"   ✓ model.bin 유효 ({size/(1024*1024):.2f}MB)")
+            except Exception as e:
+                print(f"   ❌ model.bin 오류: {e}")
+        else:
+            print(f"   ❌ model.bin 누락!")
+    
+    elif not conversion_success:
+        print(f"❌ 변환 실패!")
+        if output_dir.exists():
+            existing = list(output_dir.rglob('*'))
+            print(f"   출력 디렉토리에 {len([f for f in existing if f.is_file()])}개 파일이 있습니다 (불완전할 수 있음)")
+        print()
+        print("   조치 방법:")
+        print(f"   1. 디렉토리 삭제: rm -rf {output_dir}")
+        print("   2. 다시 실행: python download_model_hf.py")
+        sys.exit(1)
         
         # model.bin 준비 (상대 경로 심링크 또는 카피)
         # 중요: 상대 경로를 사용하여 Docker(/app/models)와 운영 서버(/data/models) 모두 호환
