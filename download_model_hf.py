@@ -64,10 +64,12 @@ parser = argparse.ArgumentParser(
     formatter_class=argparse.RawDescriptionHelpFormatter,
     epilog="""
 예시:
-  python download_model_hf.py                 # 모든 단계 실행 (기본값, 권장)
+  python download_model_hf.py                 # 모든 단계 실행 (기본값, 권장) - 서버 직접 실행
+  python download_model_hf.py --local         # 로컬 환경 (맥북) - conda 사용
   python download_model_hf.py --no-convert    # CTranslate2 변환 스킵
   python download_model_hf.py --skip-test     # 로드 테스트 스킵
   python download_model_hf.py --skip-compress # 압축 스킵
+  python download_model_hf.py --local --skip-compress # 로컬 + 압축 스킵
     """
 )
 parser.add_argument('--no-convert', action='store_true', 
@@ -76,6 +78,8 @@ parser.add_argument('--skip-compress', action='store_true',
                     help='모델 파일 압축 스킵')
 parser.add_argument('--skip-test', action='store_true',
                     help='모델 로드 테스트 스킵')
+parser.add_argument('--local', action='store_true',
+                    help='로컬 환경 (맥북)에서 conda 환경으로 실행 (기본값: 서버 직접 실행)')
 
 args = parser.parse_args()
 
@@ -83,6 +87,7 @@ args = parser.parse_args()
 should_convert = not args.no_convert
 should_compress = not args.skip_compress
 should_test = not args.skip_test
+use_conda = args.local  # 로컬 환경(--local)일 때만 conda 사용
 
 # ============================================================================
 # 유틸리티 함수
@@ -294,6 +299,9 @@ print_success("파일 검증 완료")
 # Step 4: CTranslate2 포맷 변환 (model.bin 생성) - 조건부
 # ============================================================================
 
+# validation_passed 초기화 (이후 검증 결과에 따라 업데이트)
+validation_passed = False
+
 print_step("Step 4: CTranslate2 포맷 변환 (model.bin 생성)")
 
 if not should_convert:
@@ -323,14 +331,26 @@ else:
             
             output_dir.mkdir(parents=True, exist_ok=True)
             
-            # 직접 실행 (conda 없이)
-            cmd = [
-                "ct2-transformers-converter",
-                "--model", "openai/whisper-large-v3-turbo",
-                "--output_dir", str(output_dir),
-                "--force",
-                "--quantization", "int8"
-            ]
+            # 명령어 구성 (로컬 환경이면 conda 사용, 서버는 직접 실행)
+            if use_conda:
+                # 로컬 환경: conda로 실행
+                cmd = [
+                    "conda", "run", "-n", "stt-py311",
+                    "ct2-transformers-converter",
+                    "--model", "openai/whisper-large-v3-turbo",
+                    "--output_dir", str(output_dir),
+                    "--force",
+                    "--quantization", "int8"
+                ]
+            else:
+                # 서버 환경: 직접 실행
+                cmd = [
+                    "ct2-transformers-converter",
+                    "--model", "openai/whisper-large-v3-turbo",
+                    "--output_dir", str(output_dir),
+                    "--force",
+                    "--quantization", "int8"
+                ]
             
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
             
