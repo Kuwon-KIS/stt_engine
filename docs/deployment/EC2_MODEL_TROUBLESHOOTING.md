@@ -276,4 +276,110 @@ curl http://localhost:8003/health
 
 ---
 
+## 🔄 최신 개선사항 (2025년 2월)
+
+### 상대 경로 심링크 적용
+
+**문제**: 이전에는 model.bin 심링크가 절대 경로로 생성되어서, Docker (`/app/models`)와 운영 서버 (`/data/models`)에서 경로가 다르면 작동하지 않음
+
+**해결**: 상대 경로 심링크로 변경
+```
+# 이전 (절대 경로)
+model.bin → /home/ec2-user/stt_engine/models/openai_whisper-large-v3-turbo/ctranslate2_model/model-0001.bin
+❌ Docker에서 작동 안함
+
+# 현재 (상대 경로) ✅
+model.bin → ./ctranslate2_model/model-0001.bin
+✅ Docker (/app/models) & 운영 서버 (/data/models) 모두 작동
+```
+
+### 자동 진단 및 복구 도구
+
+모델 문제 시 자동으로 진단하고 수정하는 스크립트 추가:
+
+```bash
+# EC2에서 모델 진단
+python diagnose_model.py
+
+# 또는 특정 경로 진단
+python diagnose_model.py /data/models/openai_whisper-large-v3-turbo
+```
+
+**기능:**
+1. 모델 디렉토리 구조 상세 진단
+2. model.bin 파일 위치 자동 파악
+3. 상대 경로 심링크 자동 생성 (또는 파일 복사)
+4. faster-whisper 로드 테스트
+
+**출력 예시:**
+```
+======================================================================
+🔍 모델 디렉토리 진단
+======================================================================
+
+📁 모델 디렉토리: /data/models/openai_whisper-large-v3-turbo
+
+📂 최상위 파일:
+   🔗 model.bin (1.50GB)
+      → ctranslate2_model/model-0001.bin
+   📁 ctranslate2_model/ (3 items)
+
+🔎 model.bin 파일 검색:
+   ✅ 1개 발견:
+      - ctranslate2_model/model-0001.bin (1.50GB)
+
+======================================================================
+✅ faster-whisper 모델 로드 테스트
+======================================================================
+
+✅ 모델 로드 성공!
+
+📋 모델 정보:
+   타입: Whisper Large-v3-Turbo (CTranslate2)
+   디바이스: CPU
+   Compute Type: FP32
+```
+
+### 모델 준비 스크립트 (EC2용)
+
+EC2에서 모델을 처음부터 준비하는 쉘 스크립트:
+
+```bash
+# 스크립트 실행
+bash ec2_prepare_model.sh
+
+# 또는 옵션과 함께
+bash ec2_prepare_model.sh --skip-test        # 테스트 스킵
+bash ec2_prepare_model.sh --skip-compress    # 압축 스킵
+bash ec2_prepare_model.sh --no-convert       # 변환 스킵 (PyTorch만)
+```
+
+**포함 기능:**
+- Python 3.11 환경 확인
+- 필수 패키지 검증 (huggingface-hub, faster-whisper, ctranslate2)
+- 모델 다운로드 & CTranslate2 변환
+- 자동 진행 상황 보고
+
+### 심링크 호환성 확인
+
+Docker와 운영 서버 모두에서 작동하는지 검증:
+
+```bash
+# 심링크 확인
+ls -l models/openai_whisper-large-v3-turbo/model.bin
+
+# 정상 출력 (상대 경로)
+lrwxr-xr-x  user  group  ctranslate2_model/model-0001.bin → model.bin
+```
+
+**호환 경로:**
+
+| 환경 | 경로 | 작동 |
+|------|------|------|
+| Docker | `/app/models/openai_whisper-large-v3-turbo` | ✅ |
+| EC2 (/data) | `/data/models/openai_whisper-large-v3-turbo` | ✅ |
+| EC2 (/home) | `/home/ec2-user/stt_engine/models/...` | ✅ |
+
+모든 경로에서 상대 경로를 사용하므로 문제없이 작동합니다! ✨
+
 **질문이나 추가 도움이 필요하면 알려주세요!**
