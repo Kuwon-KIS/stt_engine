@@ -333,21 +333,43 @@ else:
             for cfg_file in sorted(config_files):
                 print(f"     - {cfg_file.name}")
         
-        # model.bin 심링크 생성
+        # model.bin 준비 (상대 경로 심링크 또는 카피)
+        # 중요: 상대 경로를 사용하여 Docker(/app/models)와 운영 서버(/data/models) 모두 호환
         print()
-        print("⏳ 심링크 생성 중...")
+        print("⏳ model.bin 파일 준비 중...")
         
         if bin_files:
             model_bin_src = bin_files[0]
             model_bin_link = model_specific_dir / "model.bin"
             
+            # 기존 파일 정리
             if model_bin_link.exists() or model_bin_link.is_symlink():
-                model_bin_link.unlink()
+                try:
+                    model_bin_link.unlink()
+                except Exception as e:
+                    print(f"⚠️  기존 파일 삭제 실패: {e}")
             
-            model_bin_link.symlink_to(model_bin_src)
-            print_success("✅ model.bin 심링크 생성 완료")
-            print(f"   소스: {model_bin_src.name}")
-            print(f"   대상: model.bin")
+            # 상대 경로 심링크 생성 시도
+            try:
+                # 상대 경로: ctranslate2_model 디렉토리 안의 bin 파일을 부모 디렉토리에서 참조
+                relative_path = model_bin_src.relative_to(model_specific_dir)
+                model_bin_link.symlink_to(relative_path)
+                print_success("✅ model.bin 상대 경로 심링크 생성 완료")
+                print(f"   소스: {relative_path}")
+                print(f"   대상: model.bin")
+                print(f"   (Docker: /app/models → 운영: /data/models에서도 작동)")
+            except Exception as e:
+                # 심링크 실패 시 파일 복사 (Windows/권한 문제 해결)
+                print(f"⚠️  심링크 생성 실패: {e}")
+                print("   파일 복사로 대체합니다...")
+                try:
+                    import shutil
+                    shutil.copy2(model_bin_src, model_bin_link)
+                    print_success("✅ model.bin 파일 복사 완료")
+                    print(f"   소스: {model_bin_src.name}")
+                    print(f"   대상: model.bin")
+                except Exception as copy_e:
+                    print(f"❌ 파일 복사 실패: {copy_e}")
         else:
             print("⚠️  변환된 바이너리 파일을 찾을 수 없습니다")
     
@@ -505,38 +527,89 @@ else:
         ct2_model_dir = model_specific_dir / "ctranslate2_model"
         model_bin_path = ct2_model_dir / "model.bin"
         
+        print("📁 모델 구조 확인:")
+        print(f"   모델 디렉토리: {model_specific_dir}")
+        print(f"   CTranslate2 경로: {ct2_model_dir}")
+        print(f"   model.bin 위치: {model_bin_path}")
+        print()
+        
+        # 모델 디렉토리 구조 상세 확인
+        if model_specific_dir.exists():
+            print(f"   📂 {model_specific_dir.name}/ 내용:")
+            for item in sorted(model_specific_dir.iterdir()):
+                if item.is_file():
+                    size_mb = item.stat().st_size / (1024**2)
+                    print(f"      - {item.name} ({size_mb:.2f}MB)")
+                elif item.is_dir():
+                    file_count = len(list(item.glob("*")))
+                    print(f"      📁 {item.name}/ ({file_count} items)")
+                    if item.name == "ctranslate2_model":
+                        for sub in sorted(item.glob("*"))[:5]:
+                            if sub.is_file():
+                                size_mb = sub.stat().st_size / (1024**2)
+                                print(f"         - {sub.name} ({size_mb:.2f}MB)")
+        print()
+        
         if not model_bin_path.exists():
-            print_warn("CTranslate2 모델 파일을 찾을 수 없습니다")
-            print("변환을 스킵했거나 변환에 실패했습니다.")
-            print()
-            print("💡 옵션 없이 다시 실행하여 변환하세요:")
-            print("   python download_model_hf.py")
-            print()
-        else:
-            print("⏳ faster-whisper로 CTranslate2 모델 로드 중...")
-            print(f"   모델 경로: {ct2_model_dir}")
-            print("   (이 단계는 1-3분 걸릴 수 있습니다)")
+            print("❌ CTranslate2 모델 파일을 찾을 수 없습니다!")
             print()
             
-            try:
-                model = WhisperModel(
-                    model_size_or_path=str(ct2_model_dir),
-                    device="cpu",
-                    compute_type="float32"
-                )
-                
-                print_success("✅ faster-whisper 모델 로드 성공!")
+            # 대체 경로 확인
+            alt_bins = list(ct2_model_dir.glob("*.bin")) if ct2_model_dir.exists() else []
+            if alt_bins:
+                print(f"⚠️  {len(alt_bins)}개의 .bin 파일이 발견되었습니다:")
+                for alt_bin in alt_bins:
+                    size_mb = alt_bin.stat().st_size / (1024**2)
+                    print(f"   - {alt_bin.name} ({size_mb:.2f}MB)")
                 print()
+                print("💡 first-whisper는 model.bin을 기대합니다.")
+                print("   model.bin 심링크/복사를 시도합니다...")
                 
-                print("📋 모델 정보:")
-                print(f"   ✓ 모델 타입: Whisper Large-v3-Turbo")
-                print(f"   ✓ 형식: CTranslate2 바이너리 (model.bin)")
-                print(f"   ✓ 디바이스: CPU")
-                print(f"   ✓ Compute Type: FP32")
+                # 자동으로 model.bin 생성
+                try:
+                    first_bin = sorted(alt_bins)[0]
+                    shutil.copy2(first_bin, model_bin_path)
+                    print(f"✅ model.bin 생성 완료: {first_bin.name} → model.bin")
+                except Exception as copy_e:
+                    print(f"❌ model.bin 생성 실패: {copy_e}")
+                    raise
+            else:
+                print_warn("변환을 스킵했거나 변환에 실패했습니다.")
                 print()
-                
-                # 샘플 오디오로 추론 테스트
-                print("⏳ 샘플 오디오로 추론 테스트 중...")
+                print("💡 옵션 없이 다시 실행하여 변환하세요:")
+                print("   python download_model_hf.py")
+                print()
+                raise RuntimeError("CTranslate2 모델 변환 필요")
+        else:
+            print_success("✅ CTranslate2 모델 파일 확인됨")
+            size_mb = model_bin_path.stat().st_size / (1024**2)
+            print(f"   파일 크기: {size_mb:.2f}MB")
+            print()
+            
+        print("⏳ faster-whisper로 CTranslate2 모델 로드 중...")
+        print(f"   모델 경로: {ct2_model_dir}")
+        print("   (이 단계는 1-3분 걸릴 수 있습니다)")
+        print()
+        
+        try:
+            model = WhisperModel(
+                model_size_or_path=str(ct2_model_dir),
+                device="cpu",
+                compute_type="float32"
+            )
+            
+            print_success("✅ faster-whisper 모델 로드 성공!")
+            print()
+            
+            print("📋 모델 정보:")
+            print(f"   ✓ 모델 타입: Whisper Large-v3-Turbo")
+            print(f"   ✓ 형식: CTranslate2 바이너리 (model.bin)")
+            print(f"   ✓ 디바이스: CPU")
+            print(f"   ✓ Compute Type: FP32")
+            print()
+            
+            # 샘플 오디오로 추론 테스트
+            print("⏳ 샘플 오디오로 추론 테스트 중...")
                 sample_audio_dir = BASE_DIR / "audio" / "samples"
                 
                 # 디버그: 경로 정보 출력
