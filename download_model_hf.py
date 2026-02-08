@@ -273,16 +273,24 @@ if total_size < MIN_TOTAL_SIZE_MB:
 # 각 파일의 체크섬 검증 (간단한 무결성 검사)
 print()
 print("✅ 파일 무결성 검증 중...")
+
+import json
+
 for file_path in [model_specific_dir / f for f in REQUIRED_FILES]:
     if file_path.exists():
         try:
             # 파일을 읽어서 기본적인 손상 여부 확인
             if file_path.suffix in ['.json']:
                 # JSON 파일은 파싱 가능한지 확인
-                import json
                 with open(file_path, 'r') as f:
-                    json.load(f)
-                print(f"   ✓ {file_path.name} (JSON 검증 OK)")
+                    data = json.load(f)
+                file_size = file_path.stat().st_size
+                if file_size < 100:  # 100바이트 미만이면 손상된 것으로 의심
+                    print(f"   ⚠️  {file_path.name} (파일이 너무 작음: {file_size} bytes - 손상 가능성)")
+                    if file_path.name == "config.json":
+                        print_error(f"❌ PyTorch config.json이 손상되었습니다. 다시 다운로드해주세요:\n  rm -rf {model_specific_dir}\n  python download_model_hf.py")
+                else:
+                    print(f"   ✓ {file_path.name} (JSON 검증 OK, {file_size} bytes)")
             else:
                 # 다른 파일은 크기만 확인
                 size = file_path.stat().st_size
@@ -421,6 +429,7 @@ else:
     if conversion_success and output_dir.exists():
         bin_files = list(output_dir.glob("*.bin"))
         config_files = list(output_dir.glob("*.json"))
+        vocab_files = list(output_dir.glob("vocabulary*"))
         
         print("✅ 변환된 CTranslate2 모델 파일:")
         
@@ -438,7 +447,38 @@ else:
         if config_files:
             print("\n   ✓ 설정 파일:")
             for cfg_file in sorted(config_files):
-                print(f"     - {cfg_file.name}")
+                size = cfg_file.stat().st_size / 1024  # KB로 표시
+                print(f"     - {cfg_file.name} ({size:.1f}KB)")
+        
+        # 필수 파일 검증 (vocabulary.json)
+        if not vocab_files:
+            print_error(f"❌ vocabulary 파일을 찾을 수 없습니다!\nCTranslate2 변환이 완전하지 않습니다.\n다시 실행해주세요:\n  rm -rf {output_dir}\n  python download_model_hf.py")
+        
+        # CTranslate2 config.json 검증
+        ct2_config = output_dir / "config.json"
+        if ct2_config.exists():
+            import json
+            try:
+                with open(ct2_config, 'r') as f:
+                    config_data = json.load(f)
+                config_size = ct2_config.stat().st_size
+                if config_size < 500:  # 500바이트 미만이면 손상된 것으로 의심
+                    print_error(f"❌ config.json이 손상되었을 수 있습니다 ({config_size} bytes)\n다시 실행해주세요:\n  python download_model_hf.py")
+                print(f"   ✓ config.json 검증 OK")
+            except json.JSONDecodeError as e:
+                print_error(f"❌ config.json이 유효한 JSON이 아닙니다: {e}\n다시 실행해주세요:\n  python download_model_hf.py")
+        
+        # vocabulary.json 검증
+        vocab_json = output_dir / "vocabulary.json"
+        if vocab_json.exists():
+            try:
+                with open(vocab_json, 'r') as f:
+                    vocab_data = json.load(f)
+                if not isinstance(vocab_data, dict) or len(vocab_data) == 0:
+                    print_error(f"❌ vocabulary.json이 비어있거나 유효하지 않습니다\n다시 실행해주세요:\n  python download_model_hf.py")
+                print(f"   ✓ vocabulary.json 검증 OK ({len(vocab_data)} tokens)")
+            except json.JSONDecodeError as e:
+                print_error(f"❌ vocabulary.json이 유효한 JSON이 아닙니다: {e}\n다시 실행해주세요:\n  python download_model_hf.py")
         
         # model.bin 준비 (상대 경로 심링크 또는 카피)
         # 중요: 상대 경로를 사용하여 Docker(/app/models)와 운영 서버(/data/models) 모두 호환
