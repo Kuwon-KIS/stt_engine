@@ -65,3 +65,5 @@ logs/
 *.log
 
 .build-pid
+
+scratch/

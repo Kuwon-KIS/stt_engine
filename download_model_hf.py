@@ -424,6 +424,9 @@ else:
         
         print("✅ 변환된 CTranslate2 모델 파일:")
         
+        if not bin_files:
+            print_error("❌ 변환된 바이너리 파일을 찾을 수 없습니다. CTranslate2 변환이 실패했을 수 있습니다.")
+        
         if bin_files:
             total_size = 0
             for bin_file in sorted(bin_files):
@@ -442,9 +445,11 @@ else:
         print()
         print("⏳ model.bin 파일 준비 중...")
         
+        model_bin_link = model_specific_dir / "model.bin"
+        model_bin_created = False
+        
         if bin_files:
             model_bin_src = bin_files[0]
-            model_bin_link = model_specific_dir / "model.bin"
             
             # 기존 파일 정리
             if model_bin_link.exists() or model_bin_link.is_symlink():
@@ -462,6 +467,7 @@ else:
                 print(f"   소스: {relative_path}")
                 print(f"   대상: model.bin")
                 print(f"   (Docker: /app/models → 운영: /data/models에서도 작동)")
+                model_bin_created = True
             except Exception as e:
                 # 심링크 실패 시 파일 복사 (Windows/권한 문제 해결)
                 print(f"⚠️  심링크 생성 실패: {e}")
@@ -472,10 +478,18 @@ else:
                     print_success("✅ model.bin 파일 복사 완료")
                     print(f"   소스: {model_bin_src.name}")
                     print(f"   대상: model.bin")
+                    model_bin_created = True
                 except Exception as copy_e:
-                    print(f"❌ 파일 복사 실패: {copy_e}")
+                    print_error(f"❌ model.bin 파일 생성 실패: {copy_e}\n다시 다운로드해주세요:\n  rm -rf {model_specific_dir}\n  python download_model_hf.py")
         else:
-            print("⚠️  변환된 바이너리 파일을 찾을 수 없습니다")
+            print_error("❌ 변환된 바이너리 파일을 찾을 수 없습니다")
+        
+        # model.bin 생성 확인
+        if not model_bin_created:
+            print_error(f"❌ model.bin 파일을 생성할 수 없습니다")
+        
+        if not model_bin_link.exists():
+            print_error(f"❌ model.bin 파일이 생성되지 않았습니다: {model_bin_link}")
     
     else:
         print("⚠️  CTranslate2 변환 실패")
@@ -707,25 +721,33 @@ elif not should_compress:
         print(f"   model.bin 위치: {model_bin_path}")
         print()
         
+        # 필수 디렉토리/파일 확인
+        if not model_specific_dir.exists():
+            print_error(f"❌ 모델 디렉토리가 없습니다: {model_specific_dir}\n다시 다운로드해주세요:\n  python download_model_hf.py")
+        
+        if not ct2_model_dir.exists():
+            print_error(f"❌ CTranslate2 모델 디렉토리가 없습니다: {ct2_model_dir}\nCTranslate2 변환을 실행해주세요:\n  python download_model_hf.py")
+        
         # 모델 디렉토리 구조 상세 확인
-        if model_specific_dir.exists():
-            print(f"   📂 {model_specific_dir.name}/ 내용:")
-            for item in sorted(model_specific_dir.iterdir()):
-                if item.is_file():
-                    size_mb = item.stat().st_size / (1024**2)
-                    print(f"      - {item.name} ({size_mb:.2f}MB)")
-                elif item.is_dir():
-                    file_count = len(list(item.glob("*")))
-                    print(f"      📁 {item.name}/ ({file_count} items)")
-                    if item.name == "ctranslate2_model":
-                        for sub in sorted(item.glob("*"))[:5]:
-                            if sub.is_file():
-                                size_mb = sub.stat().st_size / (1024**2)
-                                print(f"         - {sub.name} ({size_mb:.2f}MB)")
+        print(f"   📂 {model_specific_dir.name}/ 내용:")
+        for item in sorted(model_specific_dir.iterdir()):
+            if item.is_file():
+                size_mb = item.stat().st_size / (1024**2)
+                print(f"      - {item.name} ({size_mb:.2f}MB)")
+            elif item.is_dir():
+                file_count = len(list(item.glob("*")))
+                print(f"      📁 {item.name}/ ({file_count} items)")
+                if item.name == "ctranslate2_model":
+                    for sub in sorted(item.glob("*"))[:5]:
+                        if sub.is_file():
+                            size_mb = sub.stat().st_size / (1024**2)
+                            print(f"         - {sub.name} ({size_mb:.2f}MB)")
         print()
         
-        if not model_bin_path.exists():
-            print("❌ CTranslate2 모델 파일을 찾을 수 없습니다!")
+        # model.bin 확인 (부모 디렉토리에서)
+        model_bin_parent = model_specific_dir / "model.bin"
+        if not model_bin_path.exists() and not model_bin_parent.exists():
+            print_error(f"❌ model.bin 파일을 찾을 수 없습니다!\nCTranslate2 변환을 다시 실행해주세요:\n  python download_model_hf.py")
             print()
             
             # 대체 경로 확인
