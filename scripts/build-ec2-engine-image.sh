@@ -5,11 +5,11 @@
 # 🚀 STT Engine Docker 이미지 빌드 스크립트 (AWS EC2 RHEL 8.9)
 #
 # 목적: Docker 이미지 빌드만 수행 (모델 다운로드 제외)
-# 사용: bash scripts/build-server-image.sh [버전]
+# 사용: bash scripts/build-ec2-engine-image.sh [버전]
 # 예시: 
-#   bash scripts/build-server-image.sh          # v1.4 (기본값)
-#   bash scripts/build-server-image.sh v1.5     # v1.5로 빌드
-#   bash scripts/build-server-image.sh v2.0     # v2.0으로 빌드
+#   bash scripts/build-ec2-engine-image.sh          # v1.4 (기본값)
+#   bash scripts/build-ec2-engine-image.sh v1.5     # v1.5로 빌드
+#   bash scripts/build-ec2-engine-image.sh v2.0     # v2.0으로 빌드
 #
 # 결과: stt-engine:cuda129-rhel89-[버전] (7.3GB)
 # 소요시간: 20~40분 (Docker 빌드만)
@@ -28,7 +28,10 @@ set -e
 # 설정
 # ============================================================================
 
-WORKSPACE="${PWD}"
+# 스크립트 경로 (scripts/ 디렉토리)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# 프로젝트 루트 (scripts/의 부모 디렉토리)
+WORKSPACE="$(dirname "$SCRIPT_DIR")"
 DOCKER_DIR="${WORKSPACE}/docker"
 OUTPUT_DIR="${WORKSPACE}/build/output"
 BUILD_LOG="/tmp/build-image-$(date +%Y%m%d-%H%M%S).log"

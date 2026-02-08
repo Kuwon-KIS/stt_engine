@@ -66,8 +66,11 @@ done
 # 3. 작업 디렉토리 확인
 echo ""
 echo "3️⃣  작업 디렉토리 확인..."
+# 스크립트 경로 (scripts/ 디렉토리)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-echo "   📁 작업 경로: $SCRIPT_DIR"
+# 프로젝트 루트 (scripts/의 부모 디렉토리)
+WORKSPACE="$(dirname "$SCRIPT_DIR")"
+echo "   📁 프로젝트 경로: $WORKSPACE"
 
 # 4. 모델 다운로드 및 변환
 echo ""
@@ -90,10 +93,10 @@ if [[ "$*" == *"--no-convert"* ]]; then
 fi
 
 echo ""
-echo "실행: $PYTHON_BIN download_model_hf.py $PYTHON_OPTS"
+echo "실행: $PYTHON_BIN ../download_model_hf.py $PYTHON_OPTS"
 echo ""
 
-cd "$SCRIPT_DIR"
+cd "$WORKSPACE"
 $PYTHON_BIN download_model_hf.py $PYTHON_OPTS
 
 if [ $? -eq 0 ]; then
