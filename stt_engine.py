@@ -410,10 +410,15 @@ class WhisperSTT:
                 if len(diagnosis['files']['list']) > 10:
                     print(f"      ... 외 {len(diagnosis['files']['list']) - 10}개")
             
-            # 모델 로드 시도
+            # 모델 로드 시도 - CTranslate2 모델 서브디렉토리 사용
+            # faster-whisper는 모델.bin과 tokenizer 파일들이 같은 디렉토리에 있어야 함
+            ct2_model_dir = Path(self.model_path) / "ctranslate2_model"
+            
             print(f"\n   📦 faster-whisper WhisperModel 로드 중...")
+            print(f"   📁 모델 경로: {ct2_model_dir}")
+            
             self.model = WhisperModel(
-                self.model_path,
+                str(ct2_model_dir),
                 device=self.device,
                 compute_type=self.compute_type,
                 num_workers=4,
