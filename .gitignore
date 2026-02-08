@@ -4,12 +4,14 @@ models/
 *.bin
 *.safetensors
 
-# Audio files
+# Audio files (except samples)
 audio/
+!audio/samples/
 *.wav
 *.mp3
 *.flac
 *.ogg
+!audio/samples/*.wav
 
 # Python
 __pycache__/

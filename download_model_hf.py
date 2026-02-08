@@ -535,13 +535,46 @@ else:
                 print(f"   ✓ Compute Type: FP32")
                 print()
                 
-                print("="*60)
-                print("✅ 모델 검증 완료!")
-                print("="*60)
-                print()
-                print("🎉 faster-whisper로 정상 작동합니다!")
-                print("   CTranslate2 변환된 모델이 성공적으로 로드되었습니다.")
-                print()
+                # 샘플 오디오로 추론 테스트
+                print("⏳ 샘플 오디오로 추론 테스트 중...")
+                sample_audio_dir = BASE_DIR / "audio" / "samples"
+                
+                test_files = [
+                    ("short_0.5s.wav", "짧은 오디오 (0.5초)"),
+                    ("medium_3s.wav", "중간 오디오 (3초)"),
+                    ("long_10s.wav", "긴 오디오 (10초)"),
+                ]
+                
+                test_passed = False
+                for audio_file, label in test_files:
+                    audio_path = sample_audio_dir / audio_file
+                    
+                    if audio_path.exists():
+                        try:
+                            segments, info = model.transcribe(str(audio_path), language="ko")
+                            list(segments)  # consume generator
+                            print(f"   ✓ {label} 테스트 성공")
+                            test_passed = True
+                        except Exception as e:
+                            print(f"   ⚠️  {label} 테스트 실패: {str(e)[:100]}")
+                    else:
+                        print(f"   ⚠️  {label} 샘플 파일 없음: {audio_path}")
+                
+                if test_passed:
+                    print()
+                    print("="*60)
+                    print("✅ 모델 검증 완료!")
+                    print("="*60)
+                    print()
+                    print("🎉 faster-whisper로 정상 작동합니다!")
+                    print("   CTranslate2 변환된 모델이 성공적으로 로드되었습니다.")
+                    print()
+                else:
+                    print()
+                    print("⚠️  샘플 오디오를 찾을 수 없습니다")
+                    print("   먼저 샘플 오디오를 생성하세요:")
+                    print("   python generate_sample_audio.py")
+                    print()
                 
             except (MemoryError, OSError) as e:
                 print_warn("메모리 부족으로 로드 테스트 스킵")
