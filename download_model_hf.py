@@ -610,84 +610,84 @@ else:
             
             # 샘플 오디오로 추론 테스트
             print("⏳ 샘플 오디오로 추론 테스트 중...")
-                sample_audio_dir = BASE_DIR / "audio" / "samples"
+            sample_audio_dir = BASE_DIR / "audio" / "samples"
+            
+            # 디버그: 경로 정보 출력
+            print(f"   샘플 경로: {sample_audio_dir}")
+            print(f"   경로 존재 여부: {sample_audio_dir.exists()}")
+            
+            if sample_audio_dir.exists():
+                print(f"   디렉토리 내용: {list(sample_audio_dir.glob('*.wav'))}")
+            
+            test_files = [
+                ("short_0.5s.wav", "짧은 오디오 (0.5초)"),
+                ("medium_3s.wav", "중간 오디오 (3초)"),
+                ("long_10s.wav", "긴 오디오 (10초)"),
+            ]
+            
+            test_passed = False
+            for audio_file, label in test_files:
+                audio_path = sample_audio_dir / audio_file
                 
-                # 디버그: 경로 정보 출력
-                print(f"   샘플 경로: {sample_audio_dir}")
-                print(f"   경로 존재 여부: {sample_audio_dir.exists()}")
-                
-                if sample_audio_dir.exists():
-                    print(f"   디렉토리 내용: {list(sample_audio_dir.glob('*.wav'))}")
-                
-                test_files = [
-                    ("short_0.5s.wav", "짧은 오디오 (0.5초)"),
-                    ("medium_3s.wav", "중간 오디오 (3초)"),
-                    ("long_10s.wav", "긴 오디오 (10초)"),
-                ]
-                
-                test_passed = False
-                for audio_file, label in test_files:
-                    audio_path = sample_audio_dir / audio_file
-                    
-                    if audio_path.exists():
-                        try:
-                            # 파일 크기 확인
-                            file_size = audio_path.stat().st_size
-                            print(f"   테스트 중: {label} ({file_size} bytes)...")
-                            
-                            segments, info = model.transcribe(str(audio_path), language="ko")
-                            list(segments)  # consume generator
-                            print(f"   ✓ {label} 테스트 성공")
-                            test_passed = True
-                        except Exception as e:
-                            error_msg = str(e)
-                            # 특정 에러는 무시하고 계속 진행 (mel-spectrogram 호환성 문제)
-                            if "Invalid input features shape" in error_msg or "shape" in error_msg.lower():
-                                print(f"   ⚠️  {label} mel-spectrogram 형식 불일치 (무시)")
-                                test_passed = True  # 이 경우에도 성공으로 간주 (모델 자체는 정상)
-                            else:
-                                print(f"   ⚠️  {label} 테스트 실패: {error_msg[:80]}")
-                    else:
-                        print(f"   ⚠️  {label} 샘플 파일 없음: {audio_path}")
-                        if sample_audio_dir.exists():
-                            print(f"      {sample_audio_dir}의 파일 목록: {list(sample_audio_dir.glob('*'))}")
-                
-                if test_passed:
-                    print()
-                    print("="*60)
-                    print("✅ 모델 검증 완료!")
-                    print("="*60)
-                    print()
-                    print("🎉 faster-whisper로 정상 작동합니다!")
-                    print("   CTranslate2 변환된 모델이 성공적으로 로드되었습니다.")
-                    print()
+                if audio_path.exists():
+                    try:
+                        # 파일 크기 확인
+                        file_size = audio_path.stat().st_size
+                        print(f"   테스트 중: {label} ({file_size} bytes)...")
+                        
+                        segments, info = model.transcribe(str(audio_path), language="ko")
+                        list(segments)  # consume generator
+                        print(f"   ✓ {label} 테스트 성공")
+                        test_passed = True
+                    except Exception as e:
+                        error_msg = str(e)
+                        # 특정 에러는 무시하고 계속 진행 (mel-spectrogram 호환성 문제)
+                        if "Invalid input features shape" in error_msg or "shape" in error_msg.lower():
+                            print(f"   ⚠️  {label} mel-spectrogram 형식 불일치 (무시)")
+                            test_passed = True  # 이 경우에도 성공으로 간주 (모델 자체는 정상)
+                        else:
+                            print(f"   ⚠️  {label} 테스트 실패: {error_msg[:80]}")
                 else:
-                    print()
-                    print("⚠️  샘플 오디오 테스트 실패")
-                    print("   샘플 오디오를 다시 생성하세요:")
-                    print("   python generate_sample_audio.py")
-                    print()
-                
-            except (MemoryError, OSError) as e:
-                print_warn("메모리 부족으로 로드 테스트 스킵")
-                print("필요 메모리: 16GB 이상")
-                print("모델은 정상적으로 생성되었습니다.")
+                    print(f"   ⚠️  {label} 샘플 파일 없음: {audio_path}")
+                    if sample_audio_dir.exists():
+                        print(f"      {sample_audio_dir}의 파일 목록: {list(sample_audio_dir.glob('*'))}")
+            
+            if test_passed:
                 print()
-                print("💡 권장사항:")
-                print("   • EC2 인스턴스 업그레이드: t3.large → t3.xlarge (16GB)")
-                print("   • 또는 스왑 메모리 추가: sudo fallocate -l 8G /swapfile")
+                print("="*60)
+                print("✅ 모델 검증 완료!")
+                print("="*60)
                 print()
-                print("💡 Docker에서 테스트:")
-                print("   docker run -it -p 8003:8003 -v $(pwd)/models:/app/models stt-engine:latest")
+                print("🎉 faster-whisper로 정상 작동합니다!")
+                print("   CTranslate2 변환된 모델이 성공적으로 로드되었습니다.")
                 print()
-                
-            except Exception as e:
-                print_warn(f"모델 로드 중 오류: {type(e).__name__}")
-                print(f"{str(e)[:200]}")
+            else:
                 print()
-                print("💡 Docker 환경에서 테스트하세요:")
-                print("   docker run -it -p 8003:8003 -v $(pwd)/models:/app/models stt-engine:latest")
+                print("⚠️  샘플 오디오 테스트 실패")
+                print("   샘플 오디오를 다시 생성하세요:")
+                print("   python generate_sample_audio.py")
                 print()
+            
+        except (MemoryError, OSError) as e:
+            print_warn("메모리 부족으로 로드 테스트 스킵")
+            print("필요 메모리: 16GB 이상")
+            print("모델은 정상적으로 생성되었습니다.")
+            print()
+            print("💡 권장사항:")
+            print("   • EC2 인스턴스 업그레이드: t3.large → t3.xlarge (16GB)")
+            print("   • 또는 스왑 메모리 추가: sudo fallocate -l 8G /swapfile")
+            print()
+            print("💡 Docker에서 테스트:")
+            print("   docker run -it -p 8003:8003 -v $(pwd)/models:/app/models stt-engine:latest")
+            print()
+            
+        except Exception as e:
+            print_warn(f"모델 로드 중 오류: {type(e).__name__}")
+            print(f"{str(e)[:200]}")
+            print()
+            print("💡 Docker 환경에서 테스트하세요:")
+            print("   docker run -it -p 8003:8003 -v $(pwd)/models:/app/models stt-engine:latest")
+            print()
                 
     except ImportError:
         print_warn("faster-whisper가 설치되어 있지 않습니다")
