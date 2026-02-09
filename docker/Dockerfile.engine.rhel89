@@ -119,8 +119,9 @@ RUN python3.11 -m pip install \
 # Step 8: pip + setuptools + wheel 업그레이드 (모든 패키지 설치 준비)
 # ============================================================================
 # pip를 먼저 업그레이드 → 최신 pip로 setuptools/wheel 설치
-# 이렇게 하면 모든 빌드 의존성(openai-whisper 포함) 정상 작동
-RUN python3.11 -m pip install --no-cache-dir --upgrade pip setuptools wheel
+# setuptools의 pkg_resources가 librosa(transformers 백엔드)에서 필요함
+RUN python3.11 -m pip install --no-cache-dir --upgrade pip && \
+    python3.11 -m pip install --no-cache-dir --upgrade --force-reinstall setuptools wheel
 
 # ============================================================================
 # Step 9: 모든 애플리케이션 의존성 설치 (모든 백엔드 활용 가능)
