@@ -206,12 +206,12 @@ save_image() {
     
     # pigz 확인 (병렬 압축으로 훨씬 빠름)
     if command -v pigz &> /dev/null; then
-        log_info "pigz로 병렬 압축 중 (cores: $(nproc), 압축률: 빠름) ..."
-        docker save "$IMAGE_TAG" | pigz -1 -p $(nproc) > "$OUTPUT_DIR/stt-engine-${IMAGE_VERSION}.tar.gz"
+        log_info "pigz로 병렬 압축 중 (cores: $(nproc), 압축률: 균형) ..."
+        docker save "$IMAGE_TAG" | pigz -6 -p $(nproc) > "$OUTPUT_DIR/stt-engine-${IMAGE_VERSION}.tar.gz"
     else
         log_info "gzip으로 압축 중 (pigz 미설치, 압축률: 낮음) ..."
         log_info "더 빠른 압축을 원하면: yum install -y pigz"
-        docker save "$IMAGE_TAG" | gzip -1 > "$OUTPUT_DIR/stt-engine-${IMAGE_VERSION}.tar.gz"
+        docker save "$IMAGE_TAG" | gzip -6 > "$OUTPUT_DIR/stt-engine-${IMAGE_VERSION}.tar.gz"
     fi
     
     local image_tar_size=$(du -sh "$OUTPUT_DIR/stt-engine-${IMAGE_VERSION}.tar.gz" | awk '{print $1}')
