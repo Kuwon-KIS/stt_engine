@@ -18,6 +18,9 @@ from pathlib import Path
 from typing import Optional, Dict
 import tarfile
 import logging
+import json
+import librosa
+import numpy as np
 
 # 로깅 설정
 logging.basicConfig(
@@ -56,6 +59,70 @@ if not (FASTER_WHISPER_AVAILABLE or TRANSFORMERS_AVAILABLE or WHISPER_AVAILABLE)
         "  2. transformers (HF 모델 지원)\n"
         "  3. openai-whisper / whisper (공식 모델만 지원)"
     )
+
+
+def get_model_mel_bins(model_path: str) -> int:
+    """모델 config에서 mel-bin 개수 추출"""
+    config_path = Path(model_path) / "config.json"
+    
+    if not config_path.exists():
+        logger.warning(f"config.json 없음: {config_path}, 기본값 80 사용")
+        return 80
+    
+    try:
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+            # 여러 가능한 키 확인
+            num_mels = config.get('num_mel_bins') or config.get('n_mels') or 80
+            logger.info(f"모델 mel-bins: {num_mels}")
+            return num_mels
+    except Exception as e:
+        logger.error(f"config.json 읽기 실패: {e}, 기본값 80 사용")
+        return 80
+
+
+def preprocess_audio_with_mel_bins(audio_path: str, num_mel_bins: int = 80, 
+                                    sr: int = 16000, n_fft: int = 400, 
+                                    hop_length: int = 160) -> np.ndarray:
+    """
+    지정된 mel-bin 개수로 오디오를 mel-spectrogram으로 변환
+    
+    Args:
+        audio_path: 오디오 파일 경로
+        num_mel_bins: mel-frequency bin 개수 (기본값: 80, turbo 모델은 128)
+        sr: 샘플링 레이트 (기본값: 16000)
+        n_fft: FFT 윈도우 크기 (기본값: 400)
+        hop_length: 홉 길이 (기본값: 160)
+    
+    Returns:
+        mel-spectrogram (numpy array), shape: (num_mel_bins, time_steps)
+    """
+    try:
+        # 오디오 로드
+        logger.debug(f"오디오 로드: {audio_path}, sr={sr}")
+        y, sr = librosa.load(audio_path, sr=sr, mono=True)
+        logger.debug(f"오디오 로드 완료: {len(y)} 샘플, {sr}Hz")
+        
+        # Mel-spectrogram 계산
+        logger.debug(f"Mel-spectrogram 계산: {num_mel_bins} bins")
+        mel_spec = librosa.feature.melspectrogram(
+            y=y,
+            sr=sr,
+            n_fft=n_fft,
+            hop_length=hop_length,
+            n_mels=num_mel_bins,
+            fmin=0,
+            fmax=8000
+        )
+        
+        # dB scale로 변환
+        mel_spec_db = librosa.power_to_db(mel_spec, ref=np.max)
+        logger.debug(f"Mel-spectrogram 완료: shape={mel_spec_db.shape}")
+        
+        return mel_spec_db
+    except Exception as e:
+        logger.error(f"오디오 전처리 실패: {e}", exc_info=True)
+        raise
 
 
 def diagnose_faster_whisper_model(model_path: str) -> dict:
@@ -319,6 +386,11 @@ class WhisperSTT:
         self.compute_type = compute_type
         self.backend = None
         
+        # 사용 가능한 백엔드 추적용 플래그
+        self.faster_whisper_available = False
+        self.transformers_available = False
+        self.whisper_available = False
+        
         print(f"\n📊 STT 모델 로드 시작")
         print(f"   모델 경로: {self.model_path}")
         print(f"   디바이스: {self.device}")
@@ -436,6 +508,7 @@ class WhisperSTT:
             )
             
             self.backend = self.model  # 실제 모델 객체를 backend에 저장
+            self.faster_whisper_available = True  # 플래그 설정
             print(f"✅ faster-whisper 모델 로드 성공")
             
         except FileNotFoundError as e:
@@ -540,6 +613,7 @@ class WhisperSTT:
                 'device': self.device,
                 'transcribe': self._transcribe_with_transformers
             })()
+            self.transformers_available = True  # 플래그 설정
             
             print(f"   ✅ transformers 모델 로드 성공!")
             print(f"      타입: WhisperForConditionalGeneration")
@@ -567,6 +641,7 @@ class WhisperSTT:
                     'device': self.device,
                     'transcribe': self._transcribe_with_transformers
                 })()
+                self.transformers_available = True  # 플래그 설정
                 
                 print(f"   ✅ HF 허브에서 모델 로드 성공!")
                 
@@ -848,6 +923,7 @@ class WhisperSTT:
                 'device': self.device,
                 'transcribe': self._transcribe_with_whisper
             })()
+            self.whisper_available = True  # 플래그 설정
             
             print(f"   ✅ OpenAI Whisper 모델 로드 성공! (large)")
             
@@ -1053,10 +1129,30 @@ class WhisperSTT:
             }
     
     def _transcribe_faster_whisper(self, audio_path: str, language: Optional[str] = None, **kwargs) -> Dict:
-        """faster-whisper (WhisperModel)로 변환"""
+        """faster-whisper (WhisperModel)로 변환
+        
+        주의: faster-whisper는 내부적으로 80 mel-bin으로 고정된 음성 전처리를 수행합니다.
+        turbo 모델 (128 mel-bins)과의 호환성을 위해 mel-bin 검증을 수행합니다.
+        """
         logger.info(f"[faster-whisper] 변환 시작 (파일: {Path(audio_path).name})")
         
         try:
+            # 모델의 mel-bin 개수 확인
+            model_mel_bins = get_model_mel_bins(self.model_path)
+            logger.info(f"[faster-whisper] 모델 mel-bins: {model_mel_bins}")
+            
+            if model_mel_bins != 80:
+                logger.warning(f"⚠️  모델이 {model_mel_bins} mel-bins를 요구하지만, faster-whisper는 80 mel-bins로 고정됨")
+                logger.warning(f"   이는 모델 입력 형상 불일치로 이어질 수 있습니다")
+                logger.warning(f"   → transformers 백엔드 사용을 권장합니다 (커스텀 mel-bins 지원)")
+                
+                # transformers 백엔드가 사용 가능한 경우 전환
+                if TRANSFORMERS_AVAILABLE and self.transformers_available:
+                    logger.info(f"   → transformers 백엔드로 자동 전환...")
+                    return self._transcribe_with_transformers(audio_path, language)
+                else:
+                    logger.warning(f"   → transformers 사용 불가, faster-whisper로 계속 진행 (실패 가능)")
+            
             logger.debug(f"[faster-whisper] 모델 설정: beam_size={kwargs.get('beam_size', 5)}, "
                         f"best_of={kwargs.get('best_of', 5)}, "
                         f"patience={kwargs.get('patience', 1)}, "
@@ -1089,6 +1185,23 @@ class WhisperSTT:
             }
         except Exception as e:
             logger.error(f"❌ faster-whisper 변환 실패: {type(e).__name__}: {e}", exc_info=True)
+            
+            # mel-bin 불일치로 인한 오류인 경우, transformers로 재시도
+            if "shape" in str(e).lower() and "128" in str(e) and TRANSFORMERS_AVAILABLE and self.transformers_available:
+                logger.info(f"   → mel-bin 불일치 감지, transformers로 재시도...")
+                try:
+                    return self._transcribe_with_transformers(audio_path, language)
+                except Exception as fallback_e:
+                    logger.error(f"❌ transformers 재시도도 실패: {fallback_e}")
+                    return {
+                        "success": False,
+                        "error": f"faster-whisper 실패 후 transformers 재시도도 실패",
+                        "original_error": f"faster-whisper: {type(e).__name__}: {str(e)[:100]}",
+                        "fallback_error": f"transformers: {type(fallback_e).__name__}: {str(fallback_e)[:100]}",
+                        "audio_path": audio_path,
+                        "backend": "faster-whisper"
+                    }
+            
             return {
                 "success": False,
                 "error": f"faster-whisper 변환 실패: {type(e).__name__}: {str(e)[:100]}",
