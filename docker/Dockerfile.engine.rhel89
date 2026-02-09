@@ -115,10 +115,11 @@ RUN python3.11 -m pip install \
     torchaudio==2.8.0
 
 # ============================================================================
-# Step 8: pip 빌드 도구 먼저 설치 (openai-whisper 빌드에 필수)
+# Step 8: pip 도구 업그레이드 (openai-whisper 빌드에 필수)
 # ============================================================================
-# setuptools + wheel: pip 빌드 격리 환경에서 pkg_resources를 올바르게 해결
-RUN python3.11 -m pip install --no-cache-dir setuptools wheel
+# pip, setuptools, wheel을 최신 버전으로 업그레이드
+# RHEL 8.9 기본 setuptools는 pkg_resources 지원이 불완전할 수 있음
+RUN python3.11 -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
 # ============================================================================
 # Step 9: 애플리케이션 의존성 설치 (PyTorch 먼저 설치했으므로 안전함)
