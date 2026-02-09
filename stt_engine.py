@@ -571,39 +571,86 @@ class WhisperSTT:
     
     def _transcribe_with_transformers(self, audio_path: str, language: Optional[str] = None) -> Dict:
         """
-        transformers를 사용한 음성 인식
+        transformers를 사용한 음성 인식 (세그먼트 처리)
+        
+        Whisper는 최대 30초 음성만 처리 가능하므로,
+        긴 음성은 30초 단위로 나눠서 처리 후 결합합니다.
         """
         import librosa
         import torch
         import logging
+        import numpy as np
         
         logger = logging.getLogger(__name__)
         
         try:
             # 음성 로드
             audio, sr = librosa.load(audio_path, sr=16000)
+            duration_seconds = len(audio) / sr
             
-            # 프로세싱
-            input_features = self.backend.processor(audio, sampling_rate=16000, return_tensors="pt").input_features
+            print(f"[DEBUG] 음성 길이: {duration_seconds:.1f}초")
             
-            # 모델의 dtype에 맞추기 (float32 → float16)
-            model_dtype = self.backend.model.dtype
-            input_features = input_features.to(model_dtype)
+            # Whisper 최대 입력: 30초 (480,000 샘플 @ 16kHz)
+            max_samples = 30 * sr  # 480,000 샘플
+            hop_length = max_samples // 2  # 15초 오버랩
             
-            if self.device == "cuda":
-                input_features = input_features.to(self.device)
+            all_texts = []
+            start_idx = 0
+            segment_idx = 0
             
-            # 추론 (language 지정)
-            with torch.no_grad():
-                predicted_ids = self.backend.model.generate(input_features, language="ko")
+            while start_idx < len(audio):
+                # 세그먼트 추출
+                end_idx = min(start_idx + max_samples, len(audio))
+                segment = audio[start_idx:end_idx]
+                segment_duration = len(segment) / sr
+                
+                print(f"[DEBUG] 세그먼트 {segment_idx}: {start_idx//sr:.1f}초 ~ {end_idx//sr:.1f}초 ({segment_duration:.1f}초)")
+                
+                # 프로세싱
+                input_features = self.backend.processor(
+                    segment, 
+                    sampling_rate=16000, 
+                    return_tensors="pt"
+                ).input_features
+                
+                # 모델의 dtype에 맞추기 (float32 → float16)
+                model_dtype = self.backend.model.dtype
+                input_features = input_features.to(model_dtype)
+                
+                if self.device == "cuda":
+                    input_features = input_features.to(self.device)
+                
+                # 추론 (language 지정)
+                with torch.no_grad():
+                    predicted_ids = self.backend.model.generate(
+                        input_features, 
+                        language="ko"
+                    )
+                
+                # 디코딩
+                transcription = self.backend.processor.batch_decode(
+                    predicted_ids, 
+                    skip_special_tokens=True
+                )
+                
+                text = transcription[0] if transcription else ""
+                if text.strip():
+                    all_texts.append(text)
+                    print(f"[DEBUG]   → '{text[:50]}...'")
+                
+                # 다음 세그먼트 (50% 오버랩)
+                start_idx += hop_length
+                segment_idx += 1
             
-            # 디코딩
-            transcription = self.backend.processor.batch_decode(predicted_ids, skip_special_tokens=True)
+            # 결과 합치기
+            full_text = " ".join(all_texts)
             
             return {
-                "text": transcription[0] if transcription else "",
+                "text": full_text,
                 "language": language or "ko",
-                "backend": "transformers"
+                "backend": "transformers",
+                "duration": duration_seconds,
+                "segments_processed": segment_idx
             }
         
         except Exception as e:
