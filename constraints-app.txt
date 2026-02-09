@@ -1,0 +1,83 @@
+# Constraints file for Step 8 (application packages only)
+# Locks versions of all dependencies to prevent conflicts
+# PyTorch and NVIDIA packages are NOT included - they are in Step 7 only
+
+# Core application dependencies  
+faster-whisper==1.2.1
+ctranslate2==4.7.1
+openai-whisper==20231117
+librosa==0.10.0
+numpy==1.24.3
+scipy==1.12.0
+huggingface-hub==1.4.1
+transformers==5.1.0
+python-dotenv==1.0.0
+pydantic==2.5.3
+pydantic-core==2.14.6
+fastapi==0.109.0
+starlette==0.35.0
+uvicorn==0.27.0
+requests==2.31.0
+pyyaml==6.0.1
+python-multipart==0.0.6
+psutil==5.9.8
+
+# Transitive dependencies - locked to prevent version conflicts
+filelock==3.20.3
+typing-extensions==4.15.0
+networkx==3.6.1
+jinja2==3.1.6
+fsspec==2026.2.0
+sympy==1.13.1
+mpmath==1.3.0
+MarkupSafe==3.0.3
+
+# Audio processing (librosa + audioread)
+audioread==3.1.0
+pooch==1.9.0
+joblib==1.5.3
+decorator==5.2.1
+numba==0.57.1
+llvmlite==0.40.1
+soundfile==0.13.1
+soxr==1.0.0
+lazy-loader==0.4
+msgpack==1.1.2
+
+# Machine learning (transformers + whisper)
+tokenizers==0.22.2
+regex==2026.1.15
+click==8.3.1
+tqdm==4.67.3
+safetensors==0.7.0
+typer-slim==0.21.1
+
+# API/HTTP support
+httpx==0.28.1
+httpcore==1.0.9
+anyio==4.12.1
+h11==0.16.0
+
+# Supporting packages
+charset-normalizer==3.4.4
+certifi==2026.1.4
+idna==3.11
+urllib3==2.6.3
+annotated-types==0.7.0
+platformdirs==4.5.1
+threadpoolctl==3.6.0
+cffi==2.0.0
+pycparser==3.0
+shellingham==1.5.4
+hf-xet==1.2.0
+
+# ONNX Runtime (faster-whisper dependency)
+onnxruntime==1.24.1
+flatbuffers==25.12.19
+protobuf==6.33.5
+
+# Additional dependencies
+av==16.1.0
+tiktoken==0.12.0
+more-itertools==10.8.0
+scikit-learn==1.8.0
