@@ -130,20 +130,22 @@ async def health():
 
 
 @app.post("/transcribe")
-async def transcribe(file: UploadFile = File(...), language: str = None):
+async def transcribe(file: UploadFile = File(...), language: str = None, backend: str = None):
     """
     음성 파일을 받아 텍스트로 변환
     
     Parameters:
     - file: 음성 파일 (WAV, MP3, M4A, FLAC 등)
     - language: 언어 코드 (선택사항, 예: "en", "ko", "ja")
+    - backend: 사용할 백엔드 (선택사항, 예: "faster-whisper", "transformers", "openai-whisper")
+               지정하지 않으면 더 빠른 백엔드부터 자동 선택 시도
     
     Returns:
     - success: 처리 성공 여부
     - text: 인식된 텍스트
     - language: 감지된 언어
     - duration: 오디오 길이 (초)
-    - backend: 사용된 백엔드 (faster-whisper 또는 whisper)
+    - backend: 사용된 백엔드
     - file_size_mb: 업로드된 파일 크기
     - memory_info: 메모리 상태 정보 (경고/오류 시)
     """
@@ -154,7 +156,8 @@ async def transcribe(file: UploadFile = File(...), language: str = None):
     tmp_path = None
     try:
         # 파일 정보 로깅
-        logger.info(f"[API] 음성 파일 업로드 요청: {file.filename}")
+        backend_param = f", backend: {backend}" if backend else ""
+        logger.info(f"[API] 음성 파일 업로드 요청: {file.filename}{backend_param}")
         logger.debug(f"[API] Content-Type: {file.content_type}, Size: {file.size if hasattr(file, 'size') else 'unknown'}")
         
         # 임시 파일에 저장
@@ -236,7 +239,7 @@ async def transcribe(file: UploadFile = File(...), language: str = None):
         # STT 처리
         logger.info(f"[API] STT 처리 시작 (파일: {file.filename}, 길이: {file_check['duration_sec']:.1f}초, 언어: {language})")
         try:
-            result = stt.transcribe(tmp_path, language=language)
+            result = stt.transcribe(tmp_path, language=language, backend=backend)
             logger.info(f"[API] STT 처리 완료 - 백엔드: {result.get('backend', 'unknown')}, 성공: {result.get('success', False)}")
         except Exception as e:
             logger.error(f"[API] STT 처리 중 예상치 못한 오류: {type(e).__name__}: {e}", exc_info=True)
