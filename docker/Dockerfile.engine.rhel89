@@ -115,18 +115,25 @@ RUN python3.11 -m pip install \
     torchaudio==2.8.0
 
 # ============================================================================
-# Step 8: pip 도구 업그레이드 (openai-whisper 빌드에 필수)
+# Step 8: pip 도구 업그레이드
 # ============================================================================
-# pip, setuptools, wheel을 최신 버전으로 업그레이드
-# RHEL 8.9 기본 setuptools는 pkg_resources 지원이 불완전할 수 있음
 RUN python3.11 -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
 # ============================================================================
-# Step 9: 애플리케이션 의존성 설치 (PyTorch 먼저 설치했으므로 안전함)
+# Step 9: openai-whisper 설치 (--no-build-isolation으로 setuptools 직접 사용)
 # ============================================================================
-# openai-whisper를 requirements.txt에 포함
-# PyTorch 2.8.0이 이미 설치되어 있으므로 triton 버전 충돌 해결됨
-# setuptools + wheel이 이미 설치되어 빌드 격리 환경에서 pkg_resources 접근 가능
+# pip의 빌드 격리 환경에서 pkg_resources 불가능
+# --no-build-isolation: 현재 환경의 setuptools를 직접 사용하므로 pkg_resources 정상 작동
+RUN python3.11 -m pip install \
+    --no-cache-dir \
+    --no-build-isolation \
+    openai-whisper==20231117
+
+# ============================================================================
+# Step 10: 나머지 애플리케이션 의존성 설치
+# ============================================================================
+# openai-whisper는 이미 설치됨
+# PyTorch 2.8.0도 이미 설치됨 (triton 충돌 해결됨)
 COPY requirements.txt /tmp/
 
 RUN python3.11 -m pip install \
