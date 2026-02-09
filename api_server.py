@@ -38,7 +38,11 @@ app = FastAPI(
 try:
     model_path = Path(__file__).parent / "models" / "openai_whisper-large-v3-turbo"
     device = os.getenv("STT_DEVICE", "cpu")
-    compute_type = "float16" if device == "cuda" else "float32"  # CPU는 float32가 더 안정적
+    
+    # 환경변수로 compute_type 지정 가능 (기본값: device에 따라 자동)
+    compute_type = os.getenv("STT_COMPUTE_TYPE")
+    if compute_type is None:
+        compute_type = "float16" if device == "cuda" else "float32"  # CPU는 float32가 더 안정적
     
     logger.info(f"STT 모델 로드 시작 (다중 백엔드)")
     logger.info(f"  모델: openai_whisper-large-v3-turbo")
