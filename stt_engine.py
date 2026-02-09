@@ -24,6 +24,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='[%(asctime)s] %(levelname)s - %(message)s'
 )
+logger = logging.getLogger(__name__)
 
 # 세 가지 백엔드 시도
 try:
@@ -588,12 +589,13 @@ class WhisperSTT:
         import numpy as np
         import gc
         
-        logger = logging.getLogger(__name__)
+        logger.info(f"[transformers] 변환 시작 (파일: {Path(audio_path).name})")
         
         try:
             from stt_utils import check_memory_available, check_audio_file
             
             # 1. 파일 검증
+            logger.debug(f"[transformers] 파일 검증 중...")
             file_check = check_audio_file(audio_path, logger=logger)
             if not file_check['valid']:
                 error_msg = f"transformers transcription failed: 파일 검증 실패 - {file_check['errors'][0]}"
@@ -604,11 +606,14 @@ class WhisperSTT:
                     "backend": "transformers"
                 }
             
+            logger.info(f"✓ 파일 검증 완료 (길이: {file_check['duration_sec']:.1f}초)")
+            
             # 경고 출력
             for warning in file_check['warnings']:
                 logger.warning(f"⚠️  {warning}")
             
             # 2. 메모리 확인 (모델 크기 약 3GB + 처리용 1GB = 4GB)
+            logger.debug(f"[transformers] 메모리 확인 중...")
             memory_check = check_memory_available(required_mb=4000, logger=logger)
             if memory_check['critical']:
                 error_msg = f"transformers transcription failed: 메모리 부족 - {memory_check['message']}"
@@ -620,15 +625,25 @@ class WhisperSTT:
                     "memory_info": memory_check
                 }
             
+            logger.info(f"✓ 메모리 확인 완료 (사용 가능: {memory_check['available_mb']:.0f}MB)")
+            
             # 3. 음성 로드
-            logger.info(f"[TRANSCRIBE] 파일 로드 중: {Path(audio_path).name}")
+            logger.info(f"[transformers] 음성 파일 로드 중: {Path(audio_path).name}")
             try:
                 audio, sr = librosa.load(audio_path, sr=16000)
                 duration_seconds = len(audio) / sr
-                logger.info(f"[TRANSCRIBE] 음성 로드 완료 - 길이: {duration_seconds:.1f}초, 샘플: {len(audio)}")
+                logger.info(f"✓ 음성 로드 완료 (길이: {duration_seconds:.1f}초, 샘플: {len(audio):,}, SR: {sr}Hz)")
+            except ModuleNotFoundError as e:
+                error_msg = f"transformers transcription failed: 오디오 로드 실패 - {type(e).__name__}: {str(e)[:100]}"
+                logger.error(f"❌ {error_msg}", exc_info=True)
+                return {
+                    "text": "",
+                    "error": error_msg,
+                    "backend": "transformers"
+                }
             except MemoryError as e:
                 error_msg = f"transformers transcription failed: 메모리 부족 - 오디오 로드 실패"
-                logger.error(f"❌ {error_msg}")
+                logger.error(f"❌ {error_msg}", exc_info=True)
                 return {
                     "text": "",
                     "error": error_msg,
@@ -636,7 +651,7 @@ class WhisperSTT:
                 }
             except Exception as e:
                 error_msg = f"transformers transcription failed: 오디오 로드 실패 - {type(e).__name__}: {str(e)[:100]}"
-                logger.error(f"❌ {error_msg}")
+                logger.error(f"❌ {error_msg}", exc_info=True)
                 return {
                     "text": "",
                     "error": error_msg,
@@ -652,7 +667,7 @@ class WhisperSTT:
             segment_idx = 0
             total_segments = (len(audio) + hop_length - 1) // hop_length
             
-            logger.info(f"[TRANSCRIBE] 세그먼트 처리 시작 (총 {total_segments}개 세그먼트 예상)")
+            logger.info(f"[transformers] 세그먼트 처리 시작 (총 {total_segments}개 세그먼트)")
             
             while start_idx < len(audio):
                 try:
@@ -661,24 +676,35 @@ class WhisperSTT:
                     segment = audio[start_idx:end_idx]
                     segment_duration = len(segment) / sr
                     
-                    logger.debug(f"[TRANSCRIBE] 세그먼트 {segment_idx+1}/{total_segments}: {start_idx//sr:.1f}~{end_idx//sr:.1f}초 ({segment_duration:.1f}초)")
+                    logger.debug(f"[transformers] 세그먼트 {segment_idx+1}/{total_segments}: {start_idx//sr:.1f}~{end_idx//sr:.1f}초 ({segment_duration:.1f}초)")
                     
                     # 프로세싱 (메모리 체크)
+                    logger.debug(f"[transformers] 세그먼트 {segment_idx} 프로세싱 중...")
                     try:
                         input_features = self.backend.processor(
                             segment, 
                             sampling_rate=16000, 
                             return_tensors="pt"
                         ).input_features
+                        logger.debug(f"✓ 프로세싱 완료 (input_features shape: {input_features.shape})")
                     except MemoryError:
                         error_msg = f"transformers transcription failed: 메모리 부족 - 세그먼트 {segment_idx} 처리 중"
-                        logger.error(f"❌ {error_msg}")
+                        logger.error(f"❌ {error_msg}", exc_info=True)
                         return {
                             "text": "",
                             "error": error_msg,
                             "backend": "transformers",
                             "segment_failed": segment_idx,
                             "partial_text": " ".join(all_texts) if all_texts else ""
+                        }
+                    except Exception as e:
+                        error_msg = f"transformers transcription failed: 프로세싱 실패 - {type(e).__name__}: {str(e)[:100]}"
+                        logger.error(f"❌ {error_msg}", exc_info=True)
+                        return {
+                            "text": "",
+                            "error": error_msg,
+                            "backend": "transformers",
+                            "segment_failed": segment_idx
                         }
                     
                     # 모델의 dtype에 맞추기 (float32 → float16)
@@ -689,16 +715,18 @@ class WhisperSTT:
                         input_features = input_features.to(self.device)
                     
                     # 추론 (language 지정)
+                    logger.debug(f"[transformers] 세그먼트 {segment_idx} 추론 중 (device: {self.device}, dtype: {model_dtype})...")
                     try:
                         with torch.no_grad():
                             predicted_ids = self.backend.model.generate(
                                 input_features, 
                                 language="ko"
                             )
+                        logger.debug(f"✓ 추론 완료 (predicted_ids shape: {predicted_ids.shape})")
                     except RuntimeError as e:
                         if "out of memory" in str(e).lower() or "cuda" in str(e).lower():
                             error_msg = f"transformers transcription failed: GPU 메모리 부족 - 세그먼트 {segment_idx} 추론 중"
-                            logger.error(f"❌ {error_msg}")
+                            logger.error(f"❌ {error_msg}", exc_info=True)
                             return {
                                 "text": "",
                                 "error": error_msg,
@@ -707,10 +735,11 @@ class WhisperSTT:
                                 "partial_text": " ".join(all_texts) if all_texts else "",
                                 "suggestion": "CPU 모드로 전환하거나 -e STT_DEVICE=cpu 사용"
                             }
+                        logger.error(f"❌ 추론 실패: {e}", exc_info=True)
                         raise
                     except MemoryError:
                         error_msg = f"transformers transcription failed: 메모리 부족 - 세그먼트 {segment_idx} 추론 중"
-                        logger.error(f"❌ {error_msg}")
+                        logger.error(f"❌ {error_msg}", exc_info=True)
                         return {
                             "text": "",
                             "error": error_msg,
@@ -720,6 +749,7 @@ class WhisperSTT:
                         }
                     
                     # 디코딩
+                    logger.debug(f"[transformers] 세그먼트 {segment_idx} 디코딩 중...")
                     transcription = self.backend.processor.batch_decode(
                         predicted_ids, 
                         skip_special_tokens=True
@@ -826,18 +856,31 @@ class WhisperSTT:
     
     def _transcribe_with_whisper(self, audio_path: str, language: Optional[str] = None) -> Dict:
         """OpenAI Whisper를 사용한 음성 인식"""
+        logger.info(f"[openai-whisper] 변환 시작 (파일: {Path(audio_path).name})")
+        
         try:
+            logger.debug(f"[openai-whisper] 모델 호출: transcribe(audio_path, language={language})")
             result = self.backend.model.transcribe(audio_path, language=language)
+            
+            logger.info(f"✓ openai-whisper 변환 완료")
+            
+            text = result.get("text", "")
+            detected_language = result.get("language", "unknown")
+            logger.info(f"  결과: {len(text)} 글자, 언어: {detected_language}")
+            
             return {
-                "text": result.get("text", ""),
-                "language": result.get("language", ""),
-                "backend": "whisper"
+                "success": True,
+                "text": text.strip(),
+                "language": detected_language,
+                "backend": "openai-whisper"
             }
         except Exception as e:
+            logger.error(f"❌ openai-whisper 변환 실패: {type(e).__name__}: {e}", exc_info=True)
             return {
+                "success": False,
                 "text": "",
-                "error": f"whisper transcription failed: {e}",
-                "backend": "whisper"
+                "error": f"openai-whisper 변환 실패: {type(e).__name__}: {str(e)[:100]}",
+                "backend": "openai-whisper"
             }
     
     @staticmethod
@@ -890,71 +933,120 @@ class WhisperSTT:
             변환 결과 딕셔너리
         """
         try:
-            print(f"📂 음성 파일 로드: {audio_path}")
+            logger.info(f"📂 음성 파일 로드 시작: {audio_path}")
             
             # 파일 존재 확인
             if not Path(audio_path).exists():
+                logger.error(f"❌ 파일을 찾을 수 없음: {audio_path}")
                 raise FileNotFoundError(f"파일을 찾을 수 없습니다: {audio_path}")
+            
+            logger.info(f"✓ 파일 존재 확인: {audio_path}")
             
             # 백엔드 타입 확인 및 처리
             if self.backend is None:
+                logger.error(f"❌ 백엔드 모델이 로드되지 않음")
                 raise RuntimeError("모델이 로드되지 않았습니다")
             
             # 백엔드 타입에 따라 처리
             backend_type = type(self.backend).__name__
-            print(f"🔧 사용 중인 백엔드: {backend_type} (객체: {self.backend})")
+            logger.info(f"🔧 사용 중인 백엔드: {backend_type}")
+            logger.debug(f"   백엔드 객체: {self.backend}")
             
             if backend_type == 'WhisperModel':
                 # faster-whisper
+                logger.info(f"→ faster-whisper 백엔드로 변환 시작")
                 return self._transcribe_faster_whisper(audio_path, language, **kwargs)
             elif backend_type == 'TransformersBackend':
                 # transformers
+                logger.info(f"→ transformers 백엔드로 변환 시작")
                 return self._transcribe_with_transformers(audio_path, language)
             elif backend_type == 'WhisperBackend':
                 # OpenAI Whisper
+                logger.info(f"→ OpenAI Whisper 백엔드로 변환 시작")
                 return self._transcribe_with_whisper(audio_path, language)
             elif backend_type == 'str':
                 # 문자열이 저장된 경우 (버그)
+                logger.error(f"❌ 버그: backend가 문자열로 저장됨: {self.backend}")
                 raise RuntimeError(f"❌ 버그: backend가 문자열로 저장됨: {self.backend}")
             else:
                 # 제네릭 백엔드 객체 처리
+                logger.info(f"→ 제네릭 백엔드 객체로 변환 시도 (타입: {backend_type})")
                 if hasattr(self.backend, 'transcribe'):
                     result = self.backend.transcribe(audio_path, language)
+                    logger.info(f"✓ 제네릭 백엔드 변환 완료")
                     return result
                 else:
+                    logger.error(f"❌ 지원하지 않는 백엔드: {backend_type}")
                     raise RuntimeError(f"지원하지 않는 백엔드: {backend_type} (value: {self.backend})")
         
-        except Exception as e:
-            print(f"❌ 오류: {e}")
+        except FileNotFoundError as e:
+            logger.error(f"❌ 파일 오류: {e}", exc_info=True)
             return {
                 "success": False,
-                "error": str(e),
+                "error": f"파일 오류: {str(e)}",
+                "error_type": "FileNotFoundError",
+                "audio_path": audio_path
+            }
+        except RuntimeError as e:
+            logger.error(f"❌ 런타임 오류: {e}", exc_info=True)
+            return {
+                "success": False,
+                "error": f"런타임 오류: {str(e)}",
+                "error_type": "RuntimeError",
+                "audio_path": audio_path
+            }
+        except Exception as e:
+            logger.error(f"❌ 예상치 못한 오류: {type(e).__name__}: {e}", exc_info=True)
+            return {
+                "success": False,
+                "error": f"{type(e).__name__}: {str(e)}",
+                "error_type": type(e).__name__,
                 "audio_path": audio_path
             }
     
     def _transcribe_faster_whisper(self, audio_path: str, language: Optional[str] = None, **kwargs) -> Dict:
         """faster-whisper (WhisperModel)로 변환"""
-        segments, info = self.backend.transcribe(
-            audio_path,
-            language=language,
-            beam_size=kwargs.get("beam_size", 5),
-            best_of=kwargs.get("best_of", 5),
-            patience=kwargs.get("patience", 1),
-            temperature=kwargs.get("temperature", 0)
-        )
+        logger.info(f"[faster-whisper] 변환 시작 (파일: {Path(audio_path).name})")
         
-        # 모든 세그먼트 수집
-        text = "".join([segment.text for segment in segments])
-        detected_language = info.language if info else language or "unknown"
-        
-        return {
-            "success": True,
-            "text": text.strip(),
-            "audio_path": audio_path,
-            "language": detected_language,
-            "duration": info.duration if info else None,
-            "backend": "faster-whisper"
-        }
+        try:
+            logger.debug(f"[faster-whisper] 모델 설정: beam_size={kwargs.get('beam_size', 5)}, "
+                        f"best_of={kwargs.get('best_of', 5)}, "
+                        f"patience={kwargs.get('patience', 1)}, "
+                        f"temperature={kwargs.get('temperature', 0)}")
+            
+            segments, info = self.backend.transcribe(
+                audio_path,
+                language=language,
+                beam_size=kwargs.get("beam_size", 5),
+                best_of=kwargs.get("best_of", 5),
+                patience=kwargs.get("patience", 1),
+                temperature=kwargs.get("temperature", 0)
+            )
+            
+            logger.info(f"✓ faster-whisper 변환 완료")
+            
+            # 모든 세그먼트 수집
+            text = "".join([segment.text for segment in segments])
+            detected_language = info.language if info else language or "unknown"
+            
+            logger.info(f"  결과: {len(text)} 글자, 언어: {detected_language}")
+            
+            return {
+                "success": True,
+                "text": text.strip(),
+                "audio_path": audio_path,
+                "language": detected_language,
+                "duration": info.duration if info else None,
+                "backend": "faster-whisper"
+            }
+        except Exception as e:
+            logger.error(f"❌ faster-whisper 변환 실패: {type(e).__name__}: {e}", exc_info=True)
+            return {
+                "success": False,
+                "error": f"faster-whisper 변환 실패: {type(e).__name__}: {str(e)[:100]}",
+                "audio_path": audio_path,
+                "backend": "faster-whisper"
+            }
     
     def _transcribe_whisper(self, audio_path: str, language: Optional[str] = None, **kwargs) -> Dict:
         """OpenAI Whisper로 변환"""

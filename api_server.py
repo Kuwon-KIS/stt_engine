@@ -148,31 +148,62 @@ async def transcribe(file: UploadFile = File(...), language: str = None):
     - memory_info: 메모리 상태 정보 (경고/오류 시)
     """
     if stt is None:
+        logger.error("[API] STT 모델이 로드되지 않음")
         raise HTTPException(status_code=503, detail="STT 모델이 로드되지 않음")
     
     tmp_path = None
     try:
-        logger.info(f"[API] 음성 파일 업로드: {file.filename}")
+        # 파일 정보 로깅
+        logger.info(f"[API] 음성 파일 업로드 요청: {file.filename}")
+        logger.debug(f"[API] Content-Type: {file.content_type}, Size: {file.size if hasattr(file, 'size') else 'unknown'}")
         
         # 임시 파일에 저장
+        logger.debug(f"[API] 임시 파일에 저장 중...")
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-            content = await file.read()
-            tmp.write(content)
-            tmp_path = tmp.name
+            try:
+                content = await file.read()
+                tmp.write(content)
+                tmp_path = tmp.name
+                logger.debug(f"✓ 임시 파일 저장 완료: {tmp_path}")
+            except Exception as e:
+                logger.error(f"❌ 파일 저장 실패: {type(e).__name__}: {e}", exc_info=True)
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "파일 저장 실패",
+                        "message": str(e)
+                    }
+                )
         
         file_size_mb = len(content) / (1024**2)
-        logger.info(f"[API] 파일 크기: {file_size_mb:.2f}MB")
+        logger.info(f"[API] 파일 크기: {file_size_mb:.2f}MB, 임시 경로: {tmp_path}")
         
         # 파일 검증
-        file_check = check_audio_file(tmp_path, logger=logger)
-        if not file_check['valid']:
-            logger.error(f"[API] 파일 검증 실패: {file_check['errors'][0]}")
+        logger.debug(f"[API] 파일 검증 중...")
+        try:
+            file_check = check_audio_file(tmp_path, logger=logger)
+            if not file_check['valid']:
+                error_msg = file_check['errors'][0] if file_check['errors'] else "알 수 없는 오류"
+                logger.error(f"[API] 파일 검증 실패: {error_msg}")
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "파일 검증 실패",
+                        "message": error_msg,
+                        "file_size_mb": file_size_mb
+                    }
+                )
+            
+            logger.info(f"✓ 파일 검증 완료 (길이: {file_check['duration_sec']:.1f}초)")
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"[API] 파일 검증 중 오류: {type(e).__name__}: {e}", exc_info=True)
             raise HTTPException(
                 status_code=400,
                 detail={
-                    "error": "파일 검증 실패",
-                    "message": file_check['errors'][0],
-                    "file_size_mb": file_size_mb
+                    "error": "파일 검증 중 오류",
+                    "message": str(e)
                 }
             )
         
@@ -181,29 +212,51 @@ async def transcribe(file: UploadFile = File(...), language: str = None):
             logger.warning(f"[API] {warning}")
         
         # 메모리 상태 확인
-        memory_info = check_memory_available(logger=logger)
-        if memory_info['critical']:
-            logger.error(f"[API] 메모리 부족: {memory_info['message']}")
+        logger.debug(f"[API] 메모리 확인 중...")
+        try:
+            memory_info = check_memory_available(logger=logger)
+            if memory_info['critical']:
+                logger.error(f"[API] 메모리 부족: {memory_info['message']}")
+                raise HTTPException(
+                    status_code=503,
+                    detail={
+                        "error": "메모리 부족",
+                        "message": memory_info['message'],
+                        "memory_info": memory_info
+                    }
+                )
+            
+            logger.info(f"✓ 메모리 확인 완료 (사용 가능: {memory_info['available_mb']:.0f}MB)")
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"[API] 메모리 확인 중 오류: {type(e).__name__}: {e}", exc_info=True)
+            memory_info = {}
+        
+        # STT 처리
+        logger.info(f"[API] STT 처리 시작 (파일: {file.filename}, 길이: {file_check['duration_sec']:.1f}초, 언어: {language})")
+        try:
+            result = stt.transcribe(tmp_path, language=language)
+            logger.info(f"[API] STT 처리 완료 - 백엔드: {result.get('backend', 'unknown')}, 성공: {result.get('success', False)}")
+        except Exception as e:
+            logger.error(f"[API] STT 처리 중 예상치 못한 오류: {type(e).__name__}: {e}", exc_info=True)
             raise HTTPException(
-                status_code=503,
+                status_code=500,
                 detail={
-                    "error": "메모리 부족",
-                    "message": memory_info['message'],
-                    "memory_info": memory_info
+                    "error": "STT 처리 중 오류",
+                    "message": str(e),
+                    "error_type": type(e).__name__
                 }
             )
         
-        # STT 처리
-        logger.info(f"[API] STT 처리 시작 (파일: {file.filename}, 길이: {file_check['duration_sec']:.1f}초)")
-        result = stt.transcribe(tmp_path, language=language)
-        logger.info(f"[API] STT 처리 완료 - 백엔드: {result.get('backend', 'unknown')}")
-        
         # 에러 확인
-        if "error" in result:
-            logger.error(f"[API] STT 처리 오류: {result['error']}")
+        if "error" in result or not result.get('success', False):
+            error_msg = result.get('error', '알 수 없는 오류')
+            logger.error(f"[API] STT 처리 오류: {error_msg}")
             return {
                 "success": False,
-                "error": result['error'],
+                "error": error_msg,
+                "error_type": result.get('error_type', 'unknown'),
                 "backend": result.get('backend', 'unknown'),
                 "file_size_mb": file_size_mb,
                 "memory_info": memory_info,
@@ -211,6 +264,8 @@ async def transcribe(file: UploadFile = File(...), language: str = None):
                 "partial_text": result.get('partial_text', ''),
                 "suggestion": result.get('suggestion')
             }
+        
+        logger.info(f"[API] ✅ STT 처리 성공 - 텍스트: {len(result.get('text', ''))} 글자")
         
         return {
             "success": True,
