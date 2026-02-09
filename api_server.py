@@ -19,11 +19,12 @@ import tempfile
 import os
 import logging
 from stt_engine import WhisperSTT
+from stt_utils import check_memory_available, check_audio_file
 
 # 로깅 설정
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    format='[%(asctime)s] %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
@@ -99,9 +100,15 @@ except Exception as e:
 
 @app.get("/health")
 async def health():
-    """헬스 체크"""
+    """헬스 체크 (메모리 정보 포함)"""
     if stt is None:
-        return {"status": "error", "message": "STT 모델을 로드할 수 없음"}
+        return {
+            "status": "error",
+            "message": "STT 모델을 로드할 수 없음"
+        }
+    
+    # 메모리 상태 확인
+    memory_info = check_memory_available(logger=logger)
     
     # 백엔드 타입 확인
     backend_type = type(stt.backend).__name__ if stt.backend else "None"
@@ -111,7 +118,14 @@ async def health():
         "version": "1.0.0",
         "backend": backend_type,
         "model": "openai_whisper-large-v3-turbo",
-        "device": stt.device
+        "device": stt.device,
+        "memory": {
+            "available_mb": memory_info['available_mb'],
+            "total_mb": memory_info['total_mb'],
+            "used_percent": memory_info['used_percent'],
+            "status": "warning" if memory_info['warning'] else ("critical" if memory_info['critical'] else "ok"),
+            "message": memory_info['message']
+        }
     }
 
 
@@ -130,36 +144,126 @@ async def transcribe(file: UploadFile = File(...), language: str = None):
     - language: 감지된 언어
     - duration: 오디오 길이 (초)
     - backend: 사용된 백엔드 (faster-whisper 또는 whisper)
+    - file_size_mb: 업로드된 파일 크기
+    - memory_info: 메모리 상태 정보 (경고/오류 시)
     """
     if stt is None:
         raise HTTPException(status_code=503, detail="STT 모델이 로드되지 않음")
     
     tmp_path = None
     try:
+        logger.info(f"[API] 음성 파일 업로드: {file.filename}")
+        
         # 임시 파일에 저장
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
             content = await file.read()
             tmp.write(content)
             tmp_path = tmp.name
         
+        file_size_mb = len(content) / (1024**2)
+        logger.info(f"[API] 파일 크기: {file_size_mb:.2f}MB")
+        
+        # 파일 검증
+        file_check = check_audio_file(tmp_path, logger=logger)
+        if not file_check['valid']:
+            logger.error(f"[API] 파일 검증 실패: {file_check['errors'][0]}")
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "파일 검증 실패",
+                    "message": file_check['errors'][0],
+                    "file_size_mb": file_size_mb
+                }
+            )
+        
+        # 경고 로깅
+        for warning in file_check['warnings']:
+            logger.warning(f"[API] {warning}")
+        
+        # 메모리 상태 확인
+        memory_info = check_memory_available(logger=logger)
+        if memory_info['critical']:
+            logger.error(f"[API] 메모리 부족: {memory_info['message']}")
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": "메모리 부족",
+                    "message": memory_info['message'],
+                    "memory_info": memory_info
+                }
+            )
+        
         # STT 처리
+        logger.info(f"[API] STT 처리 시작 (파일: {file.filename}, 길이: {file_check['duration_sec']:.1f}초)")
         result = stt.transcribe(tmp_path, language=language)
+        logger.info(f"[API] STT 처리 완료 - 백엔드: {result.get('backend', 'unknown')}")
+        
+        # 에러 확인
+        if "error" in result:
+            logger.error(f"[API] STT 처리 오류: {result['error']}")
+            return {
+                "success": False,
+                "error": result['error'],
+                "backend": result.get('backend', 'unknown'),
+                "file_size_mb": file_size_mb,
+                "memory_info": memory_info,
+                "segment_failed": result.get('segment_failed'),
+                "partial_text": result.get('partial_text', ''),
+                "suggestion": result.get('suggestion')
+            }
         
         return {
-            "success": result.get("success", False),
+            "success": True,
             "text": result.get("text", ""),
             "language": result.get("language", "unknown"),
             "duration": result.get("duration", None),
-            "backend": result.get("backend", "unknown")
+            "backend": result.get("backend", "unknown"),
+            "file_size_mb": file_size_mb,
+            "segments_processed": result.get("segments_processed"),
+            "memory_info": {
+                "available_mb": memory_info['available_mb'],
+                "used_percent": memory_info['used_percent']
+            }
         }
     
+    except HTTPException:
+        raise
+    
+    except MemoryError as e:
+        logger.error(f"[API] 메모리 부족 오류: {str(e)}")
+        memory_info = check_memory_available(logger=logger)
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "메모리 부족",
+                "message": str(e),
+                "memory_info": memory_info,
+                "suggestion": "서버 메모리를 늘리거나 더 작은 파일을 처리하세요"
+            }
+        )
+    
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"[API] 예상치 못한 오류: {type(e).__name__}: {str(e)}")
+        logger.error("Traceback:", exc_info=True)
+        memory_info = check_memory_available(logger=logger)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "처리 오류",
+                "error_type": type(e).__name__,
+                "message": str(e)[:200],
+                "memory_info": memory_info
+            }
+        )
     
     finally:
         # 임시 파일 삭제
         if tmp_path and Path(tmp_path).exists():
-            Path(tmp_path).unlink()
+            try:
+                Path(tmp_path).unlink()
+                logger.debug(f"[API] 임시 파일 삭제: {tmp_path}")
+            except Exception as e:
+                logger.warning(f"[API] 임시 파일 삭제 실패: {e}")
 
 
 if __name__ == "__main__":

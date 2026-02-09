@@ -17,6 +17,13 @@ import os
 from pathlib import Path
 from typing import Optional, Dict
 import tarfile
+import logging
+
+# 로깅 설정
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] %(levelname)s - %(message)s'
+)
 
 # 세 가지 백엔드 시도
 try:
@@ -578,17 +585,63 @@ class WhisperSTT:
         """
         import librosa
         import torch
-        import logging
         import numpy as np
+        import gc
         
         logger = logging.getLogger(__name__)
         
         try:
-            # 음성 로드
-            audio, sr = librosa.load(audio_path, sr=16000)
-            duration_seconds = len(audio) / sr
+            from stt_utils import check_memory_available, check_audio_file
             
-            print(f"[DEBUG] 음성 길이: {duration_seconds:.1f}초")
+            # 1. 파일 검증
+            file_check = check_audio_file(audio_path, logger=logger)
+            if not file_check['valid']:
+                error_msg = f"transformers transcription failed: 파일 검증 실패 - {file_check['errors'][0]}"
+                logger.error(f"❌ {error_msg}")
+                return {
+                    "text": "",
+                    "error": error_msg,
+                    "backend": "transformers"
+                }
+            
+            # 경고 출력
+            for warning in file_check['warnings']:
+                logger.warning(f"⚠️  {warning}")
+            
+            # 2. 메모리 확인 (모델 크기 약 3GB + 처리용 1GB = 4GB)
+            memory_check = check_memory_available(required_mb=4000, logger=logger)
+            if memory_check['critical']:
+                error_msg = f"transformers transcription failed: 메모리 부족 - {memory_check['message']}"
+                logger.error(f"❌ {error_msg}")
+                return {
+                    "text": "",
+                    "error": error_msg,
+                    "backend": "transformers",
+                    "memory_info": memory_check
+                }
+            
+            # 3. 음성 로드
+            logger.info(f"[TRANSCRIBE] 파일 로드 중: {Path(audio_path).name}")
+            try:
+                audio, sr = librosa.load(audio_path, sr=16000)
+                duration_seconds = len(audio) / sr
+                logger.info(f"[TRANSCRIBE] 음성 로드 완료 - 길이: {duration_seconds:.1f}초, 샘플: {len(audio)}")
+            except MemoryError as e:
+                error_msg = f"transformers transcription failed: 메모리 부족 - 오디오 로드 실패"
+                logger.error(f"❌ {error_msg}")
+                return {
+                    "text": "",
+                    "error": error_msg,
+                    "backend": "transformers"
+                }
+            except Exception as e:
+                error_msg = f"transformers transcription failed: 오디오 로드 실패 - {type(e).__name__}: {str(e)[:100]}"
+                logger.error(f"❌ {error_msg}")
+                return {
+                    "text": "",
+                    "error": error_msg,
+                    "backend": "transformers"
+                }
             
             # Whisper 최대 입력: 30초 (480,000 샘플 @ 16kHz)
             max_samples = 30 * sr  # 480,000 샘플
@@ -597,46 +650,98 @@ class WhisperSTT:
             all_texts = []
             start_idx = 0
             segment_idx = 0
+            total_segments = (len(audio) + hop_length - 1) // hop_length
+            
+            logger.info(f"[TRANSCRIBE] 세그먼트 처리 시작 (총 {total_segments}개 세그먼트 예상)")
             
             while start_idx < len(audio):
-                # 세그먼트 추출
-                end_idx = min(start_idx + max_samples, len(audio))
-                segment = audio[start_idx:end_idx]
-                segment_duration = len(segment) / sr
-                
-                print(f"[DEBUG] 세그먼트 {segment_idx}: {start_idx//sr:.1f}초 ~ {end_idx//sr:.1f}초 ({segment_duration:.1f}초)")
-                
-                # 프로세싱
-                input_features = self.backend.processor(
-                    segment, 
-                    sampling_rate=16000, 
-                    return_tensors="pt"
-                ).input_features
-                
-                # 모델의 dtype에 맞추기 (float32 → float16)
-                model_dtype = self.backend.model.dtype
-                input_features = input_features.to(model_dtype)
-                
-                if self.device == "cuda":
-                    input_features = input_features.to(self.device)
-                
-                # 추론 (language 지정)
-                with torch.no_grad():
-                    predicted_ids = self.backend.model.generate(
-                        input_features, 
-                        language="ko"
+                try:
+                    # 세그먼트 추출
+                    end_idx = min(start_idx + max_samples, len(audio))
+                    segment = audio[start_idx:end_idx]
+                    segment_duration = len(segment) / sr
+                    
+                    logger.debug(f"[TRANSCRIBE] 세그먼트 {segment_idx+1}/{total_segments}: {start_idx//sr:.1f}~{end_idx//sr:.1f}초 ({segment_duration:.1f}초)")
+                    
+                    # 프로세싱 (메모리 체크)
+                    try:
+                        input_features = self.backend.processor(
+                            segment, 
+                            sampling_rate=16000, 
+                            return_tensors="pt"
+                        ).input_features
+                    except MemoryError:
+                        error_msg = f"transformers transcription failed: 메모리 부족 - 세그먼트 {segment_idx} 처리 중"
+                        logger.error(f"❌ {error_msg}")
+                        return {
+                            "text": "",
+                            "error": error_msg,
+                            "backend": "transformers",
+                            "segment_failed": segment_idx,
+                            "partial_text": " ".join(all_texts) if all_texts else ""
+                        }
+                    
+                    # 모델의 dtype에 맞추기 (float32 → float16)
+                    model_dtype = self.backend.model.dtype
+                    input_features = input_features.to(model_dtype)
+                    
+                    if self.device == "cuda":
+                        input_features = input_features.to(self.device)
+                    
+                    # 추론 (language 지정)
+                    try:
+                        with torch.no_grad():
+                            predicted_ids = self.backend.model.generate(
+                                input_features, 
+                                language="ko"
+                            )
+                    except RuntimeError as e:
+                        if "out of memory" in str(e).lower() or "cuda" in str(e).lower():
+                            error_msg = f"transformers transcription failed: GPU 메모리 부족 - 세그먼트 {segment_idx} 추론 중"
+                            logger.error(f"❌ {error_msg}")
+                            return {
+                                "text": "",
+                                "error": error_msg,
+                                "backend": "transformers",
+                                "segment_failed": segment_idx,
+                                "partial_text": " ".join(all_texts) if all_texts else "",
+                                "suggestion": "CPU 모드로 전환하거나 -e STT_DEVICE=cpu 사용"
+                            }
+                        raise
+                    except MemoryError:
+                        error_msg = f"transformers transcription failed: 메모리 부족 - 세그먼트 {segment_idx} 추론 중"
+                        logger.error(f"❌ {error_msg}")
+                        return {
+                            "text": "",
+                            "error": error_msg,
+                            "backend": "transformers",
+                            "segment_failed": segment_idx,
+                            "partial_text": " ".join(all_texts) if all_texts else ""
+                        }
+                    
+                    # 디코딩
+                    transcription = self.backend.processor.batch_decode(
+                        predicted_ids, 
+                        skip_special_tokens=True
                     )
-                
-                # 디코딩
-                transcription = self.backend.processor.batch_decode(
-                    predicted_ids, 
-                    skip_special_tokens=True
-                )
-                
-                text = transcription[0] if transcription else ""
-                if text.strip():
-                    all_texts.append(text)
-                    print(f"[DEBUG]   → '{text[:50]}...'")
+                    
+                    text = transcription[0] if transcription else ""
+                    if text.strip():
+                        all_texts.append(text)
+                        logger.info(f"[TRANSCRIBE] 세그먼트 {segment_idx}: '{text[:60]}...'")
+                    else:
+                        logger.debug(f"[TRANSCRIBE] 세그먼트 {segment_idx}: (무음)")
+                    
+                    # 메모리 정리
+                    del input_features, predicted_ids
+                    gc.collect()
+                    if self.device == "cuda":
+                        torch.cuda.empty_cache()
+                    
+                except Exception as e:
+                    if "out of memory" not in str(e).lower():
+                        logger.warning(f"⚠️  세그먼트 {segment_idx} 처리 실패: {type(e).__name__}: {str(e)[:100]}")
+                    raise
                 
                 # 다음 세그먼트 (50% 오버랩)
                 start_idx += hop_length
@@ -644,6 +749,8 @@ class WhisperSTT:
             
             # 결과 합치기
             full_text = " ".join(all_texts)
+            
+            logger.info(f"[TRANSCRIBE] 완료 - {segment_idx}개 세그먼트, 총 {duration_seconds:.1f}초 처리")
             
             return {
                 "text": full_text,
@@ -653,11 +760,19 @@ class WhisperSTT:
                 "segments_processed": segment_idx
             }
         
+        except MemoryError as e:
+            error_msg = f"transformers transcription failed: 메모리 부족"
+            logger.error(f"❌ {error_msg}")
+            return {
+                "text": "",
+                "error": error_msg,
+                "backend": "transformers",
+                "memory_error": True
+            }
         except Exception as e:
-            import traceback
             error_msg = f"transformers transcription failed: {type(e).__name__}: {str(e)}"
-            logger.error(error_msg)
-            logger.error(traceback.format_exc())
+            logger.error(f"❌ {error_msg}")
+            logger.error("Traceback:", exc_info=True)
             return {
                 "text": "",
                 "error": error_msg,
