@@ -97,41 +97,17 @@ RUN python3.11 -m pip install --upgrade \
     pip setuptools wheel
 
 # ============================================================================
-# Step 7: Whisper 및 의존성 설치 (PyTorch 제외) - ROOT로 실행
+# Step 7: 애플리케이션 의존성 설치 (requirements.txt에서) - ROOT로 실행
 # 
-# RHEL 8.9 호환 버전 사용:
-# - faster-whisper: CTranslate2 기반 빠른 추론
-# - openai-whisper: fallback (느림)
+# 참고: Dockerfile이 요구사항을 hardcode하지 않고 requirements.txt를 읽음
+# 새로운 패키지 추가 시 requirements.txt만 수정하면 자동 반영됨
 # ============================================================================
 
+# requirements.txt를 미리 복사 (Docker 캐싱 최적화)
+COPY requirements.txt /tmp/requirements.txt
+
 RUN python3.11 -m pip install --trusted-host files.pythonhosted.org \
-    # Whisper implementations
-    faster-whisper==1.2.1 \
-    ctranslate2==4.7.1 \
-    openai-whisper==20231117 \
-    \
-    # Audio processing
-    librosa==0.10.0 \
-    scipy==1.12.0 \
-    numpy==1.24.3 \
-    \
-    # Model management & transformers (flexible versions for compatibility)
-    huggingface-hub>=0.21 \
-    "transformers>=4.30,<6" \
-    \
-    # Web framework
-    fastapi==0.109.0 \
-    uvicorn==0.27.0 \
-    requests==2.31.0 \
-    pydantic==2.5.3 \
-    python-multipart==0.0.6 \
-    \
-    # Configuration
-    python-dotenv==1.0.0 \
-    pyyaml==6.0.1 \
-    \
-    # System monitoring
-    psutil==5.9.8
+    -r /tmp/requirements.txt
 
 # ============================================================================
 # Step 8: PyTorch 설치 및 CUDA 런타임 라이브러리 - ROOT로 실행
