@@ -1152,14 +1152,14 @@ elif not should_compress:
             print(f"   파일 크기: {size_mb:.2f}MB")
             print()
             
-        print("⏳ faster-whisper로 CTranslate2 모델 로드 중...")
-        print(f"   모델 경로: {ct2_model_dir}")
+        print("⏳ faster-whisper로 모델 로드 중...")
+        print(f"   모델 경로: {model_specific_dir}")
         print("   (이 단계는 1-3분 걸릴 수 있습니다)")
         print()
         
         try:
             model = WhisperModel(
-                model_size_or_path=str(ct2_model_dir),
+                model_size_or_path=str(model_specific_dir),
                 device="cpu",
                 compute_type="float32"
             )
