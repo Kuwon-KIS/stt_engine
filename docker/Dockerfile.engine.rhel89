@@ -115,16 +115,28 @@ RUN python3.11 -m pip install \
     torchaudio==2.8.0
 
 # ============================================================================
-# Step 8: pip 도구 완전 재설치 (setuptools pkg_resources 문제 해결)
+# Step 8a: pip 자체를 최신으로 업그레이드 (내부 모듈도 함께 업데이트됨)
 # ============================================================================
-# --force-reinstall: setuptools를 완전히 재설치하여 pkg_resources 포함
-RUN python3.11 -m pip install --no-cache-dir --upgrade --force-reinstall setuptools wheel
+# RHEL 8.9의 기본 pip는 매우 오래됨
+# pip 업그레이드 → pip의 _vendor/pyproject_hooks도 최신으로 업데이트됨
+RUN python3.11 -m pip install --no-cache-dir --upgrade pip
 
 # ============================================================================
-# Step 9: openai-whisper 설치 (--no-build-isolation으로 setuptools 직접 사용)
+# Step 8b: setuptools와 wheel을 최신으로 업그레이드
 # ============================================================================
-# pip의 빌드 격리 환경에서 pkg_resources 불가능
-# --no-build-isolation: 현재 환경의 setuptools를 직접 사용하므로 pkg_resources 정상 작동
+# pip가 최신이 되었으므로, setuptools/wheel도 올바르게 설치됨
+RUN python3.11 -m pip install --no-cache-dir --upgrade setuptools wheel
+
+# ============================================================================
+# Step 8c: pip 캐시 정리 (메모리 절약)
+# ============================================================================
+RUN python3.11 -m pip cache purge
+
+# ============================================================================
+# Step 9: openai-whisper 설치 (setuptools가 완전히 설치되어 있음)
+# ============================================================================
+# pip가 최신이므로 pyproject_hooks가 올바르게 작동
+# setuptools가 완전히 설치되어 있으므로 pkg_resources 접근 가능
 RUN python3.11 -m pip install \
     --no-cache-dir \
     --no-build-isolation \
