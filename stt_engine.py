@@ -767,8 +767,7 @@ class WhisperSTT:
             beam_size=kwargs.get("beam_size", 5),
             best_of=kwargs.get("best_of", 5),
             patience=kwargs.get("patience", 1),
-            temperature=kwargs.get("temperature", 0),
-            verbose=False
+            temperature=kwargs.get("temperature", 0)
         )
         
         # 모든 세그먼트 수집
