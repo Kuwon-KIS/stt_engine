@@ -88,7 +88,7 @@ RUN python3.11 -m pip install --upgrade nvidia-cudnn-cu12==9.0.0.312 && \
            /opt/app-root/lib64/python3.11/site-packages/nvidia/cudnn/lib/libcudnn.so.9
 
 # ============================================================================
-# Step 6: Python 패키지 매니저 업그레이드 - ROOT로 실행
+# Step 5: Python 패키지 매니저 업그레이드 - ROOT로 실행
 # ============================================================================
 
 RUN python3.11 -m pip install --upgrade \
@@ -97,10 +97,29 @@ RUN python3.11 -m pip install --upgrade \
     pip setuptools wheel
 
 # ============================================================================
-# Step 7: 애플리케이션 의존성 설치 (requirements.txt에서) - ROOT로 실행
+# Step 7: PyTorch 및 CUDA 런타임 라이브러리 설치 (먼저 설치) - ROOT로 실행
+# 
+# CUDA 12.4 공식 지원 버전 사용
+# RHEL 8.9의 CUDA 12.9 Runtime과 forward compatible
+# torchaudio도 포함 (whisper에서 필수)
+#
+# *** 중요: PyTorch를 먼저 설치하는 이유 ***
+# openai-whisper (20231117)는 triton<3,>=2.0.0을 요구
+# torch 2.6.0은 triton==3.2.0을 요구
+# PyTorch를 먼저 설치해야 openai-whisper가 이미 설치된 triton 3.2.0을 사용
+# ============================================================================
+
+RUN python3.11 -m pip install \
+    --index-url https://download.pytorch.org/whl/cu124 \
+    torch==2.6.0 \
+    torchaudio==2.6.0
+
+# ============================================================================
+# Step 8: 애플리케이션 의존성 설치 (requirements.txt에서) - ROOT로 실행
 # 
 # 참고: Dockerfile이 요구사항을 hardcode하지 않고 requirements.txt를 읽음
 # 새로운 패키지 추가 시 requirements.txt만 수정하면 자동 반영됨
+# PyTorch가 이미 설치되어 있으므로 triton 버전 충돌 없음
 # ============================================================================
 
 # requirements.txt를 미리 복사 (Docker 캐싱 최적화)
@@ -112,36 +131,9 @@ RUN python3.11 -m pip install --trusted-host files.pythonhosted.org \
     -r /tmp/requirements.txt
 
 # ============================================================================
-# Step 8: PyTorch 설치 및 CUDA 런타임 라이브러리 - ROOT로 실행
-# 
-# CUDA 12.4 공식 지원 버전 사용
-# RHEL 8.9의 CUDA 12.9 Runtime과 forward compatible
-# torchaudio도 포함 (whisper에서 필수)
-#
-# 중요: --no-deps를 사용하지 않음!
-# PyTorch의 CUDA 의존성(nvidia-cublas-cu12, nvidia-cusparse-cu12 등)이
-# 자동으로 설치되어야 libcusparseLt.so.0 등 CUDA 런타임 라이브러리가 제공됨
+# Step 9: CUDA 라이브러리 위치 탐색 및 경로 등록
 # ============================================================================
-
-RUN python3.11 -m pip install \
-    --index-url https://download.pytorch.org/whl/cu124 \
-    torch==2.6.0 \
-    torchaudio==2.6.0
-
-# Install CUDA runtime libraries explicitly
-# These packages provide the *.so files needed for CUDA at runtime
-# Especially libcusparseLt.so.0 from nvidia-cusparselt-cu12
-RUN python3.11 -m pip install \
-    nvidia-cublas-cu12 \
-    nvidia-cusparse-cu12 \
-    nvidia-cusparselt-cu12 \
-    nvidia-cuda-runtime-cu12 \
-    nvidia-cuda-cupti-cu12
-
-# ============================================================================
-# Step 8a: CUDA 라이브러리 위치 탐색 및 경로 등록
-# ============================================================================
-# PyTorch의 nvidia-* 의존성 설치로 인해 CUDA 라이브러리가 여러 위치에 존재할 수 있음
+# PyTorch와 CUDA 의존성 설치로 인해 CUDA 라이브러리가 여러 위치에 존재할 수 있음
 # 모든 가능한 위치를 찾아서 /usr/local/lib에 심볼릭 링크 생성
 # ============================================================================
 
@@ -181,7 +173,7 @@ RUN mkdir -p /usr/local/lib /usr/local/lib64 && \
 ENV LD_LIBRARY_PATH="/opt/app-root/lib/python3.11/site-packages/nvidia/cudnn/lib:/opt/app-root/lib/python3.11/site-packages/nvidia/cusparse/lib:/opt/app-root/lib/python3.11/site-packages/nvidia/cusparselt/lib:/opt/app-root/lib/python3.11/site-packages/nvidia/cublas/lib:/opt/app-root/lib/python3.11/site-packages/nvidia/cuda_runtime/lib:/opt/app-root/lib/python3.11/site-packages/cusparselt/lib:/opt/app-root/lib/python3.11/site-packages/torch/lib:/usr/local/lib:/usr/local/lib64"
 
 # ============================================================================
-# Step 9: 라이브러리 검증 (빌드 시 확인)
+# Step 10: 라이브러리 검증 (빌드 시 확인)
 # ============================================================================
 # Verify that critical CUDA libraries are discoverable
 RUN python3.11 << 'EOF'
@@ -217,7 +209,7 @@ os.system("find /usr/local -name 'libcusparseLt*' 2>/dev/null")
 EOF
 
 # ============================================================================
-# Step 10: 디렉토리 생성 및 권한 설정 (ROOT로 실행)
+# Step 11: 디렉토리 생성 및 권한 설정 (ROOT로 실행)
 # 
 # 주의: USER 전환 BEFORE 모든 디렉토리/권한 설정 완료
 # ROOT 권한이 필요한 mkdir/chown은 USER 전환 전에 완료해야 함
@@ -240,7 +232,7 @@ RUN mkdir -p /opt/app-root/src/.cache && \
 USER stt-user
 
 # ============================================================================
-# Step 11: 애플리케이션 파일 복사 (stt-user 권한)
+# Step 12: 애플리케이션 파일 복사 (stt-user 권한)
 # ============================================================================
 
 # 애플리케이션 파일 복사
@@ -256,7 +248,7 @@ ENV HF_HOME=/app/models
 ENV STT_DEVICE=cpu
 
 # ============================================================================
-# Step 12: 헬스 체크 및 포트 노출
+# Step 13: 헬스 체크 및 포트 노출
 # ============================================================================
 
 # Health check: 30초마다 체크, 10초 타임아웃, 3번 실패 시 unhealthy
@@ -267,7 +259,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 EXPOSE 8003
 
 # ============================================================================
-# Step 13: 시작 명령어
+# Step 14: 시작 명령어
 # ============================================================================
 
 CMD ["python3.11", "main.py"]
