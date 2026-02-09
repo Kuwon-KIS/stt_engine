@@ -115,34 +115,26 @@ RUN python3.11 -m pip install \
     torchaudio==2.6.0
 
 # ============================================================================
-# Step 8: 애플리케이션 의존성 설치 (requirements-app.txt + constraints-app.txt)
-# 
-# *** 최적화된 설계 ***
-# - requirements-app.txt: PyTorch를 제외한 모든 애플리케이션 패키지
-# - constraints-app.txt: 모든 transitive 의존성을 버전 명시 (PyTorch 제외)
-# 
-# 이렇게 분리하면 pip resolver가 Step 7에서 설치된 PyTorch를 
-# 다시 건드리지 않으므로 버전 충돌이 발생하지 않습니다.
-# 
-# --no-build-isolation: openai-whisper 빌드 시 setuptools 접근 허용
+# Step 8: 애플리케이션 의존성 설치 (간단하고 명확함)
 # ============================================================================
-
-# 의존성 파일 복사
-COPY requirements-app.txt constraints-app.txt /tmp/
-
-# 의존성 설치: constraints-app로 버전 고정, PyTorch는 이미 설치됨
+# Step 8a: openai-whisper만 먼저 설치 (이것이 torch resolver를 트리거)
+# --no-build-isolation: openai-whisper 빌드 시 setuptools 접근 허용
 RUN python3.11 -m pip install \
     --no-cache-dir \
     --no-build-isolation \
-    --constraint /tmp/constraints-app.txt \
-    -r /tmp/requirements-app.txt
+    openai-whisper==20231117
+
+# Step 8b: 나머지 모든 패키지 설치
+# PyTorch는 이미 설치됨, openai-whisper의 의존성도 해결됨
+# requirements.txt에는 openai-whisper가 없으므로 정상 설치됨
+COPY requirements.txt /tmp/
+
+RUN python3.11 -m pip install \
+    --no-cache-dir \
+    -r /tmp/requirements.txt
 
 # ============================================================================
 # Step 9: CUDA 라이브러리 위치 탐색 및 경로 등록
-# ============================================================================
-# PyTorch와 CUDA 의존성 설치로 인해 CUDA 라이브러리가 여러 위치에 존재할 수 있음
-# 모든 가능한 위치를 찾아서 /usr/local/lib에 심볼릭 링크 생성
-# ============================================================================
 
 # Create ldconfig config file with ALL CUDA library paths
 RUN cat > /etc/ld.so.conf.d/torch-cuda.conf << 'EOF'
