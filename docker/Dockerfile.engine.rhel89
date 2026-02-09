@@ -266,6 +266,7 @@ USER stt-user
 COPY --chown=stt-user:stt-user main.py /app/
 COPY --chown=stt-user:stt-user api_server.py /app/
 COPY --chown=stt-user:stt-user stt_engine.py /app/
+COPY --chown=stt-user:stt-user stt_utils.py /app/
 COPY --chown=stt-user:stt-user requirements.txt /app/
 
 # Python 환경 변수
