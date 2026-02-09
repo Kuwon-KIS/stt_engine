@@ -550,7 +550,7 @@ else:
         # 각 파일의 상세 검증
         print("📋 파일 무결성 검증:")
         
-        # config.json 검증
+        # config.json 검증 및 num_mel_bins 추가
         config_json = output_dir / "config.json"
         if config_json.exists():
             try:
@@ -558,6 +558,32 @@ else:
                     config_data = json.load(f)
                 config_size = config_json.stat().st_size
                 print(f"   ✓ config.json 유효 ({config_size} bytes)")
+                
+                # PyTorch 모델의 config.json에서 num_mel_bins 추출하여 CTranslate2 config에 추가
+                pytorch_config_json = model_specific_dir / "config.json"
+                if pytorch_config_json.exists():
+                    try:
+                        with open(pytorch_config_json, 'r') as f:
+                            pytorch_config = json.load(f)
+                        
+                        if 'num_mel_bins' in pytorch_config:
+                            num_mel_bins = pytorch_config['num_mel_bins']
+                            
+                            # CTranslate2 config.json에 num_mel_bins 추가
+                            if 'num_mel_bins' not in config_data:
+                                config_data['num_mel_bins'] = num_mel_bins
+                                
+                                with open(config_json, 'w') as f:
+                                    json.dump(config_data, f, indent=2)
+                                
+                                print(f"   ✓ num_mel_bins 추가됨: {num_mel_bins}")
+                            else:
+                                print(f"   ℹ️  num_mel_bins 이미 존재: {config_data['num_mel_bins']}")
+                        else:
+                            print(f"   ⚠️  PyTorch config.json에 num_mel_bins가 없습니다")
+                    except Exception as e:
+                        print(f"   ⚠️  PyTorch config 메타데이터 추출 실패: {e}")
+                        
             except Exception as e:
                 print(f"   ❌ config.json 오류: {e}")
         else:
