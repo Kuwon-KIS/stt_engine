@@ -427,7 +427,7 @@ class WhisperSTT:
                 local_files_only=True
             )
             
-            self.backend = "faster-whisper"
+            self.backend = self.model  # 실제 모델 객체를 backend에 저장
             print(f"✅ faster-whisper 모델 로드 성공")
             
         except FileNotFoundError as e:
@@ -729,6 +729,7 @@ class WhisperSTT:
             
             # 백엔드 타입에 따라 처리
             backend_type = type(self.backend).__name__
+            print(f"🔧 사용 중인 백엔드: {backend_type} (객체: {self.backend})")
             
             if backend_type == 'WhisperModel':
                 # faster-whisper
@@ -739,13 +740,16 @@ class WhisperSTT:
             elif backend_type == 'WhisperBackend':
                 # OpenAI Whisper
                 return self._transcribe_with_whisper(audio_path, language)
+            elif backend_type == 'str':
+                # 문자열이 저장된 경우 (버그)
+                raise RuntimeError(f"❌ 버그: backend가 문자열로 저장됨: {self.backend}")
             else:
                 # 제네릭 백엔드 객체 처리
                 if hasattr(self.backend, 'transcribe'):
                     result = self.backend.transcribe(audio_path, language)
                     return result
                 else:
-                    raise RuntimeError(f"지원하지 않는 백엔드: {backend_type}")
+                    raise RuntimeError(f"지원하지 않는 백엔드: {backend_type} (value: {self.backend})")
         
         except Exception as e:
             print(f"❌ 오류: {e}")
