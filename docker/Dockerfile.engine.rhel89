@@ -106,7 +106,9 @@ RUN python3.11 -m pip install --upgrade \
 # requirements.txt를 미리 복사 (Docker 캐싱 최적화)
 COPY requirements.txt /tmp/requirements.txt
 
+# build-essential 도구 및 build isolation 비활성화로 openai-whisper 빌드 지원
 RUN python3.11 -m pip install --trusted-host files.pythonhosted.org \
+    --no-build-isolation \
     -r /tmp/requirements.txt
 
 # ============================================================================
