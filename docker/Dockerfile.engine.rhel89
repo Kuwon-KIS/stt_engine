@@ -119,7 +119,8 @@ RUN python3.11 -m pip install \
 # 
 # constraints.txt는 이미 설치된 PyTorch와 CUDA 라이브러리의 버전을 고정하여
 # pip이 불필요한 재설치를 시도하지 않도록 합니다.
-# --no-deps 옵션으로 requirements의 새 패키지만 설치하고 의존성 재검사를 하지 않습니다.
+# --no-deps: 의존성 재검사 생략 (이미 설치된 패키지 유지)
+# --no-build-isolation: openai-whisper 빌드 시 setuptools 접근 허용
 # ============================================================================
 
 # requirements.txt와 constraints.txt를 미리 복사
@@ -129,6 +130,7 @@ COPY requirements.txt constraints.txt /tmp/
 RUN python3.11 -m pip install \
     --no-cache-dir \
     --no-deps \
+    --no-build-isolation \
     --constraint /tmp/constraints.txt \
     -r /tmp/requirements.txt
 
