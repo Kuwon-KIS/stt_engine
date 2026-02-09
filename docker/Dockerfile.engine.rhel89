@@ -99,8 +99,7 @@ RUN python3.11 -m pip install --upgrade \
 # ============================================================================
 # Step 7: PyTorch 및 CUDA 런타임 라이브러리 설치 (먼저 설치) - ROOT로 실행
 # 
-# CUDA 12.4 공식 지원 버전 사용
-# RHEL 8.9의 CUDA 12.9 Runtime과 forward compatible
+# CUDA 12.9 공식 지원 버전 사용 (운영 환경 CUDA 버전에 맞춤)
 # torchaudio도 포함 (whisper에서 필수)
 #
 # *** 중요: PyTorch를 먼저 설치하는 이유 ***
@@ -110,7 +109,7 @@ RUN python3.11 -m pip install --upgrade \
 # ============================================================================
 
 RUN python3.11 -m pip install \
-    --index-url https://download.pytorch.org/whl/cu124 \
+    --index-url https://download.pytorch.org/whl/cu129 \
     torch==2.6.0 \
     torchaudio==2.6.0
 
