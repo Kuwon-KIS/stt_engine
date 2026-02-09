@@ -391,7 +391,7 @@ class WhisperSTT:
     def _try_faster_whisper(self):
         """faster-whisper로 모델 로드 시도 (로컬 모델만 사용, 상세 진단 포함)"""
         try:
-            print(f"🔄 faster-whisper 모델 로드 시도... (디바이스: {self.device}, compute: {self.compute_type})")
+            logger.info(f"🔄 faster-whisper 모델 로드 시도... (디바이스: {self.device}, compute: {self.compute_type})")
             
             # 모델 구조 상세 진단
             diagnosis = diagnose_faster_whisper_model(self.model_path)
@@ -446,20 +446,16 @@ class WhisperSTT:
             
             self.backend = self.model  # 실제 모델 객체를 backend에 저장
             self.faster_whisper_available = True  # 플래그 설정
-            print(f"✅ faster-whisper 모델 로드 성공")
+            logger.info(f"✅ faster-whisper 모델 로드 성공")
             
         except FileNotFoundError as e:
-            print(f"\n   ❌ faster-whisper: 파일을 찾을 수 없음")
-            print(f"      에러: {e}")
-            print(f"      경로: {self.model_path}")
-            print(f"\n   💡 해결 방법:")
-            print(f"      1. download_model_hf.py 실행 상태 확인")
-            print(f"      2. CTranslate2 변환 완료 여부 확인")
-            print(f"      3. {self.model_path}/ctranslate2_model/model.bin 파일 크기 확인 (100MB 이상)")
+            logger.error(f"❌ faster-whisper: 파일을 찾을 수 없음", exc_info=True)
+            logger.error(f"   경로: {self.model_path}")
+            logger.error(f"   해결: download_model_hf.py 및 CTranslate2 변환 확인")
         except Exception as e:
             error_str = str(e)
-            print(f"\n   ❌ faster-whisper 로드 실패: {type(e).__name__}")
-            print(f"      메시지: {error_str[:200]}")
+            logger.error(f"❌ faster-whisper 로드 실패: {type(e).__name__}", exc_info=True)
+            logger.error(f"   메시지: {error_str[:200]}")
             
             # 알려진 에러 진단
             if "vocabulary" in error_str.lower() or "token" in error_str.lower():
@@ -1068,29 +1064,13 @@ class WhisperSTT:
     def _transcribe_faster_whisper(self, audio_path: str, language: Optional[str] = None, **kwargs) -> Dict:
         """faster-whisper (WhisperModel)로 변환
         
-        주의: faster-whisper는 내부적으로 80 mel-bin으로 고정된 음성 전처리를 수행합니다.
-        turbo 모델 (128 mel-bins)과의 호환성을 위해 mel-bin 검증을 수행합니다.
+        주의: faster-whisper는 내부적으로 preprocessor_config.json에서 feature_size를 읽습니다.
+        turbo 모델은 128 mel-bins을 필요로 합니다.
         """
         logger.info(f"[faster-whisper] 변환 시작 (파일: {Path(audio_path).name})")
         
         try:
-            # 모델의 mel-bin 개수 확인
-            model_mel_bins = get_model_mel_bins(self.model_path)
-            logger.info(f"[faster-whisper] 모델 mel-bins: {model_mel_bins}")
-            
-            if model_mel_bins != 80:
-                logger.warning(f"⚠️  모델이 {model_mel_bins} mel-bins를 요구하지만, faster-whisper는 80 mel-bins로 고정됨")
-                logger.warning(f"   이는 모델 입력 형상 불일치로 이어질 수 있습니다")
-                logger.warning(f"   → transformers 백엔드 사용을 권장합니다 (커스텀 mel-bins 지원)")
-                
-                # transformers 백엔드가 사용 가능한 경우 전환
-                if TRANSFORMERS_AVAILABLE and self.transformers_available:
-                    logger.info(f"   → transformers 백엔드로 자동 전환...")
-                    return self._transcribe_with_transformers(audio_path, language)
-                else:
-                    logger.warning(f"   → transformers 사용 불가, faster-whisper로 계속 진행 (실패 가능)")
-            
-            logger.debug(f"[faster-whisper] 모델 설정: beam_size={kwargs.get('beam_size', 5)}, "
+            logger.info(f"[faster-whisper] 모델 설정: beam_size={kwargs.get('beam_size', 5)}, "
                         f"best_of={kwargs.get('best_of', 5)}, "
                         f"patience={kwargs.get('patience', 1)}, "
                         f"temperature={kwargs.get('temperature', 0)}")
@@ -1121,10 +1101,21 @@ class WhisperSTT:
                 "backend": "faster-whisper"
             }
         except Exception as e:
-            logger.error(f"❌ faster-whisper 변환 실패: {type(e).__name__}: {e}", exc_info=True)
+            error_msg = str(e)[:200]
+            logger.error(f"❌ faster-whisper 변환 실패: {type(e).__name__}", exc_info=True)
+            logger.error(f"   메시지: {error_msg}")
+            
+            # 알려진 에러 진단
+            if "vocabulary" in error_msg.lower() or "token" in error_msg.lower():
+                logger.error(f"   분석: 토크나이저/어휘 오류 - 모델 설정 파일 누락 가능")
+            elif "shape" in error_msg.lower() and "128" in error_msg:
+                logger.error(f"   분석: mel-spectrogram 형상 오류 - preprocessor_config.json이 로드되지 않음")
+            elif "model.bin" in error_msg.lower():
+                logger.error(f"   분석: model.bin 로드 오류 - CTranslate2 변환 실패 가능")
+            
             return {
                 "success": False,
-                "error": f"faster-whisper 변환 실패: {type(e).__name__}: {str(e)[:100]}",
+                "error": f"faster-whisper 변환 실패: {type(e).__name__}: {error_msg}",
                 "audio_path": audio_path,
                 "backend": "faster-whisper"
             }
