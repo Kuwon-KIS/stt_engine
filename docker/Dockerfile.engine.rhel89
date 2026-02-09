@@ -99,19 +99,20 @@ RUN python3.11 -m pip install --upgrade \
 # ============================================================================
 # Step 7: PyTorch 및 CUDA 런타임 라이브러리 설치 (먼저 설치) - ROOT로 실행
 # 
-# CUDA 12.9 공식 지원 버전 사용 (운영 환경 CUDA 버전에 맞춤)
+# PyTorch 2.8.0 사용 - cu129 (CUDA 12.9) 공식 지원
+# PyTorch 2.6.0은 cu129 인덱스에서 사용 불가 (cu124만 지원)
 # torchaudio도 포함 (whisper에서 필수)
 #
 # *** 중요: PyTorch를 먼저 설치하는 이유 ***
 # openai-whisper (20231117)는 triton<3,>=2.0.0을 요구
-# torch 2.6.0은 triton==3.2.0을 요구
+# torch 2.8.0은 triton==3.2.0을 요구
 # PyTorch를 먼저 설치해야 openai-whisper가 이미 설치된 triton 3.2.0을 사용
 # ============================================================================
 
 RUN python3.11 -m pip install \
     --index-url https://download.pytorch.org/whl/cu129 \
-    torch==2.6.0 \
-    torchaudio==2.6.0
+    torch==2.8.0 \
+    torchaudio==2.8.0
 
 # ============================================================================
 # Step 8: 애플리케이션 의존성 설치 (간단하고 명확함)
