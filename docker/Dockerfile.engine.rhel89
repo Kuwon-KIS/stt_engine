@@ -115,10 +115,17 @@ RUN python3.11 -m pip install \
     torchaudio==2.8.0
 
 # ============================================================================
-# Step 8: 애플리케이션 의존성 설치 (PyTorch 먼저 설치했으므로 안전함)
+# Step 8: pip 빌드 도구 먼저 설치 (openai-whisper 빌드에 필수)
+# ============================================================================
+# setuptools + wheel: pip 빌드 격리 환경에서 pkg_resources를 올바르게 해결
+RUN python3.11 -m pip install --no-cache-dir setuptools wheel
+
+# ============================================================================
+# Step 9: 애플리케이션 의존성 설치 (PyTorch 먼저 설치했으므로 안전함)
 # ============================================================================
 # openai-whisper를 requirements.txt에 포함
 # PyTorch 2.8.0이 이미 설치되어 있으므로 triton 버전 충돌 해결됨
+# setuptools + wheel이 이미 설치되어 빌드 격리 환경에서 pkg_resources 접근 가능
 COPY requirements.txt /tmp/
 
 RUN python3.11 -m pip install \
@@ -126,7 +133,7 @@ RUN python3.11 -m pip install \
     -r /tmp/requirements.txt
 
 # ============================================================================
-# Step 9: CUDA 라이브러리 위치 탐색 및 경로 등록
+# Step 10: CUDA 라이브러리 위치 탐색 및 경로 등록
 
 # Create ldconfig config file with ALL CUDA library paths
 RUN cat > /etc/ld.so.conf.d/torch-cuda.conf << 'EOF'
