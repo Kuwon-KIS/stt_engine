@@ -438,8 +438,9 @@ else:
                         src = parent_dir / filename
                         dst = output_dir / filename
                         
-                        if src.exists() and not dst.exists():
+                        if src.exists():
                             try:
+                                # 파일이 이미 존재해도 덮어쓰기
                                 shutil.copy2(str(src), str(dst))
                                 copied_files.append(filename)
                             except Exception as copy_err:
@@ -528,8 +529,9 @@ else:
                         src = parent_dir / filename
                         dst = output_dir / filename
                         
-                        if src.exists() and not dst.exists():
+                        if src.exists():
                             try:
+                                # 파일이 이미 존재해도 덮어쓰기
                                 shutil.copy2(str(src), str(dst))
                                 copied_files.append(filename)
                             except Exception as copy_err:
