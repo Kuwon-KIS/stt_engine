@@ -7,7 +7,7 @@
 # 목적: Docker 이미지 빌드만 수행 (모델 다운로드 제외)
 # 사용: bash scripts/build-ec2-engine-image.sh [버전]
 # 예시: 
-#   bash scripts/build-ec2-engine-image.sh          # v1.4 (기본값)
+#   bash scripts/build-ec2-engine-image.sh          # latest (기본값)
 #   bash scripts/build-ec2-engine-image.sh v1.5     # v1.5로 빌드
 #   bash scripts/build-ec2-engine-image.sh v2.0     # v2.0으로 빌드
 #
@@ -37,7 +37,7 @@ OUTPUT_DIR="${WORKSPACE}/build/output"
 BUILD_LOG="/tmp/build-image-$(date +%Y%m%d-%H%M%S).log"
 
 # 버전 정보 (동적 할당)
-DEFAULT_VERSION="v1.4"
+DEFAULT_VERSION="latest"
 VERSION="${1:-$DEFAULT_VERSION}"
 IMAGE_NAME="stt-engine"
 IMAGE_VERSION="cuda129-rhel89-${VERSION}"
