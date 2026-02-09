@@ -115,19 +115,21 @@ RUN python3.11 -m pip install \
     torchaudio==2.6.0
 
 # ============================================================================
-# Step 8: 애플리케이션 의존성 설치 (requirements.txt에서) - ROOT로 실행
+# Step 8: 애플리케이션 의존성 설치 (requirements.txt + constraints.txt)
 # 
-# 참고: Dockerfile이 요구사항을 hardcode하지 않고 requirements.txt를 읽음
-# 새로운 패키지 추가 시 requirements.txt만 수정하면 자동 반영됨
-# PyTorch가 이미 설치되어 있으므로 triton 버전 충돌 없음
+# constraints.txt는 이미 설치된 PyTorch와 CUDA 라이브러리의 버전을 고정하여
+# pip이 불필요한 재설치를 시도하지 않도록 합니다.
+# --no-deps 옵션으로 requirements의 새 패키지만 설치하고 의존성 재검사를 하지 않습니다.
 # ============================================================================
 
-# requirements.txt를 미리 복사 (Docker 캐싱 최적화)
-COPY requirements.txt /tmp/requirements.txt
+# requirements.txt와 constraints.txt를 미리 복사
+COPY requirements.txt constraints.txt /tmp/
 
-# build-essential 도구 및 build isolation 비활성화로 openai-whisper 빌드 지원
-RUN python3.11 -m pip install --trusted-host files.pythonhosted.org \
-    --no-build-isolation \
+# 의존성 설치: 새 패키지만 설치, 기존 의존성은 건드리지 않음
+RUN python3.11 -m pip install \
+    --no-cache-dir \
+    --no-deps \
+    --constraint /tmp/constraints.txt \
     -r /tmp/requirements.txt
 
 # ============================================================================
