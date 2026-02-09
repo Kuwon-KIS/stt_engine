@@ -8,7 +8,7 @@ from typing import Optional
 import logging
 
 
-def check_memory_availability(required_mb: int = 4000, logger: Optional[logging.Logger] = None) -> dict:
+def check_memory_available(required_mb: int = 4000, logger: Optional[logging.Logger] = None) -> dict:
     """
     현재 메모리 상태 확인
     
