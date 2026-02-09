@@ -575,6 +575,9 @@ class WhisperSTT:
         """
         import librosa
         import torch
+        import logging
+        
+        logger = logging.getLogger(__name__)
         
         try:
             # 음성 로드
@@ -583,26 +586,34 @@ class WhisperSTT:
             # 프로세싱
             input_features = self.backend.processor(audio, sampling_rate=16000, return_tensors="pt").input_features
             
+            # 모델의 dtype에 맞추기 (float32 → float16)
+            model_dtype = self.backend.model.dtype
+            input_features = input_features.to(model_dtype)
+            
             if self.device == "cuda":
                 input_features = input_features.to(self.device)
             
-            # 추론
+            # 추론 (language 지정)
             with torch.no_grad():
-                predicted_ids = self.backend.model.generate(input_features)
+                predicted_ids = self.backend.model.generate(input_features, language="ko")
             
             # 디코딩
             transcription = self.backend.processor.batch_decode(predicted_ids, skip_special_tokens=True)
             
             return {
                 "text": transcription[0] if transcription else "",
-                "language": language or "auto",
+                "language": language or "ko",
                 "backend": "transformers"
             }
         
         except Exception as e:
+            import traceback
+            error_msg = f"transformers transcription failed: {type(e).__name__}: {str(e)}"
+            logger.error(error_msg)
+            logger.error(traceback.format_exc())
             return {
                 "text": "",
-                "error": f"transformers transcription failed: {e}",
+                "error": error_msg,
                 "backend": "transformers"
             }
 
