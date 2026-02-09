@@ -417,6 +417,20 @@ else:
                             else:
                                 print(f"     {f.relative_to(output_dir)}: {size} bytes")
                 
+                # faster-whisper가 tokenizer를 로드할 때 필요한 파일들을 복사
+                # merges.txt는 부모 디렉토리에만 있으므로 ctranslate2_model/로 복사
+                if output_dir.exists():
+                    parent_dir = model_specific_dir
+                    merges_src = parent_dir / "merges.txt"
+                    merges_dst = output_dir / "merges.txt"
+                    
+                    if merges_src.exists() and not merges_dst.exists():
+                        try:
+                            shutil.copy2(str(merges_src), str(merges_dst))
+                            print(f"📋 merges.txt 복사 완료: {merges_src} → {merges_dst}")
+                        except Exception as copy_err:
+                            print(f"⚠️  merges.txt 복사 실패: {copy_err}")
+                
                 print_success("✅ CTranslate2 모델 변환 완료!")
                 conversion_success = True
                 break
@@ -475,6 +489,21 @@ else:
                                 print(f"     {f.relative_to(output_dir)}: {size} bytes")
                 
                 print_success("✅ CTranslate2 모델 변환 완료!")
+                
+                # faster-whisper가 tokenizer를 로드할 때 필요한 파일들을 복사
+                # merges.txt는 부모 디렉토리에만 있으므로 ctranslate2_model/로 복사
+                if output_dir.exists():
+                    parent_dir = model_specific_dir
+                    merges_src = parent_dir / "merges.txt"
+                    merges_dst = output_dir / "merges.txt"
+                    
+                    if merges_src.exists() and not merges_dst.exists():
+                        try:
+                            shutil.copy2(str(merges_src), str(merges_dst))
+                            print(f"📋 merges.txt 복사 완료: {merges_src} → {merges_dst}")
+                        except Exception as copy_err:
+                            print(f"⚠️  merges.txt 복사 실패: {copy_err}")
+                
                 conversion_success = True
                 break
                 
