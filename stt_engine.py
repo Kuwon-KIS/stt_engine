@@ -61,70 +61,6 @@ if not (FASTER_WHISPER_AVAILABLE or TRANSFORMERS_AVAILABLE or WHISPER_AVAILABLE)
     )
 
 
-def get_model_mel_bins(model_path: str) -> int:
-    """모델 config에서 mel-bin 개수 추출"""
-    config_path = Path(model_path) / "config.json"
-    
-    if not config_path.exists():
-        logger.warning(f"config.json 없음: {config_path}, 기본값 80 사용")
-        return 80
-    
-    try:
-        with open(config_path, 'r') as f:
-            config = json.load(f)
-            # 여러 가능한 키 확인
-            num_mels = config.get('num_mel_bins') or config.get('n_mels') or 80
-            logger.info(f"모델 mel-bins: {num_mels}")
-            return num_mels
-    except Exception as e:
-        logger.error(f"config.json 읽기 실패: {e}, 기본값 80 사용")
-        return 80
-
-
-def preprocess_audio_with_mel_bins(audio_path: str, num_mel_bins: int = 80, 
-                                    sr: int = 16000, n_fft: int = 400, 
-                                    hop_length: int = 160) -> np.ndarray:
-    """
-    지정된 mel-bin 개수로 오디오를 mel-spectrogram으로 변환
-    
-    Args:
-        audio_path: 오디오 파일 경로
-        num_mel_bins: mel-frequency bin 개수 (기본값: 80, turbo 모델은 128)
-        sr: 샘플링 레이트 (기본값: 16000)
-        n_fft: FFT 윈도우 크기 (기본값: 400)
-        hop_length: 홉 길이 (기본값: 160)
-    
-    Returns:
-        mel-spectrogram (numpy array), shape: (num_mel_bins, time_steps)
-    """
-    try:
-        # 오디오 로드
-        logger.debug(f"오디오 로드: {audio_path}, sr={sr}")
-        y, sr = librosa.load(audio_path, sr=sr, mono=True)
-        logger.debug(f"오디오 로드 완료: {len(y)} 샘플, {sr}Hz")
-        
-        # Mel-spectrogram 계산
-        logger.debug(f"Mel-spectrogram 계산: {num_mel_bins} bins")
-        mel_spec = librosa.feature.melspectrogram(
-            y=y,
-            sr=sr,
-            n_fft=n_fft,
-            hop_length=hop_length,
-            n_mels=num_mel_bins,
-            fmin=0,
-            fmax=8000
-        )
-        
-        # dB scale로 변환
-        mel_spec_db = librosa.power_to_db(mel_spec, ref=np.max)
-        logger.debug(f"Mel-spectrogram 완료: shape={mel_spec_db.shape}")
-        
-        return mel_spec_db
-    except Exception as e:
-        logger.error(f"오디오 전처리 실패: {e}", exc_info=True)
-        raise
-
-
 def diagnose_faster_whisper_model(model_path: str) -> dict:
     """
     faster-whisper 모델 상세 진단 (디버깅용)
@@ -490,15 +426,16 @@ class WhisperSTT:
                 if len(diagnosis['files']['list']) > 10:
                     print(f"      ... 외 {len(diagnosis['files']['list']) - 10}개")
             
-            # 모델 로드 시도 - CTranslate2 모델 서브디렉토리 사용
-            # faster-whisper는 모델.bin과 tokenizer 파일들이 같은 디렉토리에 있어야 함
-            ct2_model_dir = Path(self.model_path) / "ctranslate2_model"
+            # 모델 로드 시도 - 전체 모델 폴더 사용
+            # faster-whisper는:
+            # 1. preprocessor_config.json을 모델 폴더에서 읽음 (feature_size 정보)
+            # 2. CTranslate2 모델은 내부적으로 ctranslate2_model/ 서브디렉토리에서 찾음
             
             print(f"\n   📦 faster-whisper WhisperModel 로드 중...")
-            print(f"   📁 모델 경로: {ct2_model_dir}")
+            print(f"   📁 모델 경로: {self.model_path}")
             
             self.model = WhisperModel(
-                str(ct2_model_dir),
+                str(self.model_path),
                 device=self.device,
                 compute_type=self.compute_type,
                 num_workers=4,
@@ -1185,23 +1122,6 @@ class WhisperSTT:
             }
         except Exception as e:
             logger.error(f"❌ faster-whisper 변환 실패: {type(e).__name__}: {e}", exc_info=True)
-            
-            # mel-bin 불일치로 인한 오류인 경우, transformers로 재시도
-            if "shape" in str(e).lower() and "128" in str(e) and TRANSFORMERS_AVAILABLE and self.transformers_available:
-                logger.info(f"   → mel-bin 불일치 감지, transformers로 재시도...")
-                try:
-                    return self._transcribe_with_transformers(audio_path, language)
-                except Exception as fallback_e:
-                    logger.error(f"❌ transformers 재시도도 실패: {fallback_e}")
-                    return {
-                        "success": False,
-                        "error": f"faster-whisper 실패 후 transformers 재시도도 실패",
-                        "original_error": f"faster-whisper: {type(e).__name__}: {str(e)[:100]}",
-                        "fallback_error": f"transformers: {type(fallback_e).__name__}: {str(fallback_e)[:100]}",
-                        "audio_path": audio_path,
-                        "backend": "faster-whisper"
-                    }
-            
             return {
                 "success": False,
                 "error": f"faster-whisper 변환 실패: {type(e).__name__}: {str(e)[:100]}",
