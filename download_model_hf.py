@@ -417,19 +417,36 @@ else:
                             else:
                                 print(f"     {f.relative_to(output_dir)}: {size} bytes")
                 
-                # faster-whisper가 tokenizer를 로드할 때 필요한 파일들을 복사
-                # merges.txt는 부모 디렉토리에만 있으므로 ctranslate2_model/로 복사
+                # faster-whisper가 tokenizer/preprocessor를 로드할 때 필요한 파일들을 모두 복사
+                # 부모 디렉토리의 모든 설정/토크나이저 파일을 ctranslate2_model/로 복사
                 if output_dir.exists():
                     parent_dir = model_specific_dir
-                    merges_src = parent_dir / "merges.txt"
-                    merges_dst = output_dir / "merges.txt"
+                    files_to_copy = [
+                        "merges.txt",
+                        "vocab.json",
+                        "special_tokens_map.json",
+                        "normalizer.json",
+                        "tokenizer.json",
+                        "tokenizer_config.json",
+                        "preprocessor_config.json",
+                        "added_tokens.json",
+                        "generation_config.json"
+                    ]
                     
-                    if merges_src.exists() and not merges_dst.exists():
-                        try:
-                            shutil.copy2(str(merges_src), str(merges_dst))
-                            print(f"📋 merges.txt 복사 완료: {merges_src} → {merges_dst}")
-                        except Exception as copy_err:
-                            print(f"⚠️  merges.txt 복사 실패: {copy_err}")
+                    copied_files = []
+                    for filename in files_to_copy:
+                        src = parent_dir / filename
+                        dst = output_dir / filename
+                        
+                        if src.exists() and not dst.exists():
+                            try:
+                                shutil.copy2(str(src), str(dst))
+                                copied_files.append(filename)
+                            except Exception as copy_err:
+                                print(f"⚠️  {filename} 복사 실패: {copy_err}")
+                    
+                    if copied_files:
+                        print(f"📋 복사된 설정/토크나이저 파일: {', '.join(copied_files)}")
                 
                 print_success("✅ CTranslate2 모델 변환 완료!")
                 conversion_success = True
@@ -490,19 +507,36 @@ else:
                 
                 print_success("✅ CTranslate2 모델 변환 완료!")
                 
-                # faster-whisper가 tokenizer를 로드할 때 필요한 파일들을 복사
-                # merges.txt는 부모 디렉토리에만 있으므로 ctranslate2_model/로 복사
+                # faster-whisper가 tokenizer/preprocessor를 로드할 때 필요한 파일들을 모두 복사
+                # 부모 디렉토리의 모든 설정/토크나이저 파일을 ctranslate2_model/로 복사
                 if output_dir.exists():
                     parent_dir = model_specific_dir
-                    merges_src = parent_dir / "merges.txt"
-                    merges_dst = output_dir / "merges.txt"
+                    files_to_copy = [
+                        "merges.txt",
+                        "vocab.json",
+                        "special_tokens_map.json",
+                        "normalizer.json",
+                        "tokenizer.json",
+                        "tokenizer_config.json",
+                        "preprocessor_config.json",
+                        "added_tokens.json",
+                        "generation_config.json"
+                    ]
                     
-                    if merges_src.exists() and not merges_dst.exists():
-                        try:
-                            shutil.copy2(str(merges_src), str(merges_dst))
-                            print(f"📋 merges.txt 복사 완료: {merges_src} → {merges_dst}")
-                        except Exception as copy_err:
-                            print(f"⚠️  merges.txt 복사 실패: {copy_err}")
+                    copied_files = []
+                    for filename in files_to_copy:
+                        src = parent_dir / filename
+                        dst = output_dir / filename
+                        
+                        if src.exists() and not dst.exists():
+                            try:
+                                shutil.copy2(str(src), str(dst))
+                                copied_files.append(filename)
+                            except Exception as copy_err:
+                                print(f"⚠️  {filename} 복사 실패: {copy_err}")
+                    
+                    if copied_files:
+                        print(f"📋 복사된 설정/토크나이저 파일: {', '.join(copied_files)}")
                 
                 conversion_success = True
                 break
