@@ -934,6 +934,68 @@ class WhisperSTT:
         except ImportError:
             return False
     
+    def get_backend_info(self) -> Dict:
+        """
+        현재 로드된 백엔드의 정보를 반환합니다.
+        
+        Returns:
+            {
+                "current_backend": "faster-whisper" | "transformers" | "openai-whisper",
+                "backend_type": Python 클래스명,
+                "device": "cpu" | "cuda",
+                "compute_type": "float32" | "float16" | "int8",
+                "model_path": 모델 경로,
+                "available_backends": {
+                    "faster-whisper": bool,
+                    "transformers": bool,
+                    "openai-whisper": bool
+                },
+                "loaded": True | False
+            }
+        """
+        if self.backend is None:
+            return {
+                "current_backend": None,
+                "backend_type": None,
+                "device": self.device,
+                "compute_type": self.compute_type,
+                "model_path": self.model_path,
+                "available_backends": {
+                    "faster-whisper": FASTER_WHISPER_AVAILABLE,
+                    "transformers": TRANSFORMERS_AVAILABLE,
+                    "openai-whisper": WHISPER_AVAILABLE
+                },
+                "loaded": False
+            }
+        
+        backend_type = type(self.backend).__name__
+        current_backend = None
+        
+        if hasattr(self.backend, '_backend_type'):
+            current_backend = self.backend._backend_type
+        elif backend_type == 'WhisperModel':
+            current_backend = "faster-whisper"
+        elif backend_type == 'TransformersBackend':
+            current_backend = "transformers"
+        elif backend_type == 'WhisperBackend':
+            current_backend = "openai-whisper"
+        else:
+            current_backend = "unknown"
+        
+        return {
+            "current_backend": current_backend,
+            "backend_type": backend_type,
+            "device": self.device,
+            "compute_type": self.compute_type,
+            "model_path": self.model_path,
+            "available_backends": {
+                "faster-whisper": FASTER_WHISPER_AVAILABLE,
+                "transformers": TRANSFORMERS_AVAILABLE,
+                "openai-whisper": WHISPER_AVAILABLE
+            },
+            "loaded": True
+        }
+    
     def reload_backend(self, backend: Optional[str] = None) -> str:
         """
         백엔드를 동적으로 재로드합니다.

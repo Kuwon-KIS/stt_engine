@@ -110,15 +110,17 @@ async def health():
     # 메모리 상태 확인
     memory_info = check_memory_available(logger=logger)
     
-    # 백엔드 타입 확인
-    backend_type = type(stt.backend).__name__ if stt.backend else "None"
+    # 백엔드 정보 조회
+    backend_info = stt.get_backend_info()
     
     return {
         "status": "ok",
         "version": "1.0.0",
-        "backend": backend_type,
+        "backend": backend_info['current_backend'],
+        "backend_type": backend_info['backend_type'],
         "model": "openai_whisper-large-v3-turbo",
         "device": stt.device,
+        "compute_type": stt.compute_type,
         "memory": {
             "available_mb": memory_info['available_mb'],
             "total_mb": memory_info['total_mb'],
@@ -129,6 +131,112 @@ async def health():
     }
 
 
+@app.get("/backend/current")
+async def get_current_backend():
+    """
+    현재 로드된 백엔드 정보 조회
+    
+    Returns:
+    - current_backend: 현재 로드된 백엔드 이름
+    - backend_type: Python 클래스명
+    - device: 사용 중인 디바이스 (cpu/cuda)
+    - compute_type: 계산 타입 (float32/float16/int8)
+    - model_path: 모델 경로
+    - available_backends: 설치된 백엔드 목록
+    - loaded: 백엔드 로드 여부
+    """
+    if stt is None:
+        raise HTTPException(status_code=503, detail="STT 모델이 로드되지 않음")
+    
+    backend_info = stt.get_backend_info()
+    logger.info(f"[API] 현재 백엔드 조회: {backend_info['current_backend']}")
+    
+    return backend_info
+
+
+@app.post("/backend/reload")
+async def reload_backend(backend: str = None):
+    """
+    백엔드를 재로드합니다.
+    
+    Parameters:
+    - backend: 로드할 백엔드 (선택사항)
+               - "faster-whisper": faster-whisper 사용
+               - "transformers": transformers 사용
+               - "openai-whisper": OpenAI Whisper 사용
+               - null: 기본 순서대로 자동 선택 (faster-whisper → transformers → openai-whisper)
+    
+    Returns:
+    - status: "success" | "error"
+    - message: 처리 결과 메시지
+    - loaded_backend: 로드된 백엔드 이름
+    - backend_info: 로드 후 백엔드 정보
+    
+    예시:
+    - POST /backend/reload {"backend": "transformers"}
+    - POST /backend/reload (기본 순서로 자동 선택)
+    """
+    if stt is None:
+        raise HTTPException(status_code=503, detail="STT 모델이 로드되지 않음")
+    
+    try:
+        # 현재 백엔드 정보 로깅
+        old_backend = stt.get_backend_info()['current_backend']
+        
+        # 백엔드 재로드
+        logger.info(f"[API] 백엔드 재로드 시작: {backend or '자동 선택'}")
+        loaded_backend = stt.reload_backend(backend)
+        logger.info(f"[API] 백엔드 재로드 완료: {old_backend} → {loaded_backend}")
+        
+        # 재로드 후 백엔드 정보
+        new_backend_info = stt.get_backend_info()
+        
+        return {
+            "status": "success",
+            "message": f"백엔드가 {loaded_backend}로 변경되었습니다",
+            "previous_backend": old_backend,
+            "loaded_backend": loaded_backend,
+            "backend_info": new_backend_info
+        }
+    
+    except ValueError as e:
+        error_msg = str(e)
+        logger.error(f"[API] 백엔드 재로드 실패: {error_msg}")
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "status": "error",
+                "message": error_msg,
+                "supported_backends": ["faster-whisper", "transformers", "openai-whisper"]
+            }
+        )
+    
+    except RuntimeError as e:
+        error_msg = str(e)
+        logger.error(f"[API] 백엔드 재로드 실패: {error_msg}")
+        backend_info = stt.get_backend_info()
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "error",
+                "message": error_msg,
+                "current_backend": backend_info['current_backend'],
+                "available_backends": backend_info['available_backends']
+            }
+        )
+    
+    except Exception as e:
+        logger.error(f"[API] 예상치 못한 오류: {type(e).__name__}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "status": "error",
+                "error_type": type(e).__name__,
+                "message": str(e)
+            }
+        )
+
+
 @app.post("/transcribe")
 async def transcribe(file: UploadFile = File(...), language: str = None, backend: str = None):
     """
@@ -137,8 +245,9 @@ async def transcribe(file: UploadFile = File(...), language: str = None, backend
     Parameters:
     - file: 음성 파일 (WAV, MP3, M4A, FLAC 등)
     - language: 언어 코드 (선택사항, 예: "en", "ko", "ja")
-    - backend: 사용할 백엔드 (선택사항, 예: "faster-whisper", "transformers", "openai-whisper")
-               지정하지 않으면 더 빠른 백엔드부터 자동 선택 시도
+    - backend: (무시됨, 호환성 유지용) 
+               백엔드를 변경하려면 POST /backend/reload를 사용하세요.
+               예: POST /backend/reload {"backend": "transformers"}
     
     Returns:
     - success: 처리 성공 여부
@@ -158,7 +267,13 @@ async def transcribe(file: UploadFile = File(...), language: str = None, backend
         # 파일 정보 로깅
         backend_param = f", backend: {backend}" if backend else ""
         logger.info(f"[API] 음성 파일 업로드 요청: {file.filename}{backend_param}")
+        
+        # backend 파라미터가 전달된 경우 경고
+        if backend:
+            logger.warning(f"[API] ⚠️  backend 파라미터는 무시됩니다. 백엔드를 변경하려면 POST /backend/reload를 사용하세요.")
+        
         logger.debug(f"[API] Content-Type: {file.content_type}, Size: {file.size if hasattr(file, 'size') else 'unknown'}")
+
         
         # 임시 파일에 저장
         logger.debug(f"[API] 임시 파일에 저장 중...")
