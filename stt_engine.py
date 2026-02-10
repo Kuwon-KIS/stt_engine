@@ -444,6 +444,9 @@ class WhisperSTT:
             )
             
             self.backend = self.model  # 실제 모델 객체를 backend에 저장
+            # WhisperModel 객체에 _backend_type 속성 추가
+            if not hasattr(self.backend, '_backend_type'):
+                self.backend._backend_type = 'faster-whisper'
             self.faster_whisper_available = True  # 플래그 설정
             logger.info(f"✅ faster-whisper 모델 로드 성공")
             
@@ -543,7 +546,8 @@ class WhisperSTT:
                 'processor': processor,
                 'model': model,
                 'device': self.device,
-                'transcribe': self._transcribe_with_transformers
+                'transcribe': self._transcribe_with_transformers,
+                '_backend_type': 'transformers'  # 백엔드 타입 식별자 추가
             })()
             self.transformers_available = True  # 플래그 설정
             
@@ -571,7 +575,8 @@ class WhisperSTT:
                     'processor': processor,
                     'model': model,
                     'device': self.device,
-                    'transcribe': self._transcribe_with_transformers
+                    'transcribe': self._transcribe_with_transformers,
+                    '_backend_type': 'transformers'  # 백엔드 타입 식별자 추가
                 })()
                 self.transformers_available = True  # 플래그 설정
                 
@@ -853,7 +858,8 @@ class WhisperSTT:
             self.backend = type('WhisperBackend', (), {
                 'model': model,
                 'device': self.device,
-                'transcribe': self._transcribe_with_whisper
+                'transcribe': self._transcribe_with_whisper,
+                '_backend_type': 'openai-whisper'  # 백엔드 타입 식별자 추가
             })()
             self.whisper_available = True  # 플래그 설정
             
@@ -955,14 +961,18 @@ class WhisperSTT:
             
             logger.info(f"✓ 파일 존재 확인: {audio_path}")
             
-            # 백엔드 타입 확인 및 처리
-            if self.backend is None:
-                logger.error(f"❌ 백엔드 모델이 로드되지 않음")
-                raise RuntimeError("모델이 로드되지 않았습니다")
-            
             # 백엔드 타입에 따라 처리
             backend_type = type(self.backend).__name__
-            logger.info(f"🔧 현재 로드된 백엔드: {backend_type}")
+            
+            # _backend_type 속성이 있으면 사용 (더 정확함)
+            if hasattr(self.backend, '_backend_type'):
+                backend_identifier = self.backend._backend_type
+                logger.info(f"🔧 현재 로드된 백엔드: {backend_type} ({backend_identifier})")
+            else:
+                # _backend_type이 없으면 class name으로 판단
+                backend_identifier = "unknown"
+                logger.info(f"🔧 현재 로드된 백엔드: {backend_type}")
+            
             logger.debug(f"   백엔드 객체: {self.backend}")
             
             # 요청된 백엔드 검증
@@ -972,12 +982,12 @@ class WhisperSTT:
                 
                 # 백엔드 별칭 처리
                 backend_aliases = {
-                    "faster-whisper": "faster_whisper",
-                    "faster_whisper": "faster_whisper",
+                    "faster-whisper": "faster-whisper",
+                    "faster_whisper": "faster-whisper",
                     "transformers": "transformers",
-                    "openai-whisper": "openai_whisper",
-                    "openai_whisper": "openai_whisper",
-                    "whisper": "openai_whisper"
+                    "openai-whisper": "openai-whisper",
+                    "openai_whisper": "openai-whisper",
+                    "whisper": "openai-whisper"
                 }
                 
                 backend_canonical = backend_aliases.get(backend)
@@ -987,45 +997,52 @@ class WhisperSTT:
                     raise ValueError(f"지원하지 않는 백엔드: {backend}")
                 
                 # 현재 백엔드와 요청된 백엔드 매칭
-                if backend_canonical == "faster_whisper" and backend_type == 'WhisperModel':
-                    logger.info(f"→ faster-whisper 백엔드로 변환 시작")
-                    return self._transcribe_faster_whisper(audio_path, language, **kwargs)
-                elif backend_canonical == "transformers" and backend_type == 'TransformersBackend':
-                    logger.info(f"→ transformers 백엔드로 변환 시작")
-                    return self._transcribe_with_transformers(audio_path, language)
-                elif backend_canonical == "openai_whisper" and backend_type == 'WhisperBackend':
-                    logger.info(f"→ openai-whisper 백엔드로 변환 시작")
-                    return self._transcribe_with_whisper(audio_path, language)
-                else:
-                    logger.error(f"❌ 요청한 백엔드를 사용할 수 없음: {backend} (현재: {backend_type})")
-                    logger.error(f"   현재 로드된 백엔드: {backend_type}")
-                    raise RuntimeError(f"요청한 백엔드를 사용할 수 없습니다: {backend} (현재 로드됨: {backend_type})")
+                if backend_canonical == "faster-whisper":
+                    if backend_identifier == "faster-whisper" or backend_type == 'WhisperModel':
+                        logger.info(f"→ faster-whisper 백엔드로 변환 시작")
+                        return self._transcribe_faster_whisper(audio_path, language, **kwargs)
+                    else:
+                        logger.error(f"❌ 요청한 백엔드를 사용할 수 없음: {backend} (현재: {backend_identifier or backend_type})")
+                        raise RuntimeError(f"요청한 백엔드를 사용할 수 없습니다: {backend} (현재 로드됨: {backend_identifier or backend_type})")
+                
+                elif backend_canonical == "transformers":
+                    if backend_identifier == "transformers" or backend_type == 'TransformersBackend':
+                        logger.info(f"→ transformers 백엔드로 변환 시작")
+                        return self._transcribe_with_transformers(audio_path, language)
+                    else:
+                        logger.error(f"❌ 요청한 백엔드를 사용할 수 없음: {backend} (현재: {backend_identifier or backend_type})")
+                        raise RuntimeError(f"요청한 백엔드를 사용할 수 없습니다: {backend} (현재 로드됨: {backend_identifier or backend_type})")
+                
+                elif backend_canonical == "openai-whisper":
+                    if backend_identifier == "openai-whisper" or backend_type == 'WhisperBackend':
+                        logger.info(f"→ openai-whisper 백엔드로 변환 시작")
+                        return self._transcribe_with_whisper(audio_path, language)
+                    else:
+                        logger.error(f"❌ 요청한 백엔드를 사용할 수 없음: {backend} (현재: {backend_identifier or backend_type})")
+                        raise RuntimeError(f"요청한 백엔드를 사용할 수 없습니다: {backend} (현재 로드됨: {backend_identifier or backend_type})")
             
             # 백엔드 자동 선택 (지정하지 않음)
             else:
                 logger.info(f"→ 자동 백엔드 선택 (기존 순서 유지)")
                 
-                if backend_type == 'WhisperModel':
+                if backend_identifier == "faster-whisper" or backend_type == 'WhisperModel':
                     logger.info(f"→ faster-whisper 백엔드로 변환 시작")
                     return self._transcribe_faster_whisper(audio_path, language, **kwargs)
-                elif backend_type == 'TransformersBackend':
+                elif backend_identifier == "transformers" or backend_type == 'TransformersBackend':
                     logger.info(f"→ transformers 백엔드로 변환 시작")
                     return self._transcribe_with_transformers(audio_path, language)
-                elif backend_type == 'WhisperBackend':
+                elif backend_identifier == "openai-whisper" or backend_type == 'WhisperBackend':
                     logger.info(f"→ openai-whisper 백엔드로 변환 시작")
                     return self._transcribe_with_whisper(audio_path, language)
-                elif backend_type == 'str':
-                    logger.error(f"❌ 버그: backend가 문자열로 저장됨: {self.backend}")
-                    raise RuntimeError(f"❌ 버그: backend가 문자열로 저장됨: {self.backend}")
                 else:
-                    logger.info(f"→ 제네릭 백엔드 객체로 변환 시도 (타입: {backend_type})")
+                    logger.info(f"→ 제네릭 백엔드 객체로 변환 시도 (타입: {backend_type}, 식별자: {backend_identifier})")
                     if hasattr(self.backend, 'transcribe'):
                         result = self.backend.transcribe(audio_path, language)
                         logger.info(f"✓ 제네릭 백엔드 변환 완료")
                         return result
                     else:
                         logger.error(f"❌ 지원하지 않는 백엔드: {backend_type}")
-                        raise RuntimeError(f"지원하지 않는 백엔드: {backend_type} (value: {self.backend})")
+                        raise RuntimeError(f"지원하지 않는 백엔드: {backend_type}")
         
         except FileNotFoundError as e:
             logger.error(f"❌ 파일 오류: {e}", exc_info=True)
