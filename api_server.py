@@ -18,6 +18,7 @@ from pathlib import Path
 import tempfile
 import os
 import logging
+import time
 from stt_engine import WhisperSTT
 from stt_utils import check_memory_available, check_audio_file
 import json
@@ -282,6 +283,9 @@ async def transcribe(file_path: str = Form(...), language: str = Form("ko"), is_
     is_streaming = is_stream.lower() in ['true', '1', 'yes', 'on']
     processing_mode = "streaming" if is_streaming else "normal"
     
+    # 처리 시간 측정 시작
+    start_time = time.time()
+    
     try:
         # 1. 파일 경로 검증 (보안: /app 내부만 허용)
         file_path_obj = Path(file_path).resolve()
@@ -417,6 +421,7 @@ async def transcribe(file_path: str = Form(...), language: str = Form("ko"), is_
         if "error" in result or not result.get('success', False):
             error_msg = result.get('error', '알 수 없는 오류')
             logger.error(f"[API] STT 처리 오류: {error_msg}")
+            processing_time = time.time() - start_time
             return {
                 "success": False,
                 "error": error_msg,
@@ -425,6 +430,7 @@ async def transcribe(file_path: str = Form(...), language: str = Form("ko"), is_
                 "file_path": str(file_path_obj),
                 "file_size_mb": file_size_mb,
                 "processing_mode": processing_mode,
+                "processing_time_seconds": round(processing_time, 2),
                 "memory_info": memory_info,
                 "segment_failed": result.get('segment_failed'),
                 "partial_text": result.get('partial_text', ''),
@@ -432,6 +438,9 @@ async def transcribe(file_path: str = Form(...), language: str = Form("ko"), is_
             }
         
         logger.info(f"[API] ✅ STT 처리 성공 - 텍스트: {len(result.get('text', ''))} 글자")
+        
+        # 처리 시간 계산
+        processing_time = time.time() - start_time
         
         return {
             "success": True,
@@ -442,6 +451,7 @@ async def transcribe(file_path: str = Form(...), language: str = Form("ko"), is_
             "file_path": str(file_path_obj),
             "file_size_mb": file_size_mb,
             "processing_mode": processing_mode,
+            "processing_time_seconds": round(processing_time, 2),
             "segments_processed": result.get("segments_processed"),
             "memory_info": {
                 "available_mb": memory_info.get('available_mb', 0),
@@ -614,6 +624,9 @@ async def transcribe_by_upload(file: UploadFile = File(...), language: str = For
         logger.error("[API] STT 모델이 로드되지 않음")
         raise HTTPException(status_code=503, detail="STT 모델이 로드되지 않음")
     
+    # 처리 시간 측정 시작
+    start_time = time.time()
+    
     tmp_path = None
     try:
         # 파일 정보 로깅
@@ -718,12 +731,14 @@ async def transcribe_by_upload(file: UploadFile = File(...), language: str = For
         if "error" in result or not result.get('success', False):
             error_msg = result.get('error', '알 수 없는 오류')
             logger.error(f"[API] STT 처리 오류: {error_msg}")
+            processing_time = time.time() - start_time
             return {
                 "success": False,
                 "error": error_msg,
                 "error_type": result.get('error_type', 'unknown'),
                 "backend": result.get('backend', 'unknown'),
                 "file_size_mb": file_size_mb,
+                "processing_time_seconds": round(processing_time, 2),
                 "memory_info": memory_info,
                 "segment_failed": result.get('segment_failed'),
                 "partial_text": result.get('partial_text', ''),
@@ -732,6 +747,9 @@ async def transcribe_by_upload(file: UploadFile = File(...), language: str = For
         
         logger.info(f"[API] ✅ STT 처리 성공 - 텍스트: {len(result.get('text', ''))} 글자")
         
+        # 처리 시간 계산
+        processing_time = time.time() - start_time
+        
         return {
             "success": True,
             "text": result.get("text", ""),
@@ -739,6 +757,7 @@ async def transcribe_by_upload(file: UploadFile = File(...), language: str = For
             "duration": result.get("duration", None),
             "backend": result.get("backend", "unknown"),
             "file_size_mb": file_size_mb,
+            "processing_time_seconds": round(processing_time, 2),
             "segments_processed": result.get("segments_processed"),
             "memory_info": {
                 "available_mb": memory_info.get('available_mb', 0),

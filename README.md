@@ -82,7 +82,70 @@ docker run -p 8003:8003 stt-engine:linux-x86_64
 
 ---
 
-## 📂 프로젝트 구조
+## � REST API 사용 가이드
+
+### 빠른 예시
+
+```bash
+# 1️⃣ 로컬 파일 처리 (권장!)
+curl -X POST http://localhost:8003/transcribe \
+  -F 'file_path=/app/audio/samples/test.wav' \
+  -F 'language=ko'
+
+# 2️⃣ 파일 업로드
+curl -X POST http://localhost:8003/transcribe_by_upload \
+  -F 'file=@/Users/user/audio.wav' \
+  -F 'language=ko'
+
+# 3️⃣ 헬스 체크
+curl http://localhost:8003/health | jq
+```
+
+### 응답 예시
+
+```json
+{
+  "success": true,
+  "text": "안녕하세요. 어떻게 도와드릴까요?",
+  "language": "ko",
+  "duration": 2.5,
+  "backend": "faster-whisper",
+  "file_size_mb": 0.015,
+  "processing_time_seconds": 1.23,
+  "processing_mode": "normal",
+  "segments_processed": 1,
+  "memory_info": {
+    "available_mb": 14000,
+    "used_percent": 10.5
+  }
+}
+```
+
+### 주요 기능
+
+✅ **3가지 엔드포인트**
+- `POST /transcribe` - 로컬 파일 경로 기반 (권장)
+- `POST /transcribe_by_upload` - 파일 업로드 기반
+- `GET /health` - 서버 상태 확인
+
+✅ **2가지 처리 모드**
+- **일반 모드**: 빠른 처리, 메모리 사용 (< 1GB 파일)
+- **스트리밍 모드**: 메모리 효율적, 느린 처리 (무제한 파일)
+
+✅ **언어 지원**
+- 기본: 한국어 (ko)
+- 지원: 영어(en), 일본어(ja), 중국어(zh) 등
+
+✅ **성능 추적**
+- `processing_time_seconds`: 처리 시간 측정
+- `memory_info`: 메모리 사용 현황
+- `segments_processed`: 처리된 세그먼트 수
+
+📖 **자세한 가이드**: [docs/API_USAGE_GUIDE.md](docs/API_USAGE_GUIDE.md)
+
+---
+
+## �📂 프로젝트 구조
 
 ```
 stt_engine/
