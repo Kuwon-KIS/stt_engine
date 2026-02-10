@@ -8,11 +8,11 @@ models/
 audio/
 !audio/samples/
 !audio/README.md
+!audio/samples/*.wav
 *.wav
 *.mp3
 *.flac
 *.ogg
-!audio/samples/*.wav
 
 # Python
 __pycache__/
@@ -66,4 +66,4 @@ logs/
 
 .build-pid
 
-scratch/
+scratch
