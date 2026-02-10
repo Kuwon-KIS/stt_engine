@@ -19,7 +19,6 @@ from typing import Optional, Dict
 import tarfile
 import logging
 import json
-import librosa
 import numpy as np
 
 # 로깅 설정
@@ -596,7 +595,6 @@ class WhisperSTT:
         Whisper는 최대 30초 음성만 처리 가능하므로,
         긴 음성은 30초 단위로 나눠서 처리 후 결합합니다.
         """
-        import librosa
         import torch
         import numpy as np
         import gc
@@ -639,10 +637,33 @@ class WhisperSTT:
             
             logger.info(f"✓ 메모리 확인 완료 (사용 가능: {memory_check['available_mb']:.0f}MB)")
             
-            # 3. 음성 로드
+            # 3. 음성 로드 (scipy 사용 - librosa의 pkg_resources 의존성 제거)
             logger.info(f"[transformers] 음성 파일 로드 중: {Path(audio_path).name}")
             try:
-                audio, sr = librosa.load(audio_path, sr=16000)
+                from scipy.io import wavfile as wav_file
+                import soundfile as sf
+                
+                # soundfile이 있으면 사용 (더 안정적)
+                try:
+                    audio, sr = sf.read(audio_path, dtype='float32')
+                    logger.debug(f"[transformers] soundfile로 오디오 로드 완료")
+                except ImportError:
+                    # soundfile 없으면 scipy 사용
+                    sr, audio = wav_file.read(audio_path)
+                    audio = audio.astype('float32')
+                    # 스테레오일 경우 모노로 변환
+                    if len(audio.shape) > 1:
+                        audio = audio.mean(axis=1)
+                    logger.debug(f"[transformers] scipy로 오디오 로드 완료")
+                
+                # 16kHz로 리샘플
+                if sr != 16000:
+                    logger.info(f"[transformers] 리샘플링: {sr}Hz → 16000Hz")
+                    from scipy import signal
+                    num_samples = int(len(audio) * 16000 / sr)
+                    audio = signal.resample(audio, num_samples)
+                    sr = 16000
+                
                 duration_seconds = len(audio) / sr
                 logger.info(f"✓ 음성 로드 완료 (길이: {duration_seconds:.1f}초, 샘플: {len(audio):,}, SR: {sr}Hz)")
             except ModuleNotFoundError as e:
