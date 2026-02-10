@@ -4,11 +4,17 @@ models/
 *.bin
 *.safetensors
 
-# Audio files (except samples)
-audio/
-!audio/samples/
+# Audio files - large datasets (ignored)
+audio/cusotomer_visit/
+audio/door_to_door_sales/
+audio/telemarketing/
+
+# Audio files - only track small samples
 !audio/README.md
+!audio/samples/
 !audio/samples/*.wav
+
+# General audio file ignore (for files outside samples/)
 *.wav
 *.mp3
 *.flac
