@@ -13,7 +13,7 @@ FastAPI를 사용한 STT(Speech-to-Text) 서버
 - OpenAI Whisper: 공식 모델명만 (tiny, base, small, medium, large)
 """
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, Body
+from fastapi import FastAPI, File, UploadFile, HTTPException, Body, Form
 from pathlib import Path
 import tempfile
 import os
@@ -243,7 +243,7 @@ async def reload_backend(request_body: dict = Body(None)):
 
 
 @app.post("/transcribe")
-async def transcribe(file: UploadFile = File(...), language: str = None):
+async def transcribe(file: UploadFile = File(...), language: str = Form("ko")):
     """
     음성 파일을 받아 텍스트로 변환
     

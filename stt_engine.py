@@ -599,7 +599,15 @@ class WhisperSTT:
         import numpy as np
         import gc
         
-        logger.info(f"[transformers] 변환 시작 (파일: {Path(audio_path).name})")
+        # 기본값: 한국어 (명시하지 않으면 "ko" 사용)
+        language_to_use = language or "ko"
+        
+        if language_to_use.lower() in ['ko', 'korean']:
+            language_to_use = 'ko'
+        else:
+            language_to_use = language_to_use.lower()
+        
+        logger.info(f"[transformers] 변환 시작 (파일: {Path(audio_path).name}, 언어: {language_to_use})")
         
         try:
             from stt_utils import check_memory_available, check_audio_file
@@ -753,7 +761,7 @@ class WhisperSTT:
                         with torch.no_grad():
                             predicted_ids = self.backend.model.generate(
                                 input_features, 
-                                language="ko"
+                                language=language_to_use
                             )
                         logger.debug(f"✓ 추론 완료 (predicted_ids shape: {predicted_ids.shape})")
                     except RuntimeError as e:
@@ -818,7 +826,7 @@ class WhisperSTT:
             return {
                 "success": True,
                 "text": full_text,
-                "language": language or "ko",
+                "language": language_to_use,
                 "backend": "transformers",
                 "duration": duration_seconds,
                 "segments_processed": segment_idx
@@ -892,11 +900,19 @@ class WhisperSTT:
     
     def _transcribe_with_whisper(self, audio_path: str, language: Optional[str] = None) -> Dict:
         """OpenAI Whisper를 사용한 음성 인식"""
-        logger.info(f"[openai-whisper] 변환 시작 (파일: {Path(audio_path).name})")
+        # 기본값: 한국어 (명시하지 않으면 "ko" 사용)
+        language_to_use = language or "ko"
+        
+        if language_to_use.lower() in ['ko', 'korean']:
+            language_to_use = 'ko'
+        else:
+            language_to_use = language_to_use.lower()
+        
+        logger.info(f"[openai-whisper] 변환 시작 (파일: {Path(audio_path).name}, 언어: {language_to_use})")
         
         try:
-            logger.debug(f"[openai-whisper] 모델 호출: transcribe(audio_path, language={language})")
-            result = self.backend.model.transcribe(audio_path, language=language)
+            logger.debug(f"[openai-whisper] 모델 호출: transcribe(audio_path, language={language_to_use})")
+            result = self.backend.model.transcribe(audio_path, language=language_to_use)
             
             logger.info(f"✓ openai-whisper 변환 완료")
             
@@ -1282,14 +1298,15 @@ class WhisperSTT:
         
         try:
             # language 파라미터 정규화 (한글 입력에 대한 alias 지원)
-            language_to_use = language
-            if language and language.lower() in ['ko', 'korean']:
+            # 기본값: 한국어 (명시하지 않으면 "ko" 사용)
+            language_to_use = language or "ko"
+            
+            if language_to_use.lower() in ['ko', 'korean']:
                 language_to_use = 'ko'
                 logger.info(f"[faster-whisper] 언어 설정: ko (한국어)")
-            elif language:
-                logger.info(f"[faster-whisper] 언어 설정: {language}")
             else:
-                logger.info(f"[faster-whisper] 언어: 자동 감지")
+                language_to_use = language_to_use.lower()
+                logger.info(f"[faster-whisper] 언어 설정: {language_to_use}")
             
             logger.info(f"[faster-whisper] 모델 설정: beam_size={kwargs.get('beam_size', 5)}, "
                         f"best_of={kwargs.get('best_of', 5)}, "
