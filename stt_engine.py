@@ -1066,17 +1066,45 @@ class WhisperSTT:
         주의: faster-whisper는 내부적으로 preprocessor_config.json에서 feature_size를 읽습니다.
         turbo 모델은 128 mel-bins을 필요로 합니다.
         """
+        import locale
+        
         logger.info(f"[faster-whisper] 변환 시작 (파일: {Path(audio_path).name})")
         
+        # 로케일 설정 확인 및 로깅
         try:
+            current_locale = locale.getlocale()
+            logger.debug(f"[faster-whisper] 현재 로케일: {current_locale}")
+            
+            # UTF-8 로케일 설정 (한글 처리 개선)
+            try:
+                locale.setlocale(locale.LC_ALL, 'ko_KR.UTF-8')
+                logger.debug(f"[faster-whisper] 로케일 설정: ko_KR.UTF-8")
+            except Exception as locale_e:
+                logger.debug(f"[faster-whisper] ko_KR.UTF-8 설정 실패: {locale_e}, 기본값 사용")
+        except Exception as e:
+            logger.warning(f"[faster-whisper] 로케일 확인 실패: {e}")
+        
+        try:
+            # language 파라미터 정규화 (한글 입력에 대한 alias 지원)
+            language_to_use = language
+            if language and language.lower() in ['ko', 'korean']:
+                language_to_use = 'ko'
+                logger.info(f"[faster-whisper] 언어 설정: ko (한국어)")
+            elif language:
+                logger.info(f"[faster-whisper] 언어 설정: {language}")
+            else:
+                logger.info(f"[faster-whisper] 언어: 자동 감지")
+            
             logger.info(f"[faster-whisper] 모델 설정: beam_size={kwargs.get('beam_size', 5)}, "
                         f"best_of={kwargs.get('best_of', 5)}, "
                         f"patience={kwargs.get('patience', 1)}, "
                         f"temperature={kwargs.get('temperature', 0)}")
             
+            logger.debug(f"[faster-whisper] transcribe() 호출: language={language_to_use}")
+            
             segments, info = self.backend.transcribe(
                 audio_path,
-                language=language,
+                language=language_to_use,
                 beam_size=kwargs.get("beam_size", 5),
                 best_of=kwargs.get("best_of", 5),
                 patience=kwargs.get("patience", 1),
@@ -1087,9 +1115,10 @@ class WhisperSTT:
             
             # 모든 세그먼트 수집
             text = "".join([segment.text for segment in segments])
-            detected_language = info.language if info else language or "unknown"
+            detected_language = info.language if info else language_to_use or "unknown"
             
-            logger.info(f"  결과: {len(text)} 글자, 언어: {detected_language}")
+            logger.info(f"  결과: {len(text)} 글자, 감지된 언어: {detected_language}")
+            logger.debug(f"  변환된 텍스트 (처음 200자): {text[:200]}")
             
             return {
                 "success": True,
@@ -1102,6 +1131,7 @@ class WhisperSTT:
         except Exception as e:
             error_msg = str(e)[:200]
             logger.error(f"❌ faster-whisper 변환 실패: {type(e).__name__}", exc_info=True)
+            logger.error(f"   요청 언어: {language_to_use}")
             logger.error(f"   메시지: {error_msg}")
             
             # 알려진 에러 진단
@@ -1116,7 +1146,8 @@ class WhisperSTT:
                 "success": False,
                 "error": f"faster-whisper 변환 실패: {type(e).__name__}: {error_msg}",
                 "audio_path": audio_path,
-                "backend": "faster-whisper"
+                "backend": "faster-whisper",
+                "requested_language": language_to_use
             }
     
     def _transcribe_whisper(self, audio_path: str, language: Optional[str] = None, **kwargs) -> Dict:
