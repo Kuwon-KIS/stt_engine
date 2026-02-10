@@ -13,7 +13,7 @@ FastAPI를 사용한 STT(Speech-to-Text) 서버
 - OpenAI Whisper: 공식 모델명만 (tiny, base, small, medium, large)
 """
 
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Body
 from pathlib import Path
 import tempfile
 import os
@@ -155,16 +155,16 @@ async def get_current_backend():
 
 
 @app.post("/backend/reload")
-async def reload_backend(backend: str = None):
+async def reload_backend(request_body: dict = Body(None)):
     """
     백엔드를 재로드합니다.
     
     Parameters:
-    - backend: 로드할 백엔드 (선택사항)
+    - backend: 로드할 백엔드 (선택사항, JSON body에서)
                - "faster-whisper": faster-whisper 사용
                - "transformers": transformers 사용
                - "openai-whisper": OpenAI Whisper 사용
-               - null: 기본 순서대로 자동 선택 (faster-whisper → transformers → openai-whisper)
+               - null/생략: 기본 순서대로 자동 선택 (faster-whisper → transformers → openai-whisper)
     
     Returns:
     - status: "success" | "error"
@@ -172,12 +172,17 @@ async def reload_backend(backend: str = None):
     - loaded_backend: 로드된 백엔드 이름
     - backend_info: 로드 후 백엔드 정보
     
-    예시:
-    - POST /backend/reload {"backend": "transformers"}
-    - POST /backend/reload (기본 순서로 자동 선택)
+    예시 (curl):
+    - curl -X POST http://localhost:8003/backend/reload -H "Content-Type: application/json" -d '{"backend": "transformers"}'
+    - curl -X POST http://localhost:8003/backend/reload -H "Content-Type: application/json" -d '{}'
     """
     if stt is None:
         raise HTTPException(status_code=503, detail="STT 모델이 로드되지 않음")
+    
+    # JSON body에서 backend 파라미터 추출
+    backend = None
+    if request_body and isinstance(request_body, dict):
+        backend = request_body.get('backend')
     
     try:
         # 현재 백엔드 정보 로깅
@@ -238,16 +243,13 @@ async def reload_backend(backend: str = None):
 
 
 @app.post("/transcribe")
-async def transcribe(file: UploadFile = File(...), language: str = None, backend: str = None):
+async def transcribe(file: UploadFile = File(...), language: str = None):
     """
     음성 파일을 받아 텍스트로 변환
     
     Parameters:
     - file: 음성 파일 (WAV, MP3, M4A, FLAC 등)
     - language: 언어 코드 (선택사항, 예: "en", "ko", "ja")
-    - backend: (무시됨, 호환성 유지용) 
-               백엔드를 변경하려면 POST /backend/reload를 사용하세요.
-               예: POST /backend/reload {"backend": "transformers"}
     
     Returns:
     - success: 처리 성공 여부
@@ -257,6 +259,10 @@ async def transcribe(file: UploadFile = File(...), language: str = None, backend
     - backend: 사용된 백엔드
     - file_size_mb: 업로드된 파일 크기
     - memory_info: 메모리 상태 정보 (경고/오류 시)
+    
+    주의사항:
+    - 백엔드를 변경하려면 먼저 POST /backend/reload를 호출하세요
+    - 예: curl -X POST http://localhost:8003/backend/reload -H "Content-Type: application/json" -d '{"backend": "transformers"}'
     """
     if stt is None:
         logger.error("[API] STT 모델이 로드되지 않음")
@@ -265,13 +271,8 @@ async def transcribe(file: UploadFile = File(...), language: str = None, backend
     tmp_path = None
     try:
         # 파일 정보 로깅
-        backend_param = f", backend: {backend}" if backend else ""
-        logger.info(f"[API] 음성 파일 업로드 요청: {file.filename}{backend_param}")
-        
-        # backend 파라미터가 전달된 경우 경고
-        if backend:
-            logger.warning(f"[API] ⚠️  backend 파라미터는 무시됩니다. 백엔드를 변경하려면 POST /backend/reload를 사용하세요.")
-        
+        language_param = f", language: {language}" if language else ""
+        logger.info(f"[API] 음성 파일 업로드 요청: {file.filename}{language_param}")
         logger.debug(f"[API] Content-Type: {file.content_type}, Size: {file.size if hasattr(file, 'size') else 'unknown'}")
 
         
@@ -354,7 +355,7 @@ async def transcribe(file: UploadFile = File(...), language: str = None, backend
         # STT 처리
         logger.info(f"[API] STT 처리 시작 (파일: {file.filename}, 길이: {file_check['duration_sec']:.1f}초, 언어: {language})")
         try:
-            result = stt.transcribe(tmp_path, language=language, backend=backend)
+            result = stt.transcribe(tmp_path, language=language)
             logger.info(f"[API] STT 처리 완료 - 백엔드: {result.get('backend', 'unknown')}, 성공: {result.get('success', False)}")
         except Exception as e:
             logger.error(f"[API] STT 처리 중 예상치 못한 오류: {type(e).__name__}: {e}", exc_info=True)
