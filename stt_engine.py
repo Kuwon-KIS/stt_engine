@@ -816,6 +816,7 @@ class WhisperSTT:
             logger.info(f"[TRANSCRIBE] 완료 - {segment_idx}개 세그먼트, 총 {duration_seconds:.1f}초 처리")
             
             return {
+                "success": True,
                 "text": full_text,
                 "language": language or "ko",
                 "backend": "transformers",
