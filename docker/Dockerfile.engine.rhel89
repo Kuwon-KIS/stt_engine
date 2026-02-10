@@ -120,13 +120,15 @@ RUN python3.11 -m pip install \
 # ============================================================================
 # pip를 먼저 업그레이드 → 최신 pip로 setuptools/wheel 설치
 # setuptools의 pkg_resources가 librosa(transformers 백엔드)에서 필요함
+# ROOT 권한으로 실행 (USER 전환 전)
 RUN python3.11 -m pip install --no-cache-dir --upgrade pip && \
-    python3.11 -m pip install --no-cache-dir --upgrade --force-reinstall setuptools wheel
+    python3.11 -m pip install --no-cache-dir --upgrade --force-reinstall setuptools>=68.0 wheel
 
 # ============================================================================
 # Step 9: 모든 애플리케이션 의존성 설치 (모든 백엔드 활용 가능)
 # ============================================================================
 # PyTorch 2.8.0이 이미 설치됨 (Step 7)
+# setuptools>=68.0이 이미 설치됨 (Step 8)
 # pip가 최신이므로 모든 패키지 빌드 정상 작동:
 #   - faster-whisper==1.2.1 (CTranslate2 백엔드, 가장 빠름)
 #   - openai-whisper>=20240101 (공식 백엔드, 유연함)
