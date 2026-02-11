@@ -5,7 +5,7 @@ models/
 *.safetensors
 
 # Audio files - large datasets (ignored)
-audio/cusotomer_visit/
+audio/customer_visit/
 audio/door_to_door_sales/
 audio/telemarketing/
 
