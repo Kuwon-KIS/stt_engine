@@ -13,8 +13,8 @@ FastAPI를 사용한 STT(Speech-to-Text) 서버
 - OpenAI Whisper: 공식 모델명만 (tiny, base, small, medium, large)
 """
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, Body, Form
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, File, UploadFile, HTTPException, Body, Form, Query
+from fastapi.responses import JSONResponse, FileResponse
 from pathlib import Path
 import tempfile
 import os
@@ -249,7 +249,12 @@ async def reload_backend(request_body: dict = Body(None)):
 
 
 @app.post("/transcribe")
-async def transcribe(file_path: str = Form(...), language: str = Form("ko"), is_stream: str = Form("false")):
+async def transcribe(
+    file_path: str = Form(...), 
+    language: str = Form("ko"), 
+    is_stream: str = Form("false"),
+    export: str = Query(None, description="Export format: 'txt' or 'json', default: None (JSON response)")
+):
     """
     서버 로컬 파일을 음성인식으로 변환 (권장 방식)
     
@@ -258,6 +263,10 @@ async def transcribe(file_path: str = Form(...), language: str = Form("ko"), is_
     - language: 언어 코드 (기본: "ko", 예: "en", "ja")
     - is_stream: 스트리밍 모드 활성화 (기본: "false", "true"로 설정 가능)
                  - "false": 전체 파일을 메모리에 로드 (일반 파일용)
+    - export: 내보내기 형식 (선택사항)
+                 - None: JSON 응답 (기본)
+                 - "txt": 텍스트 파일로 다운로드
+                 - "json": JSON 파일로 다운로드
                  - "true": 청크 단위로 순차 처리 (대용량 파일용)
     
     Returns:
@@ -423,19 +432,53 @@ async def transcribe(file_path: str = Form(...), language: str = Form("ko"), is_
             error_msg = result.get('error', '알 수 없는 오류')
             logger.error(f"[API] STT 처리 오류: {error_msg}")
             processing_time = time.time() - start_time
+            
+            # 에러 타입 코드화
+            error_type_raw = result.get('error_type', 'UNKNOWN')
+            error_type_code = error_type_raw.upper().replace(' ', '_')
+            if 'memory' in error_msg.lower() or 'out of memory' in error_msg.lower():
+                error_type_code = 'MEMORY_ERROR'
+            elif 'cuda' in error_msg.lower() or 'gpu' in error_msg.lower():
+                error_type_code = 'CUDA_OUT_OF_MEMORY'
+            elif 'file' in error_msg.lower() or 'not found' in error_msg.lower():
+                error_type_code = 'FILE_NOT_FOUND'
+            
+            # 에러 원인 분석 및 제안
+            suggestion = result.get('suggestion', '')
+            if error_type_code == 'MEMORY_ERROR':
+                suggestion = "메모리 부족. transformers 백엔드로 전환해보세요 (세그먼트 기반 처리)"
+                recommended_backend = "transformers"
+            elif error_type_code == 'CUDA_OUT_OF_MEMORY':
+                suggestion = "GPU 메모리 부족. CPU 모드로 실행하거나 더 작은 모델을 사용해보세요"
+                recommended_backend = "transformers"
+            elif error_type_code == 'FILE_NOT_FOUND':
+                suggestion = "파일을 찾을 수 없습니다. 파일 경로를 확인하고 /app 디렉토리 내에 있는지 확인하세요"
+                recommended_backend = result.get('backend', 'unknown')
+            else:
+                recommended_backend = "faster-whisper"
+            
+            # 백엔드 추천 (에러 상황용)
+            backend_recommendation_error = get_backend_recommendation(file_size_mb, result.get("backend", "unknown"), memory_info.get('available_mb', 0))
+            
             error_response = {
                 "success": False,
+                "error_code": error_type_code,
                 "error": error_msg,
-                "error_type": result.get('error_type', 'unknown'),
                 "backend": result.get('backend', 'unknown'),
-                "file_path": str(file_path_obj),
                 "file_size_mb": file_size_mb,
-                "processing_mode": processing_mode,
                 "processing_time_seconds": round(processing_time, 2),
                 "memory_info": memory_info,
-                "segment_failed": result.get('segment_failed'),
-                "partial_text": result.get('partial_text', ''),
-                "suggestion": result.get('suggestion')
+                "failure_reason": {
+                    "code": error_type_code,
+                    "description": error_msg,
+                    "suggestion": suggestion,
+                    "available_memory_mb": memory_info.get('available_mb', 0),
+                    "recommended_backend": {
+                        "name": backend_recommendation_error.get("recommended"),
+                        "is_optimal": backend_recommendation_error.get("is_optimal"),
+                        "current": backend_recommendation_error.get("current")
+                    }
+                }
             }
             return JSONResponse(
                 content=error_response,
@@ -447,6 +490,34 @@ async def transcribe(file_path: str = Form(...), language: str = Form("ko"), is_
         
         # 처리 시간 계산
         processing_time = time.time() - start_time
+        
+        # 백엔드 추천 로직 (파일 크기 기반)
+        def get_backend_recommendation(size_mb: float, current_backend: str, available_mb: float) -> dict:
+            """
+            동적 메모리 기반 백엔드 추천
+            - faster-whisper: 전체 파일을 메모리에 로드 (필요 메모리: 파일크기 * 2.5)
+            - transformers: 30초 세그먼트 처리 (필요 메모리: ~3GB)
+            """
+            # faster-whisper 필요 메모리: 파일크기의 약 2.5배
+            faster_whisper_required_mb = size_mb * 2.5
+            
+            # transformers 필요 메모리: ~3GB (충분한 마진)
+            transformers_required_mb = 3000
+            
+            if faster_whisper_required_mb <= available_mb:
+                recommended = "faster-whisper"
+            elif transformers_required_mb <= available_mb:
+                recommended = "transformers"
+            else:
+                recommended = "transformers"
+            
+            return {
+                "recommended": recommended,
+                "current": current_backend,
+                "is_optimal": recommended == current_backend
+            }
+        
+        backend_recommendation = get_backend_recommendation(file_size_mb, result.get("backend", "unknown"), memory_info.get('available_mb', 0))
         
         # 응답 생성 (명시적 JSONResponse로 빠른 직렬화)
         response_data = {
@@ -473,6 +544,52 @@ async def transcribe(file_path: str = Form(...), language: str = Form("ko"), is_
             json_str = json.dumps(response_data, ensure_ascii=False)
             logger.info(f"[API] ✓ 응답 직렬화 완료 (크기: {len(json_str) / 1024 / 1024:.2f}MB)")
             
+            # Export 옵션 처리
+            if export and export.lower() in ["txt", "json"]:
+                logger.info(f"[API] 내보내기 시작: {export.upper()} 형식")
+                
+                if export.lower() == "txt":
+                    # 텍스트 파일로 내보내기
+                    text_content = response_data['text']
+                    temp_file = tempfile.NamedTemporaryFile(
+                        mode='w',
+                        suffix='.txt',
+                        delete=False,
+                        encoding='utf-8'
+                    )
+                    temp_file.write(text_content)
+                    temp_file.close()
+                    
+                    logger.info(f"[API] 텍스트 파일 생성: {temp_file.name} (크기: {len(text_content) / 1024 / 1024:.2f}MB)")
+                    
+                    return FileResponse(
+                        path=temp_file.name,
+                        filename=f"transcription_{int(time.time())}.txt",
+                        media_type="text/plain; charset=utf-8",
+                        headers={"Content-Disposition": "attachment; filename=transcription.txt"}
+                    )
+                
+                elif export.lower() == "json":
+                    # JSON 파일로 내보내기
+                    temp_file = tempfile.NamedTemporaryFile(
+                        mode='w',
+                        suffix='.json',
+                        delete=False,
+                        encoding='utf-8'
+                    )
+                    json.dump(response_data, temp_file, ensure_ascii=False, indent=2)
+                    temp_file.close()
+                    
+                    logger.info(f"[API] JSON 파일 생성: {temp_file.name}")
+                    
+                    return FileResponse(
+                        path=temp_file.name,
+                        filename=f"transcription_{int(time.time())}.json",
+                        media_type="application/json; charset=utf-8",
+                        headers={"Content-Disposition": "attachment; filename=transcription.json"}
+                    )
+            
+            # Export 없는 경우 JSON 응답
             return JSONResponse(
                 content=response_data,
                 status_code=200,
@@ -630,13 +747,21 @@ async def _transcribe_streaming(file_path: str, language: str, file_size_mb: flo
 
 
 @app.post("/transcribe_by_upload")
-async def transcribe_by_upload(file: UploadFile = File(...), language: str = Form("ko")):
+async def transcribe_by_upload(
+    file: UploadFile = File(...), 
+    language: str = Form("ko"),
+    export: str = Query(None, description="Export format: 'txt' or 'json', default: None (JSON response)")
+):
     """
     파일 업로드를 통한 음성인식 (파일 전송 필요)
     
     Parameters:
     - file: 업로드할 음성 파일 (WAV, MP3, M4A, FLAC 등)
     - language: 언어 코드 (기본: "ko", 예: "en", "ja")
+    - export: 내보내기 형식 (선택사항)
+                 - None: JSON 응답 (기본)
+                 - "txt": 텍스트 파일로 다운로드
+                 - "json": JSON 파일로 다운로드
     
     Returns:
     - success: 처리 성공 여부
@@ -766,17 +891,53 @@ async def transcribe_by_upload(file: UploadFile = File(...), language: str = For
             error_msg = result.get('error', '알 수 없는 오류')
             logger.error(f"[API] STT 처리 오류: {error_msg}")
             processing_time = time.time() - start_time
+            
+            # 에러 타입 코드화
+            error_type_raw = result.get('error_type', 'UNKNOWN')
+            error_type_code = error_type_raw.upper().replace(' ', '_')
+            if 'memory' in error_msg.lower() or 'out of memory' in error_msg.lower():
+                error_type_code = 'MEMORY_ERROR'
+            elif 'cuda' in error_msg.lower() or 'gpu' in error_msg.lower():
+                error_type_code = 'CUDA_OUT_OF_MEMORY'
+            elif 'file' in error_msg.lower() or 'not found' in error_msg.lower():
+                error_type_code = 'FILE_NOT_FOUND'
+            
+            # 에러 원인 분석 및 제안
+            suggestion = result.get('suggestion', '')
+            if error_type_code == 'MEMORY_ERROR':
+                suggestion = "메모리 부족. transformers 백엔드로 전환해보세요 (세그먼트 기반 처리)"
+                recommended_backend = "transformers"
+            elif error_type_code == 'CUDA_OUT_OF_MEMORY':
+                suggestion = "GPU 메모리 부족. CPU 모드로 실행하거나 더 작은 모델을 사용해보세요"
+                recommended_backend = "transformers"
+            elif error_type_code == 'FILE_NOT_FOUND':
+                suggestion = "파일 처리 중 오류. 파일 형식이 지원되는지 확인하세요"
+                recommended_backend = result.get('backend', 'unknown')
+            else:
+                recommended_backend = "faster-whisper"
+            
+            # 백엔드 추천 (에러 상황용)
+            backend_recommendation_error = get_backend_recommendation(file_size_mb, result.get("backend", "unknown"), memory_info.get('available_mb', 0))
+            
             error_response = {
                 "success": False,
+                "error_code": error_type_code,
                 "error": error_msg,
-                "error_type": result.get('error_type', 'unknown'),
                 "backend": result.get('backend', 'unknown'),
                 "file_size_mb": file_size_mb,
                 "processing_time_seconds": round(processing_time, 2),
                 "memory_info": memory_info,
-                "segment_failed": result.get('segment_failed'),
-                "partial_text": result.get('partial_text', ''),
-                "suggestion": result.get('suggestion')
+                "failure_reason": {
+                    "code": error_type_code,
+                    "description": error_msg,
+                    "suggestion": suggestion,
+                    "available_memory_mb": memory_info.get('available_mb', 0),
+                    "recommended_backend": {
+                        "name": backend_recommendation_error.get("recommended"),
+                        "is_optimal": backend_recommendation_error.get("is_optimal"),
+                        "current": backend_recommendation_error.get("current")
+                    }
+                }
             }
             return JSONResponse(
                 content=error_response,
@@ -806,6 +967,50 @@ async def transcribe_by_upload(file: UploadFile = File(...), language: str = For
         }
         
         logger.debug(f"[API] 응답 생성 중 (텍스트 크기: {len(response_data['text'])} bytes)")
+        
+        # 내보내기 기능 (txt 또는 json)
+        if export and export.lower() in ["txt", "json"]:
+            import tempfile
+            from datetime import datetime
+            
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            try:
+                if export.lower() == "txt":
+                    # 텍스트 파일로 저장
+                    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as f:
+                        f.write(response_data['text'])
+                        temp_file_path = f.name
+                    
+                    logger.info(f"[API] 텍스트 파일 생성: {temp_file_path} (크기: {len(response_data['text'])} bytes)")
+                    return FileResponse(
+                        path=temp_file_path,
+                        filename=f"transcription_{timestamp}.txt",
+                        media_type="text/plain; charset=utf-8"
+                    )
+                
+                elif export.lower() == "json":
+                    # JSON 파일로 저장
+                    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, encoding='utf-8') as f:
+                        json.dump(response_data, f, ensure_ascii=False, indent=2)
+                        temp_file_path = f.name
+                    
+                    logger.info(f"[API] JSON 파일 생성: {temp_file_path}")
+                    return FileResponse(
+                        path=temp_file_path,
+                        filename=f"transcription_{timestamp}.json",
+                        media_type="application/json; charset=utf-8"
+                    )
+            except Exception as e:
+                logger.error(f"[API] 파일 생성 실패: {str(e)}")
+                # 실패 시 JSON 응답으로 폴백
+                return JSONResponse(
+                    content=response_data,
+                    status_code=200,
+                    headers={"Content-Type": "application/json; charset=utf-8"}
+                )
+        
+        # 기본: JSON 응답
         try:
             logger.info(f"[API] 응답 직렬화 시작...")
             json_str = json.dumps(response_data, ensure_ascii=False)
@@ -823,9 +1028,9 @@ async def transcribe_by_upload(file: UploadFile = File(...), language: str = For
                     "success": True,
                     "text": "(텍스트 크기로 인해 제한된 응답)",
                     "duration": result.get("duration", None),
-                    "backend": result.get("backend", "unknown"),
+                    "backend": current_backend,
                     "processing_time_seconds": round(processing_time, 2),
-                    "note": "Full text too large, use file path endpoint"
+                    "note": "Full text too large, try export=json or export=txt"
                 },
                 status_code=200
             )
