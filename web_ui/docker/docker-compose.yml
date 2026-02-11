@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  # STT Engine API (기존)
+  stt-api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.engine
+    container_name: stt-api-server
+    ports:
+      - "8003:8003"
+    environment:
+      - STT_DEVICE=cpu
+      - LOG_LEVEL=INFO
+    volumes:
+      - ../../../models:/app/models
+      - ../../../audio:/app/audio
+    networks:
+      - stt-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Web UI Server (신규)
+  web-ui:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.web_ui
+    container_name: stt-web-ui
+    ports:
+      - "8001:8001"
+    environment:
+      - WEB_HOST=0.0.0.0
+      - WEB_PORT=8001
+      - STT_API_URL=http://stt-api:8003
+      - LOG_LEVEL=INFO
+    volumes:
+      - ../data/uploads:/app/data/uploads
+      - ../data/results:/app/data/results
+      - ../data/batch_input:/app/data/batch_input
+      - ../logs:/app/logs
+    networks:
+      - stt-network
+    depends_on:
+      stt-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  stt-network:
+    driver: bridge

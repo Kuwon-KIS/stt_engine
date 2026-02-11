@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STT Web UI - Speech to Text</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- 네비게이션 -->
+    <nav class="navbar">
+        <div class="navbar-container">
+            <div class="navbar-brand">🎙️ STT Web UI</div>
+            <ul class="navbar-menu">
+                <li><a href="#upload-section" class="nav-link">업로드</a></li>
+                <li><a href="#batch-section" class="nav-link">배치</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- 헤더 -->
+        <header class="header">
+            <h1>음성을 텍스트로</h1>
+            <p>고품질 STT(Speech-to-Text) 처리 서비스</p>
+        </header>
+
+        <!-- 메인 콘텐츠 -->
+        <main class="main-content">
+            
+            <!-- =============== 업로드 섹션 =============== -->
+            <section id="upload-section" class="section">
+                <h2>파일 업로드</h2>
+                
+                <div class="upload-area" id="drop-zone">
+                    <input type="file" id="file-input" accept=".wav,.mp3,.m4a,.flac,.ogg" hidden>
+                    <div class="upload-icon">📁</div>
+                    <p class="upload-text">파일을 드래그 & 드롭하세요</p>
+                    <p class="upload-subtext">또는 <span class="browse-btn">클릭하여 선택</span></p>
+                    <p class="file-info" id="file-info"></p>
+                </div>
+
+                <div class="form-group">
+                    <label for="language-select">언어:</label>
+                    <select id="language-select">
+                        <option value="ko">한국어</option>
+                        <option value="en">English</option>
+                        <option value="ja">日本語</option>
+                        <option value="zh">中文</option>
+                    </select>
+                </div>
+
+                <button id="transcribe-btn" class="btn btn-primary" disabled>
+                    텍스트로 변환하기
+                </button>
+            </section>
+
+            <!-- =============== 로딩 인디케이터 =============== -->
+            <div id="loading-container" class="loading-container" style="display: none;">
+                <div class="spinner"></div>
+                <p id="loading-text">처리 중...</p>
+            </div>
+
+            <!-- =============== 결과 섹션 =============== -->
+            <section id="result-section" class="section" style="display: none;">
+                <h2>처리 결과</h2>
+                
+                <div class="result-card">
+                    <h3>📝 변환된 텍스트</h3>
+                    <div class="result-text" id="result-text"></div>
+                    <div class="button-group">
+                        <button id="copy-btn" class="btn btn-secondary">복사</button>
+                        <button id="download-txt-btn" class="btn btn-secondary">TXT 다운로드</button>
+                        <button id="download-json-btn" class="btn btn-secondary">JSON 다운로드</button>
+                    </div>
+                </div>
+
+                <div class="metrics">
+                    <div class="metric-item">
+                        <span class="metric-label">지속시간:</span>
+                        <span id="metric-duration" class="metric-value">-</span>
+                    </div>
+                    <div class="metric-item">
+                        <span class="metric-label">처리시간:</span>
+                        <span id="metric-time" class="metric-value">-</span>
+                    </div>
+                    <div class="metric-item">
+                        <span class="metric-label">백엔드:</span>
+                        <span id="metric-backend" class="metric-value">-</span>
+                    </div>
+                </div>
+
+                <button id="reset-btn" class="btn btn-secondary">다른 파일 처리</button>
+            </section>
+
+            <!-- =============== 배치 섹션 =============== -->
+            <section id="batch-section" class="section">
+                <h2>배치 처리</h2>
+                
+                <div class="batch-info">
+                    <p>서버 디렉토리의 파일들을 일괄 처리합니다.</p>
+                    <p class="path-info">📂 경로: <code>./data/batch_input</code></p>
+                </div>
+
+                <div class="form-group">
+                    <label for="batch-extension">파일 확장자:</label>
+                    <input type="text" id="batch-extension" value=".wav" class="form-input">
+                </div>
+
+                <div class="form-group">
+                    <label for="batch-language">언어:</label>
+                    <select id="batch-language">
+                        <option value="ko">한국어</option>
+                        <option value="en">English</option>
+                        <option value="ja">日本語</option>
+                        <option value="zh">中文</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="batch-parallel">동시 처리 수:</label>
+                    <input type="number" id="batch-parallel" value="2" min="1" max="8" class="form-input">
+                </div>
+
+                <div class="button-group">
+                    <button id="load-files-btn" class="btn btn-secondary">파일 목록 로드</button>
+                    <button id="start-batch-btn" class="btn btn-primary" disabled>배치 처리 시작</button>
+                </div>
+
+                <!-- 파일 테이블 -->
+                <div id="batch-table-container" class="batch-table-container" style="display: none;">
+                    <div class="table-header">
+                        <h3>처리할 파일 (<span id="file-count">0</span>개)</h3>
+                    </div>
+                    <table class="batch-table">
+                        <thead>
+                            <tr>
+                                <th>파일명</th>
+                                <th>크기</th>
+                                <th>상태</th>
+                                <th>처리시간</th>
+                            </tr>
+                        </thead>
+                        <tbody id="batch-table-body">
+                            <!-- 파일 행이 추가됨 -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- 배치 진행 상황 -->
+                <div id="batch-progress-container" class="batch-progress-container" style="display: none;">
+                    <h3>진행 상황</h3>
+                    <div class="progress-bar">
+                        <div id="progress-fill" class="progress-fill"></div>
+                    </div>
+                    <div class="progress-stats">
+                        <span>완료: <strong id="completed-count">0</strong></span>
+                        <span>진행중: <strong id="progress-count">0</strong></span>
+                        <span>실패: <strong id="failed-count">0</strong></span>
+                        <span>남은 시간: <strong id="remaining-time">-</strong></span>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- 푸터 -->
+    <footer class="footer">
+        <p>&copy; 2026 STT Web UI. All rights reserved.</p>
+    </footer>
+
+    <!-- 스크립트 -->
+    <script src="/static/js/main.js"></script>
+</body>
+</html>
