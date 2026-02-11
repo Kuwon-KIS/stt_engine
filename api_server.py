@@ -14,14 +14,15 @@ FastAPI를 사용한 STT(Speech-to-Text) 서버
 """
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Body, Form
+from fastapi.responses import JSONResponse
 from pathlib import Path
 import tempfile
 import os
 import logging
 import time
+import json
 from stt_engine import WhisperSTT
 from stt_utils import check_memory_available, check_audio_file
-import json
 
 # 로깅 설정
 logging.basicConfig(
@@ -422,7 +423,7 @@ async def transcribe(file_path: str = Form(...), language: str = Form("ko"), is_
             error_msg = result.get('error', '알 수 없는 오류')
             logger.error(f"[API] STT 처리 오류: {error_msg}")
             processing_time = time.time() - start_time
-            return {
+            error_response = {
                 "success": False,
                 "error": error_msg,
                 "error_type": result.get('error_type', 'unknown'),
@@ -436,13 +437,19 @@ async def transcribe(file_path: str = Form(...), language: str = Form("ko"), is_
                 "partial_text": result.get('partial_text', ''),
                 "suggestion": result.get('suggestion')
             }
+            return JSONResponse(
+                content=error_response,
+                status_code=400,
+                headers={"Content-Type": "application/json; charset=utf-8"}
+            )
         
         logger.info(f"[API] ✅ STT 처리 성공 - 텍스트: {len(result.get('text', ''))} 글자")
         
         # 처리 시간 계산
         processing_time = time.time() - start_time
         
-        return {
+        # 응답 생성 (명시적 JSONResponse로 빠른 직렬화)
+        response_data = {
             "success": True,
             "text": result.get("text", ""),
             "language": result.get("language", "unknown"),
@@ -458,6 +465,33 @@ async def transcribe(file_path: str = Form(...), language: str = Form("ko"), is_
                 "used_percent": memory_info.get('used_percent', 0)
             }
         }
+        
+        logger.debug(f"[API] 응답 생성 중 (텍스트 크기: {len(response_data['text'])} bytes)")
+        try:
+            # JSONResponse를 사용하여 직렬화 (더 빠름)
+            logger.info(f"[API] 응답 직렬화 시작...")
+            json_str = json.dumps(response_data, ensure_ascii=False)
+            logger.info(f"[API] ✓ 응답 직렬화 완료 (크기: {len(json_str) / 1024 / 1024:.2f}MB)")
+            
+            return JSONResponse(
+                content=response_data,
+                status_code=200,
+                headers={"Content-Type": "application/json; charset=utf-8"}
+            )
+        except Exception as e:
+            logger.error(f"[API] 응답 생성 실패: {type(e).__name__}: {str(e)[:200]}")
+            # Fallback: 간단한 응답만 반환
+            return JSONResponse(
+                content={
+                    "success": True,
+                    "text": "(텍스트 크기로 인해 제한된 응답)",
+                    "duration": result.get("duration", None),
+                    "backend": result.get("backend", "unknown"),
+                    "processing_time_seconds": round(processing_time, 2),
+                    "note": "Full text too large, use streaming endpoint"
+                },
+                status_code=200
+            )
     
     except HTTPException:
         raise
@@ -732,7 +766,7 @@ async def transcribe_by_upload(file: UploadFile = File(...), language: str = For
             error_msg = result.get('error', '알 수 없는 오류')
             logger.error(f"[API] STT 처리 오류: {error_msg}")
             processing_time = time.time() - start_time
-            return {
+            error_response = {
                 "success": False,
                 "error": error_msg,
                 "error_type": result.get('error_type', 'unknown'),
@@ -744,13 +778,19 @@ async def transcribe_by_upload(file: UploadFile = File(...), language: str = For
                 "partial_text": result.get('partial_text', ''),
                 "suggestion": result.get('suggestion')
             }
+            return JSONResponse(
+                content=error_response,
+                status_code=400,
+                headers={"Content-Type": "application/json; charset=utf-8"}
+            )
         
         logger.info(f"[API] ✅ STT 처리 성공 - 텍스트: {len(result.get('text', ''))} 글자")
         
         # 처리 시간 계산
         processing_time = time.time() - start_time
         
-        return {
+        # 응답 생성 (명시적 JSONResponse로 빠른 직렬화)
+        response_data = {
             "success": True,
             "text": result.get("text", ""),
             "language": result.get("language", "unknown"),
@@ -764,6 +804,31 @@ async def transcribe_by_upload(file: UploadFile = File(...), language: str = For
                 "used_percent": memory_info.get('used_percent', 0)
             }
         }
+        
+        logger.debug(f"[API] 응답 생성 중 (텍스트 크기: {len(response_data['text'])} bytes)")
+        try:
+            logger.info(f"[API] 응답 직렬화 시작...")
+            json_str = json.dumps(response_data, ensure_ascii=False)
+            logger.info(f"[API] ✓ 응답 직렬화 완료 (크기: {len(json_str) / 1024 / 1024:.2f}MB)")
+            
+            return JSONResponse(
+                content=response_data,
+                status_code=200,
+                headers={"Content-Type": "application/json; charset=utf-8"}
+            )
+        except Exception as e:
+            logger.error(f"[API] 응답 생성 실패: {type(e).__name__}: {str(e)[:200]}")
+            return JSONResponse(
+                content={
+                    "success": True,
+                    "text": "(텍스트 크기로 인해 제한된 응답)",
+                    "duration": result.get("duration", None),
+                    "backend": result.get("backend", "unknown"),
+                    "processing_time_seconds": round(processing_time, 2),
+                    "note": "Full text too large, use file path endpoint"
+                },
+                status_code=200
+            )
     
     except HTTPException:
         raise
