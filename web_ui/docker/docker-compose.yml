@@ -1,16 +1,26 @@
 version: '3.8'
 
+# 주의: 이 docker-compose.yml은 참고용입니다.
+# 실제 배포는 별도의 Docker 이미지로 관리하기를 권장합니다.
+# 
+# 사용 방법:
+# 1. STT API 컨테이너 실행
+# 2. Web UI 컨테이너 실행 (--network 옵션 사용)
+#
+# 또는 아래 standalone 모드 사용:
+
 services:
-  # STT Engine API (기존)
+  # STT API (standalone)
+  # docker run -d --name stt-api --network stt-network -p 8003:8003 stt-engine:cuda129-rhel89-v1.7
+  
   stt-api:
-    build:
-      context: ../..
-      dockerfile: Dockerfile.engine
-    container_name: stt-api-server
+    image: stt-engine:cuda129-rhel89-v1.7
+    container_name: stt-api
     ports:
       - "8003:8003"
     environment:
-      - STT_DEVICE=cpu
+      - STT_DEVICE=cuda
+      - STT_COMPUTE_TYPE=int8
       - LOG_LEVEL=INFO
     volumes:
       - ../../../models:/app/models
@@ -23,17 +33,18 @@ services:
       timeout: 5s
       retries: 5
 
-  # Web UI Server (신규)
+  # Web UI (standalone)
+  # docker run -d --name stt-web-ui --network stt-network -p 8100:8100 \
+  #   -e STT_API_URL=http://stt-api:8003 stt-web-ui:cuda129-rhel89-v1.7
+  
   web-ui:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.web_ui
+    image: stt-web-ui:cuda129-rhel89-v1.7
     container_name: stt-web-ui
     ports:
-      - "8001:8001"
+      - "8100:8100"
     environment:
       - WEB_HOST=0.0.0.0
-      - WEB_PORT=8001
+      - WEB_PORT=8100
       - STT_API_URL=http://stt-api:8003
       - LOG_LEVEL=INFO
     volumes:
@@ -47,7 +58,7 @@ services:
       stt-api:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8100/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -55,3 +66,4 @@ services:
 networks:
   stt-network:
     driver: bridge
+

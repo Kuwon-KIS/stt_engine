@@ -12,39 +12,91 @@ pip install -r requirements.txt
 
 # 환경 변수 설정 (선택)
 export STT_API_URL=http://localhost:8003
-export WEB_PORT=8001
+export WEB_PORT=8100
 
 # 서버 시작
-python -m uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+python -m uvicorn main:app --host 0.0.0.0 --port 8100 --reload
 ```
 
-브라우저에서 `http://localhost:8001` 접속
+브라우저에서 `http://localhost:8100` 접속
 
-### Option B: Docker Compose로 실행 (권장)
+### Option B: 독립 Docker 컨테이너 (권장)
+
+#### 1️⃣ EC2에서 이미지 빌드
 
 ```bash
-# 웹 UI + STT API 함께 시작
-docker-compose -f docker/docker-compose.yml up
+# Web UI 이미지 빌드
+bash scripts/build-ec2-web-ui-image.sh v1.0
 
-# 또는 백그라운드 실행
-docker-compose -f docker/docker-compose.yml up -d
+# 결과: stt-web-ui:cuda129-rhel89-v1.0
+docker images | grep stt-web-ui
 ```
 
-접속 주소:
-- 웹 UI: http://localhost:8001
-- STT API: http://localhost:8003
-
-### Option C: 개별 Docker 실행
+#### 2️⃣ 배포 환경에서 실행
 
 ```bash
-# 웹 UI만 실행 (STT API는 외부 서버 연결)
-docker build -f docker/Dockerfile.web_ui -t stt-web-ui .
-docker run -p 8001:8001 \
-  -e STT_API_URL=http://your-api-server:8003 \
-  -v $(pwd)/data:/app/data \
-  -v $(pwd)/logs:/app/logs \
-  stt-web-ui
+# Step 1: Docker 네트워크 생성 (처음 한 번만)
+docker network create stt-network
+
+# Step 2: STT API 컨테이너 실행 (터미널 1)
+docker run -d --name stt-api --network stt-network -p 8003:8003 \
+  -e STT_DEVICE=cuda -e STT_COMPUTE_TYPE=int8 \
+  -v $(pwd)/models:/app/models \
+  stt-engine:cuda129-rhel89-v1.0
+
+# Step 3: Web UI 컨테이너 실행 (터미널 2)
+docker run -d --name stt-web-ui --network stt-network -p 8100:8100 \
+  -e STT_API_URL=http://stt-api:8003 \
+  -v $(pwd)/web_ui/data:/app/data \
+  -v $(pwd)/web_ui/logs:/app/logs \
+  stt-web-ui:cuda129-rhel89-v1.0
+
+# Step 4: 접속
+# 🌐 Web UI: http://localhost:8100
+# 📡 API: http://localhost:8003
 ```
+
+**Docker 네트워크 통신:**
+- Web UI와 STT API는 `stt-network` 브릿지 네트워크로 통신
+- 내부 통신 URL: `http://stt-api:8003` (Docker DNS 자동 해석)
+- 외부 접속: `http://localhost:8100` (Web UI), `http://localhost:8003` (API)
+
+**컨테이너 관리:**
+```bash
+# 상태 확인
+docker ps | grep stt
+
+# 로그 확인
+docker logs stt-web-ui
+docker logs stt-api
+
+# 중지/삭제
+docker stop stt-web-ui stt-api
+docker rm stt-web-ui stt-api
+docker network rm stt-network
+```
+
+### Option C: Docker Compose로 실행
+
+```bash
+# 웹 UI + STT API 함께 시작 (독립 이미지 기반)
+cd docker
+docker-compose up -d
+
+# 상태 확인
+docker-compose ps
+
+# 로그 확인
+docker-compose logs -f
+
+# 중지
+docker-compose down
+```
+
+**docker-compose.yml 구조:**
+- `stt-api`: 사전 빌드된 `stt-engine:cuda129-rhel89-v1.x` 이미지
+- `stt-web-ui`: 사전 빌드된 `stt-web-ui:cuda129-rhel89-v1.x` 이미지
+- `stt-network`: 브릿지 네트워크로 서비스 간 통신
 
 ---
 

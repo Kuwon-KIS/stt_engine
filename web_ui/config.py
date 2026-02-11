@@ -19,7 +19,7 @@ BATCH_INPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # 웹 서버 설정
 WEB_HOST = os.getenv("WEB_HOST", "0.0.0.0")
-WEB_PORT = int(os.getenv("WEB_PORT", 8001))
+WEB_PORT = int(os.getenv("WEB_PORT", 8100))
 
 # STT API 서버 설정
 STT_API_URL = os.getenv("STT_API_URL", "http://localhost:8003")

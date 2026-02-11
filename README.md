@@ -79,7 +79,55 @@ bash scripts/build-ec2-engine-image.sh
 docker load -i stt-engine-linux-x86_64.tar
 docker run -p 8003:8003 stt-engine:linux-x86_64
 ```
+### 5️⃣ Web UI 대시보드 (독립 컨테이너) 
 
+Web UI는 STT API와 별도의 Docker 컨테이너로 실행됩니다:
+
+```bash
+# 1단계: Docker 네트워크 생성 (처음 한 번만)
+docker network create stt-network
+
+# 2단계: Web UI 이미지 빌드 (EC2에서)
+bash scripts/build-ec2-web-ui-image.sh v1.0
+
+# 3단계: 두 서비스 동시 실행
+# 터미널 1: STT API
+docker run -d --name stt-api --network stt-network -p 8003:8003 \
+  -e STT_DEVICE=cuda -e STT_COMPUTE_TYPE=int8 \
+  -v $(pwd)/models:/app/models \
+  stt-engine:cuda129-rhel89-v1.0
+
+# 터미널 2: Web UI
+docker run -d --name stt-web-ui --network stt-network -p 8100:8100 \
+  -e STT_API_URL=http://stt-api:8003 \
+  -v $(pwd)/web_ui/data:/app/data \
+  stt-web-ui:cuda129-rhel89-v1.0
+
+# 4단계: 접속
+# 🌐 Web UI: http://localhost:8100
+# 📡 API: http://localhost:8003
+```
+
+**Docker 네트워크 통신:**
+- Web UI와 STT API는 `stt-network` 브릿지 네트워크로 통신
+- Web UI → API 내부 URL: `http://stt-api:8003` (DNS 자동 해석)
+- 외부 접속: `http://localhost:8003` (API), `http://localhost:8100` (Web UI)
+
+**또는 Docker Compose 사용:**
+
+```bash
+# web_ui/docker/docker-compose.yml 사용
+cd web_ui/docker
+docker-compose up -d
+
+# 로그 확인
+docker-compose logs -f
+
+# 중지
+docker-compose down
+```
+
+📖 **자세한 가이드**: [web_ui/SETUP_WEB_UI.md](web_ui/SETUP_WEB_UI.md)
 ---
 
 ## � REST API 사용 가이드

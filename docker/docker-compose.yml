@@ -42,7 +42,42 @@ services:
       retries: 3
       start_period: 60s
 
-networks:
-  default:
-    name: stt-network
-    driver: bridge
+  # Web UI (선택사항: 로컬 개발 시에만 사용)
+  # 프로덕션 배포: 별도의 독립 컨테이너로 실행 권장
+  # docker run -d --name stt-web-ui --network stt-network -p 8100:8100 \
+  #   -e STT_API_URL=http://stt-engine-api:8003 stt-web-ui:latest
+  
+  stt-web-ui:
+    build:
+      context: ..
+      dockerfile: web_ui/docker/Dockerfile.web_ui
+    image: stt-web-ui:latest
+    container_name: stt-web-ui
+    
+    ports:
+      - "8100:8100"
+    
+    volumes:
+      - ../web_ui/data:/app/data
+      - ../web_ui/logs:/app/logs
+    
+    environment:
+      - PYTHONUNBUFFERED=1
+      - WEB_HOST=0.0.0.0
+      - WEB_PORT=8100
+      - STT_API_URL=http://stt-engine-api:8003
+    
+    depends_on:
+      stt-engine-api:
+        condition: service_healthy
+    
+    restart: unless-stopped
+    
+    # 헬스 체크
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8100/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
