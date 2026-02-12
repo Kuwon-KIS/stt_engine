@@ -2,6 +2,7 @@
 STT API와의 통신을 담당하는 서비스
 """
 import aiohttp
+import asyncio
 import logging
 from typing import Optional
 from config import STT_API_URL, STT_API_TIMEOUT
@@ -132,6 +133,86 @@ class STTService:
         except Exception as e:
             logger.error(f"[STT Service] 백엔드 정보 조회 실패: {e}")
             return {}
+    
+    async def process_transcribe_job(self, job) -> dict:
+        """
+        비동기 작업 큐에서 호출되는 메서드
+        job 객체의 상태를 업데이트하면서 처리
+        
+        Args:
+            job: TranscribeJob 객체
+        
+        Returns:
+            처리 결과 딕셔너리
+        """
+        try:
+            logger.info(f"[STT Service] 비동기 처리 시작: {job.job_id}")
+            
+            # 파일 경로 변환
+            file_path = job.file_path
+            if file_path.startswith("/app/data/"):
+                api_file_path = file_path.replace("/app/data/", "/app/web_ui/data/")
+            else:
+                api_file_path = file_path
+            
+            logger.debug(f"[STT Service] 경로 변환: {file_path} -> {api_file_path}")
+            
+            # 진행률 업데이트: 준비 중
+            job.progress = 15
+            
+            async with aiohttp.ClientSession() as session:
+                data = aiohttp.FormData()
+                data.add_field("file_path", api_file_path)
+                data.add_field("language", job.language)
+                data.add_field("is_stream", str(job.is_stream).lower())
+                
+                # 장시간 처리를 고려하여 충분한 타임아웃 설정
+                estimated_timeout = max(600, self.timeout)
+                logger.info(f"[STT Service] 타임아웃 설정: {estimated_timeout}초 (job: {job.job_id})")
+                
+                try:
+                    async with session.post(
+                        f"{self.api_url}/transcribe",
+                        data=data,
+                        timeout=aiohttp.ClientTimeout(total=estimated_timeout)
+                    ) as response:
+                        logger.info(f"[STT Service] API 응답 수신: status={response.status} (job: {job.job_id})")
+                        result = await response.json()
+                        logger.info(f"[STT Service] JSON 파싱 완료 (job: {job.job_id})")
+                        
+                        # 진행률 업데이트: API 처리 완료
+                        job.progress = 90
+                        
+                        if response.status == 200:
+                            logger.info(f"[STT Service] 처리 완료: {len(result.get('text', ''))} 글자 (job: {job.job_id})")
+                            job.progress = 100
+                        else:
+                            logger.error(f"[STT Service] 처리 실패: {result} (job: {job.job_id})")
+                        
+                        return result
+                
+                except asyncio.TimeoutError as te:
+                    logger.error(f"[STT Service] API 타임아웃 ({estimated_timeout}초, job: {job.job_id})")
+                    return {
+                        "success": False,
+                        "error": "timeout",
+                        "message": f"API 처리 시간 초과 ({estimated_timeout}초)"
+                    }
+                except Exception as ae:
+                    logger.error(f"[STT Service] API 통신 오류: {ae} (job: {job.job_id})", exc_info=True)
+                    return {
+                        "success": False,
+                        "error": "api_error",
+                        "message": f"API 통신 오류: {str(ae)}"
+                    }
+        
+        except Exception as e:
+            logger.error(f"[STT Service] 비동기 처리 오류: {e} (job: {job.job_id})", exc_info=True)
+            return {
+                "success": False,
+                "error": "unknown",
+                "message": str(e)
+            }
 
 
 # 싱글톤 인스턴스

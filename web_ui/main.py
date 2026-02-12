@@ -30,6 +30,7 @@ from models.schemas import (
 from services.stt_service import stt_service
 from services.file_service import file_service
 from services.batch_service import batch_service, FileStatus
+from services.job_queue import transcribe_queue, JobStatus
 
 # FastAPI 앱 생성
 app = FastAPI(
@@ -386,6 +387,91 @@ async def startup_event():
         logger.info("STT API 연결 ✓")
     else:
         logger.warning("STT API 연결 실패 ⚠️")
+
+
+# ============================================================================
+# 4. 비동기 STT 처리 라우트 (장시간 작업용)
+# ============================================================================
+
+@app.post("/api/transcribe-async/")
+async def transcribe_async(request: TranscribeRequest) -> dict:
+    """
+    비동기 STT 처리 (즉시 응답, 백그라운드 처리)
+    
+    Returns:
+        job_id: 작업 ID (상태 조회용)
+        status: 작업 상태
+    """
+    try:
+        # 파일 경로 재구성
+        file_path = UPLOAD_DIR / f"{request.file_id}*"
+        files = list(UPLOAD_DIR.glob(f"{request.file_id}*"))
+        
+        if not files:
+            raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다")
+        
+        file_path = str(files[0])
+        
+        # 작업 큐에 추가
+        job_id = await transcribe_queue.enqueue(
+            file_path=file_path,
+            language=request.language,
+            is_stream=False
+        )
+        
+        logger.info(f"비동기 STT 처리 시작: {job_id} (파일: {file_path})")
+        
+        return {
+            "success": True,
+            "job_id": job_id,
+            "status": "pending",
+            "message": "작업이 큐에 추가되었습니다. /api/transcribe-status/{job_id}로 상태를 확인하세요."
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"비동기 STT 처리 요청 실패: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/transcribe-status/{job_id}")
+async def get_transcribe_status(job_id: str) -> dict:
+    """
+    비동기 작업 상태 조회
+    
+    Returns:
+        작업 상태, 진행률, 결과 (완료 시)
+    """
+    job_info = transcribe_queue.get_job_status(job_id)
+    
+    if not job_info:
+        raise HTTPException(status_code=404, detail=f"작업을 찾을 수 없습니다: {job_id}")
+    
+    return job_info
+
+
+@app.get("/api/transcribe-jobs/")
+async def list_transcribe_jobs() -> dict:
+    """
+    모든 비동기 작업 목록 조회
+    """
+    jobs = transcribe_queue.get_all_jobs()
+    return {
+        "total": len(jobs),
+        "jobs": jobs
+    }
+
+
+@app.on_event("startup")
+async def startup_event():
+    """서버 시작 시 비동기 워커 시작"""
+    logger.info("STT Web UI Server 시작")
+    
+    # 비동기 워커 시작 (2개 동시 실행)
+    asyncio.create_task(
+        transcribe_queue.worker_loop(stt_service.process_transcribe_job)
+    )
+    logger.info("[Startup] 비동기 STT 처리 워커 시작 (동시 처리: 2개)")
 
 
 @app.on_event("shutdown")
