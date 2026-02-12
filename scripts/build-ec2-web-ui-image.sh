@@ -161,8 +161,8 @@ else
     docker save "$IMAGE_TAG" | gzip -6 > "${OUTPUT_DIR}/stt-web-ui-${IMAGE_VERSION}.tar.gz"
 fi
 
-local image_tar_size=$(du -sh "${OUTPUT_DIR}/stt-web-ui-${IMAGE_VERSION}.tar.gz" | awk '{print $1}')
-log_success "Docker 이미지 저장 완료 (크기: $image_tar_size)"
+IMAGE_TAR_SIZE=$(du -sh "${OUTPUT_DIR}/stt-web-ui-${IMAGE_VERSION}.tar.gz" | awk '{print $1}')
+log_success "Docker 이미지 저장 완료 (크기: $IMAGE_TAR_SIZE)"
 
 # Step 6: 빌드 결과 저장
 log_step "6" "빌드 정보 저장"
@@ -176,7 +176,7 @@ BUILD_INFO_FILE="${OUTPUT_DIR}/web_ui_build_info_${IMAGE_VERSION}.txt"
     echo "버전: $VERSION"
     echo "이미지명: $IMAGE_TAG"
     echo "이미지 파일: stt-web-ui-${IMAGE_VERSION}.tar.gz"
-    echo "파일 크기: $image_tar_size"
+    echo "파일 크기: $IMAGE_TAR_SIZE"
     echo "소요시간: $(elapsed_time)"
     echo ""
     echo "이미지 정보:"
