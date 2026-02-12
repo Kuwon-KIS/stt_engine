@@ -139,7 +139,7 @@ class STTService:
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(
-                    f"{self.api_url}/info",
+                    f"{self.api_url}/backend/current",
                     timeout=aiohttp.ClientTimeout(total=5)
                 ) as response:
                     return await response.json()

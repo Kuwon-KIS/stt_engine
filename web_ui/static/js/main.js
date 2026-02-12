@@ -100,6 +100,9 @@ const transcribeBtn = document.getElementById("transcribe-btn");
 const languageSelect = document.getElementById("language-select");
 const backendSelect = document.getElementById("backend-select");
 const streamingCheckbox = document.getElementById("streaming-checkbox");
+const setGlobalBackendCheckbox = document.getElementById("set-global-backend-checkbox");
+const refreshBackendBtn = document.getElementById("refresh-backend-btn");
+const globalBackendSpan = document.getElementById("global-backend");
 
 // 드래그 & 드롭
 dropZone.addEventListener("dragover", (e) => {
@@ -178,6 +181,75 @@ async function uploadFile() {
 }
 
 /**
+ * 글로벌 백엔드 정보 조회
+ */
+async function fetchGlobalBackendInfo() {
+    try {
+        const response = await fetch(API_BASE + "/backend/current");
+        if (!response.ok) {
+            throw new Error("백엔드 정보 조회 실패");
+        }
+        const data = await response.json();
+        const backendName = data.current_backend || "unknown";
+        globalBackendSpan.textContent = backendName;
+        globalBackendSpan.style.backgroundColor = getBackendColor(backendName);
+        return backendName;
+    } catch (error) {
+        console.error("백엔드 정보 조회 실패:", error);
+        globalBackendSpan.textContent = "오류";
+        showNotification("백엔드 정보를 가져올 수 없습니다", "error");
+    }
+}
+
+/**
+ * 글로벌 백엔드 색상
+ */
+function getBackendColor(backendName) {
+    const colors = {
+        "faster-whisper": "rgba(52, 211, 153, 0.3)",
+        "transformers": "rgba(96, 165, 250, 0.3)",
+        "openai-whisper": "rgba(251, 146, 60, 0.3)"
+    };
+    return colors[backendName] || "rgba(255, 255, 255, 0.2)";
+}
+
+/**
+ * 글로벌 백엔드 변경
+ */
+async function setGlobalBackend(backend) {
+    try {
+        if (!backend) {
+            showNotification("변경할 백엔드를 선택해주세요", "error");
+            return false;
+        }
+
+        showNotification(`API 백엔드를 ${backend}로 변경 중...`, "info");
+
+        const response = await fetch(API_BASE + "/backend/reload", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ backend: backend })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.message || "백엔드 변경 실패");
+        }
+
+        showNotification(`API 백엔드가 ${backend}로 변경되었습니다 ✅`, "info");
+        await fetchGlobalBackendInfo();
+        return true;
+    } catch (error) {
+        console.error("백엔드 변경 실패:", error);
+        showNotification(`백엔드 변경 실패: ${error.message}`, "error");
+        return false;
+    }
+}
+
+/**
  * STT 처리
  */
 async function transcribeFile() {
@@ -185,6 +257,16 @@ async function transcribeFile() {
         // 파일 업로드
         const uploadResult = await uploadFile();
         if (!uploadResult) return;
+
+        // 글로벌 백엔드 설정 체크
+        if (setGlobalBackendCheckbox.checked && backendSelect.value) {
+            const success = await setGlobalBackend(backendSelect.value);
+            if (!success) {
+                showNotification("백엔드 설정 실패로 인해 처리를 중단했습니다", "error");
+                hideLoading();
+                return;
+            }
+        }
 
         showLoading("음성을 텍스트로 변환 중...");
 
@@ -217,8 +299,8 @@ async function transcribeFile() {
  */
 function displayResult(result) {
     document.getElementById("result-text").textContent = result.text || "(텍스트 없음)";
-    document.getElementById("metric-duration").textContent = formatTime(result.duration);
-    document.getElementById("metric-time").textContent = formatTime(result.processing_time_seconds);
+    document.getElementById("metric-duration").textContent = formatTime(result.duration_sec);
+    document.getElementById("metric-time").textContent = formatTime(result.processing_time_sec);
     document.getElementById("metric-backend").textContent = result.backend || "-";
 
     // 섹션 전환
@@ -274,6 +356,7 @@ document.getElementById("reset-btn")?.addEventListener("click", () => {
     languageSelect.value = "ko";
     backendSelect.value = "";
     streamingCheckbox.checked = false;
+    setGlobalBackendCheckbox.checked = false;
     document.getElementById("result-section").style.display = "none";
     document.getElementById("upload-section").style.display = "block";
 });
@@ -452,6 +535,29 @@ function hideLoading() {
 
 document.addEventListener("DOMContentLoaded", () => {
     console.log("STT Web UI 로드됨");
+    
+    // 글로벌 백엔드 정보 초기화
+    fetchGlobalBackendInfo();
+    
+    // 리프레시 버튼
+    refreshBackendBtn?.addEventListener("click", fetchGlobalBackendInfo);
+    
+    // 글로벌 백엔드 설정 체크박스
+    setGlobalBackendCheckbox?.addEventListener("change", () => {
+        if (setGlobalBackendCheckbox.checked && !backendSelect.value) {
+            showNotification("변경할 백엔드를 먼저 선택해주세요", "warning");
+            setGlobalBackendCheckbox.checked = false;
+        }
+    });
+    
+    // 백엔드 선택 변경 시
+    backendSelect?.addEventListener("change", () => {
+        if (setGlobalBackendCheckbox.checked && !backendSelect.value) {
+            showNotification("글로벌 백엔드 설정을 해제했습니다", "info");
+            setGlobalBackendCheckbox.checked = false;
+        }
+    });
+    
     // 서버 헬스 체크
     apiCall("/health").then(health => {
         console.log("서버 상태:", health.status);

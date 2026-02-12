@@ -3,6 +3,7 @@ Web UI 서버 메인 앱
 """
 import asyncio
 import time
+import aiohttp
 from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -78,6 +79,46 @@ async def health_check():
         "status": "healthy" if stt_healthy else "degraded",
         "stt_api": "ok" if stt_healthy else "unreachable"
     }
+
+
+@app.get("/api/backend/current")
+async def get_backend_info():
+    """STT API의 현재 백엔드 정보 조회"""
+    try:
+        backend_info = await stt_service.get_backend_info()
+        return backend_info
+    except Exception as e:
+        logger.error(f"백엔드 정보 조회 실패: {e}")
+        raise HTTPException(status_code=500, detail="백엔드 정보를 조회할 수 없습니다")
+
+
+@app.post("/api/backend/reload")
+async def reload_backend(request_data: dict = None):
+    """STT API의 백엔드 재로드"""
+    try:
+        backend = None
+        if request_data and isinstance(request_data, dict):
+            backend = request_data.get("backend")
+        
+        logger.info(f"[Web UI] 백엔드 재로드 요청: {backend or '자동 선택'}")
+        
+        # STT API에 백엔드 재로드 요청
+        async with aiohttp.ClientSession() as session:
+            data = aiohttp.FormData()
+            if backend:
+                data.add_field("backend", backend)
+            
+            async with session.post(
+                f"{STT_API_URL}/backend/reload",
+                json={"backend": backend},
+                timeout=aiohttp.ClientTimeout(total=60)
+            ) as response:
+                result = await response.json()
+                logger.info(f"[Web UI] API 백엔드 재로드 완료: {result}")
+                return result
+    except Exception as e:
+        logger.error(f"백엔드 재로드 실패: {e}")
+        raise HTTPException(status_code=500, detail=f"백엔드 재로드 실패: {str(e)}")
 
 
 # ============================================================================

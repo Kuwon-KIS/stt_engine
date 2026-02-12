@@ -559,3 +559,38 @@ select:focus {
 .mb-2 {
     margin-bottom: 1rem;
 }
+/* 백엔드 정보 카드 */
+.backend-info-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 15px 20px;
+    border-radius: 8px;
+    margin-top: 20px;
+    font-size: 14px;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+}
+
+#global-backend {
+    color: #fff;
+    font-size: 16px;
+    padding: 4px 10px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+    display: inline-block;
+}
+
+/* 작은 버튼 */
+.btn-small {
+    padding: 6px 12px;
+    font-size: 12px;
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.btn-small:hover {
+    background: rgba(255, 255, 255, 0.3);
+    border-color: rgba(255, 255, 255, 0.5);
+}
+
+```
