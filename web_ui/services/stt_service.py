@@ -23,14 +23,14 @@ class STTService:
             async with aiohttp.ClientSession() as session:
                 async with session.get(
                     f"{self.api_url}/health",
-                    timeout=aiohttp.ClientTimeout(total=10)  # 5초 → 10초 (STT API 처리 시간 고려)
+                    timeout=aiohttp.ClientTimeout(total=10)  # 10초: Docker 네트워크 지연 고려
                 ) as response:
                     is_healthy = response.status == 200
                     if is_healthy:
                         logger.debug(f"[STT Service] 헬스 체크 OK: {self.api_url}/health")
                     return is_healthy
         except asyncio.TimeoutError:
-            logger.error(f"[STT Service] 헬스 체크 타임아웃 (10초): {self.api_url}/health")
+            logger.error(f"[STT Service] 헬스 체크 타임아웃 (10초): Docker 네트워크 지연 또는 API 미응답")
             return False
         except Exception as e:
             logger.error(f"[STT Service] 헬스 체크 실패: {e}")
