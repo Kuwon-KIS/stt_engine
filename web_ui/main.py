@@ -461,6 +461,24 @@ async def list_transcribe_jobs() -> dict:
         "jobs": jobs
     }
 
+@app.get("/api/health")
+async def api_health() -> dict:
+    """
+    Web UI + STT API 헬스 체크
+    클라이언트에서 호출하는 엔드포인트
+    """
+    # Web UI 상태
+    web_ui_healthy = True
+    
+    # STT API 상태 확인
+    stt_api_healthy = await stt_service.health_check()
+    
+    return {
+        "success": web_ui_healthy and stt_api_healthy,
+        "web_ui": "ok" if web_ui_healthy else "error",
+        "stt_api": "ok" if stt_api_healthy else "error",
+        "stt_api_url": STT_API_URL
+    }
 
 @app.on_event("startup")
 async def startup_event():

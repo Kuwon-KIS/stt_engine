@@ -23,9 +23,15 @@ class STTService:
             async with aiohttp.ClientSession() as session:
                 async with session.get(
                     f"{self.api_url}/health",
-                    timeout=aiohttp.ClientTimeout(total=5)
+                    timeout=aiohttp.ClientTimeout(total=10)  # 5초 → 10초 (STT API 처리 시간 고려)
                 ) as response:
-                    return response.status == 200
+                    is_healthy = response.status == 200
+                    if is_healthy:
+                        logger.debug(f"[STT Service] 헬스 체크 OK: {self.api_url}/health")
+                    return is_healthy
+        except asyncio.TimeoutError:
+            logger.error(f"[STT Service] 헬스 체크 타임아웃 (10초): {self.api_url}/health")
+            return False
         except Exception as e:
             logger.error(f"[STT Service] 헬스 체크 실패: {e}")
             return False
