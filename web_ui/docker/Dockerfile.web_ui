@@ -15,12 +15,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Web UI 애플리케이션 코드 복사
 # 빌드 컨텍스트가 워크스페이스 루트이므로 web_ui/ 경로 사용
 COPY web_ui/*.py ./
-COPY web_ui/models ./models/
-COPY web_ui/routes ./routes/
-COPY web_ui/services ./services/
-COPY web_ui/static ./static/
-COPY web_ui/templates ./templates/
-COPY web_ui/utils ./utils/
+COPY web_ui/models/ ./models/
+COPY web_ui/routes/ ./routes/
+COPY web_ui/services/ ./services/
+COPY web_ui/static/ ./static/
+COPY web_ui/templates/ ./templates/
+COPY web_ui/utils/ ./utils/
 
 # 데이터 디렉토리 생성
 RUN mkdir -p data/uploads data/results data/batch_input logs
