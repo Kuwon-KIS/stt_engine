@@ -582,11 +582,369 @@ curl -X POST http://localhost:8003/backend/reload \
 
 ---
 
+## Web UI - 비동기 작업 큐 시스템
+
+### 개요
+
+**Web UI 포트 8100에서 제공하는 비동기 STT 처리**
+
+장시간 소요되는 STT 처리(30분 이상)를 지원하기 위해 비동기 작업 큐 시스템을 구현했습니다:
+- ✅ **UI 블로킹 없음**: 파일 처리 중 UI 반응성 유지
+- ✅ **타임아웃 해결**: 동기식 대기 제거로 기한 없이 처리 가능  
+- ✅ **상태 추적**: 실시간 진행률 및 상태 확인
+- ✅ **동시 작업 제한**: 서버 과부하 방지 (최대 2개 동시 처리)
+
+### 아키텍처 다이어그램
+
+```
+┌─────────────────────────────────────────┐
+│    Web UI Server (FastAPI, :8100)       │
+├─────────────────────────────────────────┤
+│                                         │
+│  POST /api/transcribe-async/            │
+│  └─> TranscribeJobQueue.enqueue()       │
+│      └─> job_id 즉시 반환 (블로킹 안함)│
+│                                         │
+│  GET /api/transcribe-status/{job_id}    │
+│  └─> 클라이언트 폴링용 상태 조회       │
+│                                         │
+│  GET /api/transcribe-jobs/              │
+│  └─> 모든 작업 목록 조회               │
+│                                         │
+│  [Async Worker Loop (백그라운드)]       │
+│  └─> 2개까지 동시 처리 가능            │
+│      └─> STT API 호출 (:8003)          │
+│                                         │
+└─────────────────────────────────────────┘
+         │ (docker bridge network: stt-network)
+         │
+┌─────────────────────────────────────────┐
+│    STT API Server (:8003)               │
+│    (faster-whisper 또는 transformers)   │
+└─────────────────────────────────────────┘
+```
+
+### 1️⃣ 비동기 작업 제출
+
+**엔드포인트**: `POST /api/transcribe-async/`
+
+**특징**:
+- 즉시 응답 (job_id 반환)
+- 백그라운드에서 처리 진행
+- 클라이언트는 폴링으로 상태 확인
+
+**요청**:
+
+```bash
+curl -X POST http://localhost:8100/api/transcribe-async/ \
+  -H "Content-Type: application/json" \
+  -d '{
+    "file_id": "abc123.wav",
+    "language": "ko"
+  }'
+```
+
+**응답 (즉시)**:
+
+```json
+{
+  "success": true,
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "pending",
+  "message": "작업이 큐에 추가되었습니다. /api/transcribe-status/{job_id}로 상태를 확인하세요."
+}
+```
+
+### 2️⃣ 작업 상태 조회 (폴링)
+
+**엔드포인트**: `GET /api/transcribe-status/{job_id}`
+
+**특징**:
+- 실시간 진행률 확인 가능
+- 처리 상태 추적 (PENDING → PROCESSING → COMPLETED)
+- 1초 간격 폴링 권장
+
+**요청**:
+
+```bash
+curl http://localhost:8100/api/transcribe-status/550e8400-e29b-41d4-a716-446655440000
+```
+
+**응답 (처리 중, 45% 진행)**:
+
+```json
+{
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "file_path": "/app/data/uploads/abc123.wav",
+  "language": "ko",
+  "is_stream": false,
+  "status": "processing",
+  "progress": 45,
+  "created_at": "2026-02-12T10:00:00",
+  "started_at": "2026-02-12T10:00:05",
+  "completed_at": null,
+  "result": null,
+  "error": null
+}
+```
+
+**응답 (완료)**:
+
+```json
+{
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "file_path": "/app/data/uploads/abc123.wav",
+  "language": "ko",
+  "is_stream": false,
+  "status": "completed",
+  "progress": 100,
+  "created_at": "2026-02-12T10:00:00",
+  "started_at": "2026-02-12T10:00:05",
+  "completed_at": "2026-02-12T10:45:30",
+  "result": {
+    "success": true,
+    "text": "안녕하세요... [full transcript]",
+    "language": "ko",
+    "duration": 2700.5,
+    "processing_time_seconds": 2725.0
+  },
+  "error": null
+}
+```
+
+### 3️⃣ 모든 작업 조회
+
+**엔드포인트**: `GET /api/transcribe-jobs/`
+
+**특징**:
+- 현재 큐에 있는 모든 작업 확인
+- 상태별 필터링 가능
+
+**요청**:
+
+```bash
+curl http://localhost:8100/api/transcribe-jobs/
+```
+
+**응답**:
+
+```json
+{
+  "total": 3,
+  "jobs": [
+    {
+      "job_id": "...",
+      "status": "completed",
+      "progress": 100,
+      "created_at": "...",
+      "result": { ... }
+    },
+    {
+      "job_id": "...",
+      "status": "processing",
+      "progress": 45,
+      "created_at": "...",
+      "result": null
+    },
+    {
+      "job_id": "...",
+      "status": "pending",
+      "progress": 0,
+      "created_at": "...",
+      "result": null
+    }
+  ]
+}
+```
+
+### 작업 상태 (JobStatus)
+
+| 상태 | 설명 | 진행률 |
+|------|------|--------|
+| `pending` | 큐에 추가됨, 처리 대기 중 | 0-10% |
+| `processing` | 워커가 처리 중 | 10-90% |
+| `completed` | 처리 완료, 결과 가능 | 100% |
+| `failed` | 처리 중 오류 발생 | - |
+| `cancelled` | 사용자가 취소함 | - |
+
+### 진행률 추적 (Progress Tracking)
+
+```
+제출 (0%)
+  ↓
+큐 대기 (PENDING, 0-10%)
+  ↓
+워커 시작 (PROCESSING, 10-15%)
+  ↓
+API 호출 (15-90%)
+  ↓
+API 응답 처리 (90%)
+  ↓
+완료 (COMPLETED, 100%)
+```
+
+### JavaScript 클라이언트 구현
+
+#### 비동기 처리 + 폴링
+
+```javascript
+// 1. 작업 제출 (즉시 반환)
+const submitResponse = await fetch('/api/transcribe-async/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 
+        file_id: 'abc123.wav', 
+        language: 'ko' 
+    })
+});
+
+const { job_id } = await submitResponse.json();
+console.log(`작업 시작: ${job_id}`);
+
+// 2. 폴링으로 상태 확인 (1초 간격)
+const pollInterval = setInterval(async () => {
+    const statusResponse = await fetch(`/api/transcribe-status/${job_id}`);
+    const jobInfo = await statusResponse.json();
+    
+    console.log(`상태: ${jobInfo.status}, 진행률: ${jobInfo.progress}%`);
+    
+    // UI 업데이트
+    updateProgressBar(jobInfo.progress);
+    updateStatusText(jobInfo.status);
+    
+    if (jobInfo.status === 'completed') {
+        clearInterval(pollInterval);
+        
+        if (jobInfo.result.success) {
+            console.log('결과:', jobInfo.result.text);
+            displayTranscription(jobInfo.result);
+        } else {
+            console.error('처리 실패:', jobInfo.result.error);
+        }
+    } else if (jobInfo.status === 'failed') {
+        clearInterval(pollInterval);
+        console.error('작업 실패:', jobInfo.error);
+        showErrorMessage(jobInfo.error);
+    }
+}, 1000);  // 1초 간격 폴링
+```
+
+### Docker 실행 예시
+
+```bash
+# 1. 네트워크 생성 (STT API와 통신용)
+docker network create stt-network
+
+# 2. STT API 컨테이너 실행
+docker run -d \
+  --name stt-api \
+  --network stt-network \
+  -p 8003:8003 \
+  -v $(pwd)/models:/app/models \
+  -v $(pwd)/web_ui/data:/app/web_ui/data \
+  stt-engine:cuda129-rhel89-v1.7
+
+# 3. Web UI 컨테이너 실행
+docker run -d \
+  --name stt-web-ui \
+  --network stt-network \
+  -p 8100:8100 \
+  -e STT_API_URL=http://stt-api:8003 \
+  -v $(pwd)/web_ui/data:/app/data \
+  -v $(pwd)/web_ui/logs:/app/logs \
+  stt-web-ui:cuda129-rhel89-v1.0
+
+# 4. 상태 확인
+curl http://localhost:8100/api/transcribe-jobs/
+```
+
+### 성능 권장사항
+
+| 파일 크기 | 예상 처리시간 | 권장 설정 |
+|---------|------------|----------|
+| < 1분 | 5~30초 | 일반 폴링 (1초) |
+| 1~10분 | 30초~5분 | 일반 폴링 (1-2초) |
+| 10~30분 | 5~15분 | 느슨한 폴링 (5초) |
+| > 30분 | 15분+ | 느슨한 폴링 (10초) |
+
+**폴링 간격 조정 팁**:
+```javascript
+// 진행률 기반 적응형 폴링
+let pollInterval = 1000;  // 기본 1초
+if (jobInfo.progress > 80) {
+    pollInterval = 5000;  // 80% 이상일 때 5초로 완화
+}
+```
+
+### 프로덕션 고려사항
+
+#### 현재 in-memory 구현의 한계
+
+- ✅ **프로토타입**: 간단함, 의존성 없음
+- ⚠️ **문제점**: 
+  - 서버 재시작 시 작업 손실
+  - 분산 시스템 미지원
+  - 메모리 누적
+
+#### 프로덕션 개선 방안
+
+**Option 1: Redis + Celery** (권장)
+```bash
+# Docker Compose로 Redis + Celery 추가
+docker-compose -f docker/docker-compose.prod.yml up -d
+```
+
+**Option 2: PostgreSQL 저장** (대안)
+```bash
+# 작업 상태를 데이터베이스에 저장
+# 서버 재시작 후에도 작업 복구 가능
+```
+
+### 문제 해결
+
+#### Q: 작업이 계속 PENDING 상태인 경우
+
+**원인**: 워커 루프가 시작되지 않음
+
+**확인**:
+```bash
+# 로그에서 "워커 시작" 메시지 확인
+docker logs stt-web-ui | grep "비동기 STT 처리 워커"
+```
+
+#### Q: 작업이 FAILED 상태로 변한 경우
+
+**확인할 사항**:
+```bash
+# 에러 메시지 확인
+curl http://localhost:8100/api/transcribe-status/{job_id} | jq '.error'
+
+# 일반적인 에러:
+# - "timeout": API 응답 초과 (600초 이상)
+# - "api_error": 네트워크 연결 실패
+# - "path_not_found": 파일을 찾을 수 없음
+```
+
+#### Q: 동시에 3개 이상의 작업을 제출하려면?
+
+**동시 실행 제한**: 최대 2개
+
+대기 중인 작업은 큐에서 순차적으로 처리됩니다:
+```
+제출 1 (즉시 처리)
+제출 2 (즉시 처리)
+제출 3 (대기, 제출 1 완료 후 시작)
+제출 4 (대기, 제출 2 완료 후 시작)
+```
+
+---
+
 ## 최종 요약
 
-✅ **로컬 파일 처리 권장**: `/transcribe` 엔드포인트  
-✅ **일반 파일**: 일반 모드 (메모리 로드)  
-✅ **대용량 파일**: 스트리밍 모드  
+✅ **STT API** (`/transcribe`, 포트 8003): 동기식 처리, 응답 대기  
+✅ **Web UI 비동기** (`/api/transcribe-async/`, 포트 8100): 비동기식 처리, 폴링  
+✅ **소규모 파일**: STT API 직접 사용  
+✅ **장시간 파일**: Web UI 비동기 사용  
 ✅ **보안**: `/app` 디렉토리만 접근 가능  
 ✅ **확장성**: EC2 빌드 + on-prem 운영 지원  
-✅ **성능 추적**: `processing_time_seconds`로 성능 측정
+✅ **성능 추적**: `progress`, `processing_time_seconds`로 추적
