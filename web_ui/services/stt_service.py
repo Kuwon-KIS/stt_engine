@@ -70,19 +70,40 @@ class STTService:
                 data.add_field("language", language)
                 data.add_field("is_stream", str(is_stream).lower())
                 
-                async with session.post(
-                    f"{self.api_url}/transcribe",
-                    data=data,
-                    timeout=aiohttp.ClientTimeout(total=self.timeout)
-                ) as response:
-                    result = await response.json()
-                    
-                    if response.status == 200:
-                        logger.info(f"[STT Service] 처리 완료: {len(result.get('text', ''))} 글자")
-                    else:
-                        logger.error(f"[STT Service] 처리 실패: {result}")
-                    
-                    return result
+                # 타임아웃을 파일 길이에 따라 동적으로 설정 (최소 600초)
+                estimated_timeout = max(600, self.timeout)
+                logger.info(f"[STT Service] 타임아웃 설정: {estimated_timeout}초")
+                
+                try:
+                    async with session.post(
+                        f"{self.api_url}/transcribe",
+                        data=data,
+                        timeout=aiohttp.ClientTimeout(total=estimated_timeout)
+                    ) as response:
+                        logger.info(f"[STT Service] API 응답 수신: status={response.status}")
+                        result = await response.json()
+                        logger.info(f"[STT Service] JSON 파싱 완료")
+                        
+                        if response.status == 200:
+                            logger.info(f"[STT Service] 처리 완료: {len(result.get('text', ''))} 글자")
+                        else:
+                            logger.error(f"[STT Service] 처리 실패: {result}")
+                        
+                        return result
+                except asyncio.TimeoutError as te:
+                    logger.error(f"[STT Service] API 타임아웃 ({estimated_timeout}초): {file_path}")
+                    return {
+                        "success": False,
+                        "error": "timeout",
+                        "message": f"API 처리 시간 초과 ({estimated_timeout}초)"
+                    }
+                except Exception as ae:
+                    logger.error(f"[STT Service] API 통신 오류: {ae}", exc_info=True)
+                    return {
+                        "success": False,
+                        "error": "api_error",
+                        "message": f"API 통신 오류: {str(ae)}"
+                    }
         
         except asyncio.TimeoutError:
             logger.error(f"[STT Service] 타임아웃: {file_path}")
