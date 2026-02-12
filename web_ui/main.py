@@ -20,7 +20,8 @@ logger = get_logger(__name__)
 from config import (
     WEB_HOST, WEB_PORT, 
     CORS_ORIGINS,
-    UPLOAD_DIR, RESULT_DIR, BATCH_INPUT_DIR
+    UPLOAD_DIR, RESULT_DIR, BATCH_INPUT_DIR,
+    STT_API_URL
 )
 from models.schemas import (
     FileUploadResponse, TranscribeRequest, TranscribeResponse,
