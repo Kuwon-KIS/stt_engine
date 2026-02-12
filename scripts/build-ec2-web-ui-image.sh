@@ -147,10 +147,27 @@ else
     log_error "Docker 이미지 빌드 실패"
 fi
 
-# Step 5: 빌드 결과 저장
-log_step "5" "빌드 정보 저장"
+# Step 5: Docker 이미지 tar.gz으로 저장
+log_step "5" "Docker 이미지 저장 (tar.gz 압축)"
 
-BUILD_INFO_FILE="${OUTPUT_DIR}/web_ui_build_info.txt"
+mkdir -p "$OUTPUT_DIR"
+
+# pigz 사용 가능 여부 확인 (병렬 압축으로 훨씬 빠름)
+if command -v pigz &> /dev/null; then
+    log_success "pigz로 병렬 압축 중 (cores: $(nproc))..."
+    docker save "$IMAGE_TAG" | pigz -6 -p $(nproc) > "${OUTPUT_DIR}/stt-web-ui-${IMAGE_VERSION}.tar.gz"
+else
+    log_success "gzip으로 압축 중 (pigz 미설치)..."
+    docker save "$IMAGE_TAG" | gzip -6 > "${OUTPUT_DIR}/stt-web-ui-${IMAGE_VERSION}.tar.gz"
+fi
+
+local image_tar_size=$(du -sh "${OUTPUT_DIR}/stt-web-ui-${IMAGE_VERSION}.tar.gz" | awk '{print $1}')
+log_success "Docker 이미지 저장 완료 (크기: $image_tar_size)"
+
+# Step 6: 빌드 결과 저장
+log_step "6" "빌드 정보 저장"
+
+BUILD_INFO_FILE="${OUTPUT_DIR}/web_ui_build_info_${IMAGE_VERSION}.txt"
 {
     echo "========================================="
     echo "STT Web UI Docker 빌드 정보"
@@ -158,6 +175,8 @@ BUILD_INFO_FILE="${OUTPUT_DIR}/web_ui_build_info.txt"
     echo "빌드 일시: $(date '+%Y-%m-%d %H:%M:%S')"
     echo "버전: $VERSION"
     echo "이미지명: $IMAGE_TAG"
+    echo "이미지 파일: stt-web-ui-${IMAGE_VERSION}.tar.gz"
+    echo "파일 크기: $image_tar_size"
     echo "소요시간: $(elapsed_time)"
     echo ""
     echo "이미지 정보:"
@@ -204,4 +223,9 @@ echo "     📡 STT API: http://localhost:8003"
 echo ""
 
 echo "✅ 모든 단계가 완료되었습니다!"
-echo "   자세한 로그는 다음 파일을 참조하세요: $BUILD_LOG"
+echo ""
+echo "📂 생성된 파일 (최신 5개):"
+echo "────────────────────────────────────────────────────────────"
+ls -lht "${OUTPUT_DIR}"/* 2>/dev/null | head -5 | awk '{print $9, "(" $5 ")"}' || echo "   생성된 파일 없음"
+echo ""
+echo "📝 자세한 로그: $BUILD_LOG"

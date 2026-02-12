@@ -282,6 +282,11 @@ print_summary() {
     fi
     
     echo ""
+    echo "� 생성된 파일 (최신 5개):"
+    echo "────────────────────────────────────────────────────────────"
+    ls -lht "${OUTPUT_DIR}"/* 2>/dev/null | head -5 | awk '{print $9, "(" $5 ")"}' || echo "   생성된 파일 없음"
+    
+    echo ""
     echo "📝 로그 파일: $BUILD_LOG"
     echo ""
     
@@ -294,9 +299,6 @@ print_summary() {
     echo ""
     echo "   3. 이미지 태그 변경 (선택사항):"
     echo "      docker tag $IMAGE_TAG stt-engine:latest"
-    echo ""
-    echo "   4. 이미지 저장 (선택사항):"
-    echo "      docker save $IMAGE_TAG | gzip > stt-engine-${IMAGE_VERSION}.tar.gz"
     echo ""
     
     print_elapsed
