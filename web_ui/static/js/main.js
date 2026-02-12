@@ -210,8 +210,8 @@ async function transcribeFile() {
  */
 function displayResult(result) {
     document.getElementById("result-text").textContent = result.text || "(텍스트 없음)";
-    document.getElementById("metric-duration").textContent = formatTime(result.duration_sec);
-    document.getElementById("metric-time").textContent = formatTime(result.processing_time_sec);
+    document.getElementById("metric-duration").textContent = formatTime(result.duration);
+    document.getElementById("metric-time").textContent = formatTime(result.processing_time_seconds);
     document.getElementById("metric-backend").textContent = result.backend || "-";
 
     // 섹션 전환
