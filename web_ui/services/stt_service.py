@@ -40,7 +40,8 @@ class STTService:
         self,
         file_path: str,
         language: str = "ko",
-        is_stream: bool = False
+        is_stream: bool = False,
+        backend: str = None
     ) -> dict:
         """
         로컬 파일을 STT API에 전달 (파일 경로 방식)
@@ -53,6 +54,7 @@ class STTService:
             file_path: Web UI 컨테이너의 파일 경로 (/app/data/uploads/...)
             language: 언어 코드
             is_stream: 스트리밍 모드 사용 여부
+            backend: 백엔드 선택 (faster-whisper, transformers, openai-whisper)
         
         Returns:
             처리 결과 딕셔너리
@@ -76,6 +78,11 @@ class STTService:
                 data.add_field("file_path", api_file_path)
                 data.add_field("language", language)
                 data.add_field("is_stream", str(is_stream).lower())
+                
+                # backend 지정
+                if backend:
+                    data.add_field("backend", backend)
+                    logger.info(f"[STT Service] 백엔드 지정: {backend}")
                 
                 # 타임아웃을 파일 길이에 따라 동적으로 설정 (최소 600초)
                 estimated_timeout = max(600, self.timeout)

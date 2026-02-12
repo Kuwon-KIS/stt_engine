@@ -98,6 +98,8 @@ const browseBtn = document.querySelector(".browse-btn");
 const fileInfo = document.getElementById("file-info");
 const transcribeBtn = document.getElementById("transcribe-btn");
 const languageSelect = document.getElementById("language-select");
+const backendSelect = document.getElementById("backend-select");
+const streamingCheckbox = document.getElementById("streaming-checkbox");
 
 // 드래그 & 드롭
 dropZone.addEventListener("dragover", (e) => {
@@ -188,9 +190,14 @@ async function transcribeFile() {
 
         // STT 처리
         const language = languageSelect.value;
+        const backend = backendSelect.value || undefined;
+        const isStream = streamingCheckbox.checked;
+        
         const result = await apiCall("/transcribe/", "POST", {
             file_id: uploadResult.file_id,
-            language: language
+            language: language,
+            backend: backend,
+            is_stream: isStream
         });
 
         hideLoading();
@@ -264,6 +271,9 @@ document.getElementById("reset-btn")?.addEventListener("click", () => {
     fileInfo.textContent = "";
     dropZone.classList.remove("has-file");
     transcribeBtn.disabled = true;
+    languageSelect.value = "ko";
+    backendSelect.value = "";
+    streamingCheckbox.checked = false;
     document.getElementById("result-section").style.display = "none";
     document.getElementById("upload-section").style.display = "block";
 });

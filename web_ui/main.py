@@ -138,13 +138,14 @@ async def transcribe(request: TranscribeRequest) -> TranscribeResponse:
         
         file_path = str(files[0])
         
-        logger.info(f"STT 처리 시작: {file_path} (언어: {request.language})")
+        logger.info(f"STT 처리 시작: {file_path} (언어: {request.language}, 스트리밍: {request.is_stream}, 백엔드: {request.backend})")
         
         start_time = time.time()
         result = await stt_service.transcribe_local_file(
             file_path=file_path,
             language=request.language,
-            is_stream=False
+            is_stream=request.is_stream,
+            backend=request.backend
         )
         processing_time = time.time() - start_time
         
@@ -159,7 +160,7 @@ async def transcribe(request: TranscribeRequest) -> TranscribeResponse:
         file_service.save_result(request.file_id, result.get("text", ""), {
             "filename": Path(file_path).name,
             "language": request.language,
-            "duration_sec": result.get("duration_sec", 0),
+            "duration_sec": result.get("duration", 0),
             "processing_time_sec": processing_time,
             "backend": result.get("backend", "unknown")
         })
@@ -172,7 +173,7 @@ async def transcribe(request: TranscribeRequest) -> TranscribeResponse:
             filename=Path(file_path).name,
             text=result.get("text", ""),
             language=request.language,
-            duration_sec=result.get("duration_sec", 0),
+            duration_sec=result.get("duration", 0),
             processing_time_sec=processing_time,
             backend=result.get("backend", "unknown")
         )

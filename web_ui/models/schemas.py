@@ -22,6 +22,7 @@ class TranscribeRequest(BaseModel):
     file_id: str
     language: str = Field(default="ko")
     backend: Optional[str] = None
+    is_stream: bool = Field(default=False, description="Streaming 모드 사용 여부")
 
 
 class TranscribeResponse(BaseModel):
