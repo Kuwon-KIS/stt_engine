@@ -36,7 +36,7 @@ class STTService:
         is_stream: bool = False
     ) -> dict:
         """
-        로컬 파일 경로로 STT 처리
+        로컬 파일 내용을 읽어서 STT 처리 (파일 전송 방식)
         
         Args:
             file_path: 파일 경로
@@ -49,9 +49,17 @@ class STTService:
         try:
             logger.info(f"[STT Service] 파일 처리: {file_path} (언어: {language}, 스트림: {is_stream})")
             
+            # 파일 읽기
+            with open(file_path, 'rb') as f:
+                file_content = f.read()
+            
+            # 파일명 추출
+            from pathlib import Path
+            filename = Path(file_path).name
+            
             async with aiohttp.ClientSession() as session:
                 data = aiohttp.FormData()
-                data.add_field("file_path", file_path)
+                data.add_field("file", file_content, filename=filename)
                 data.add_field("language", language)
                 data.add_field("is_stream", str(is_stream))
                 
