@@ -36,10 +36,14 @@ class STTService:
         is_stream: bool = False
     ) -> dict:
         """
-        로컬 파일 내용을 읽어서 STT 처리 (파일 전송 방식)
+        로컬 파일을 STT API에 전달 (파일 경로 방식)
+        
+        API가 접근 가능한 경로로 변환:
+        - Web UI 경로: /app/data/uploads/... 
+        - API 경로: /app/web_ui/data/uploads/... (마운트된 볼륨이 같음)
         
         Args:
-            file_path: 파일 경로
+            file_path: Web UI 컨테이너의 파일 경로 (/app/data/uploads/...)
             language: 언어 코드
             is_stream: 스트리밍 모드 사용 여부
         
@@ -49,19 +53,22 @@ class STTService:
         try:
             logger.info(f"[STT Service] 파일 처리: {file_path} (언어: {language}, 스트림: {is_stream})")
             
-            # 파일 읽기
-            with open(file_path, 'rb') as f:
-                file_content = f.read()
+            # 파일 경로 변환 (Web UI 볼륨 -> API 접근 경로)
+            # Web UI: /app/data/uploads/file.wav
+            # API가 마운트된 볼륨: /app/web_ui/data/uploads/file.wav
+            if file_path.startswith("/app/data/"):
+                # /app/data/ 경로를 /app/web_ui/data/로 변환
+                api_file_path = file_path.replace("/app/data/", "/app/web_ui/data/")
+            else:
+                api_file_path = file_path
             
-            # 파일명 추출
-            from pathlib import Path
-            filename = Path(file_path).name
+            logger.debug(f"[STT Service] 경로 변환: {file_path} -> {api_file_path}")
             
             async with aiohttp.ClientSession() as session:
                 data = aiohttp.FormData()
-                data.add_field("file", file_content, filename=filename)
+                data.add_field("file_path", api_file_path)
                 data.add_field("language", language)
-                data.add_field("is_stream", str(is_stream))
+                data.add_field("is_stream", str(is_stream).lower())
                 
                 async with session.post(
                     f"{self.api_url}/transcribe",
