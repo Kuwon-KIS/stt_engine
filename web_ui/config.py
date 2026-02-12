@@ -26,7 +26,8 @@ STT_API_URL = os.getenv("STT_API_URL", "http://localhost:8003")
 STT_API_TIMEOUT = int(os.getenv("STT_API_TIMEOUT", 300))
 
 # 파일 업로드 설정
-MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", 100))
+# MAX_UPLOAD_SIZE_MB: 무제한 (환경변수로 제한 설정 가능, 예: MAX_UPLOAD_SIZE_MB=5000)
+MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", 999999))  # 무제한 (약 1000TB)
 ALLOWED_EXTENSIONS = {".wav", ".mp3", ".m4a", ".flac", ".ogg"}
 
 # 배치 처리 설정
