@@ -1,0 +1,85 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# 모델 및 데이터 (Docker에서는 필요 없음)
+models/
+audio/
+data/
+logs/
+*.wav
+*.mp3
+*.m4a
+*.flac
+
+# 배포 및 빌드 산출물
+deployment_package/
+build/
+dist/
+*.tar
+*.tar.gz
+*.zip
+
+# Docker 관련
+docker/
+Dockerfile*
+.dockerignore
+
+# 문서 및 기타
+docs/
+*.md
+README*
+LICENSE
+ARCHIVE/
+scripts/
+tests/
+scratch/
+.env
+.env.local
+node_modules/
