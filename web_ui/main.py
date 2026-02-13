@@ -257,24 +257,34 @@ async def start_batch(
     """배치 처리 시작"""
     try:
         # 요청 데이터 로깅
-        logger.info(f"[배치] 요청 수신: path={request.path}, ext={request.extension}, lang={request.language}, parallel={request.parallel_count}")
+        logger.info(f"[배치] ===== 요청 수신 =====")
+        logger.info(f"[배치] request.path = {request.path}")
+        logger.info(f"[배치] request.extension = {request.extension}")
+        logger.info(f"[배치] request.language = {request.language}")
+        logger.info(f"[배치] request.parallel_count = {request.parallel_count}")
+        
+        # BATCH_INPUT_DIR 값 확인
+        logger.info(f"[배치] BATCH_INPUT_DIR 설정값 = {BATCH_INPUT_DIR}")
+        logger.info(f"[배치] BATCH_INPUT_DIR 절대경로 = {BATCH_INPUT_DIR.absolute()}")
         
         # 배치 경로 정규화 (상대경로 -> 절대경로)
         batch_path = request.path
-        logger.debug(f"[배치] 원본 경로: {batch_path}, startswith('/'): {batch_path.startswith('/')}")
+        logger.info(f"[배치] 입력 경로: {batch_path}")
+        logger.info(f"[배치] startswith('/'): {batch_path.startswith('/')}")
         
         if not batch_path.startswith("/"):
             # 상대경로면 BATCH_INPUT_DIR 사용
             batch_path = str(BATCH_INPUT_DIR)
-            logger.info(f"[배치] 경로 정규화: {request.path} -> {batch_path}")
+            logger.info(f"[배치] 상대경로 → BATCH_INPUT_DIR 사용: {batch_path}")
         else:
             logger.info(f"[배치] 절대경로 사용: {batch_path}")
         
-        logger.info(f"[배치] 파일 조회 시작: {batch_path} (확장자: {request.extension})")
+        logger.info(f"[배치] 최종 조회 경로: {batch_path}")
         
         # 파일 목록 조회
+        logger.info(f"[배치] list_batch_files 호출 시작 (경로: {batch_path})")
         files = file_service.list_batch_files(batch_path, request.extension)
-        logger.info(f"[배치] 파일 조회 결과: {len(files)}개")
+        logger.info(f"[배치] list_batch_files 호출 결과: {len(files)}개 파일")
         
         if not files:
             logger.error(f"[배치] 에러: 처리할 파일이 없음 (경로: {batch_path})")
