@@ -70,6 +70,15 @@ class BatchStartResponse(BaseModel):
     status: str
 
 
+class BatchFileInfo(BaseModel):
+    """배치 파일 정보"""
+    name: str
+    status: str
+    processing_time_sec: Optional[float] = None
+    error_message: Optional[str] = None
+    result_text: Optional[str] = None
+
+
 class BatchProgressResponse(BaseModel):
     """배치 진행 상황"""
     batch_id: str
@@ -79,7 +88,7 @@ class BatchProgressResponse(BaseModel):
     in_progress: int
     current_file: Optional[str] = None
     estimated_remaining_sec: float
-    files: List[dict]
+    files: List[BatchFileInfo]
 
 
 # 결과 관련

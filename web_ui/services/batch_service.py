@@ -36,6 +36,7 @@ class BatchFile:
     status: str = FileStatus.PENDING.value
     processing_time_sec: Optional[float] = None
     error_message: Optional[str] = None
+    result_text: Optional[str] = None  # ← 결과 텍스트 저장
 
 
 @dataclass
@@ -127,7 +128,8 @@ class BatchService:
         filename: str,
         status: str,
         processing_time_sec: Optional[float] = None,
-        error_message: Optional[str] = None
+        error_message: Optional[str] = None,
+        result_text: Optional[str] = None
     ):
         """파일 처리 상태 업데이트"""
         job = self.get_job(batch_id)
@@ -137,6 +139,7 @@ class BatchService:
                     file.status = status
                     file.processing_time_sec = processing_time_sec
                     file.error_message = error_message
+                    file.result_text = result_text
                     
                     if status == FileStatus.DONE.value:
                         logger.info(f"[Batch Service] {filename} 처리 완료 ({processing_time_sec:.2f}초)")
@@ -208,7 +211,8 @@ class BatchService:
                     batch_id,
                     file.name,
                     FileStatus.DONE.value,
-                    processing_time_sec=processing_time
+                    processing_time_sec=processing_time,
+                    result_text=result.get("text", "")  # ← 결과 텍스트 저장
                 )
             else:
                 error_msg = result.get("message", "알 수 없는 오류")
@@ -251,7 +255,8 @@ class BatchService:
                     "name": f.name,
                     "status": f.status,
                     "processing_time_sec": f.processing_time_sec,
-                    "error_message": f.error_message
+                    "error_message": f.error_message,
+                    "result_text": f.result_text  # ← 결과 텍스트 추가
                 }
                 for f in job.files
             ]
