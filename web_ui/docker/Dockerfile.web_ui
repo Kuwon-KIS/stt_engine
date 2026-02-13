@@ -26,7 +26,7 @@ COPY web_ui/utils/ ./utils/
 RUN mkdir -p data/uploads data/results data/batch_input logs
 
 # 헬스 체크 설정
-HEALTHCHECK --interval=10s --timeout=5s --retries=3 \
+HEALTHCHECK --interval=60s --timeout=5s --retries=3 \
     CMD curl -f http://localhost:8100/health || exit 1
 
 # 포트 설정

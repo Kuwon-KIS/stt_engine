@@ -474,7 +474,7 @@ function startBatchProgressMonitoring(batchId) {
         } catch (error) {
             console.error("진행 상황 조회 실패:", error);
         }
-    }, 2000); // 2초마다 갱신
+    }, 30000); // 30초마다 갱신
 }
 
 /**
