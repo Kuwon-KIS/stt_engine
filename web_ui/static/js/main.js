@@ -283,10 +283,17 @@ async function transcribeFile() {
  * 결과 표시
  */
 function displayResult(result) {
-    document.getElementById("result-text").textContent = result.text || "(텍스트 없음)";
+    const resultText = result.text || "";
+    document.getElementById("result-text").textContent = resultText || "(텍스트 없음)";
     document.getElementById("metric-duration").textContent = formatTime(result.duration_sec);
     document.getElementById("metric-time").textContent = formatTime(result.processing_time_sec);
-    document.getElementById("metric-word-count").textContent = (result.word_count || 0).toString();
+    
+    // word_count: API에서 받은 값이 없으면 텍스트 길이로 계산
+    const wordCount = result.word_count !== undefined && result.word_count !== null 
+        ? result.word_count 
+        : resultText.length;
+    document.getElementById("metric-word-count").textContent = wordCount.toString();
+    
     document.getElementById("metric-backend").textContent = result.backend || "-";
 
     // 섹션 전환
@@ -405,6 +412,8 @@ function renderBatchTable() {
             <td><span class="status-pending">${file.status}</span></td>
             <td>-</td>
             <td>-</td>
+            <td>-</td>
+            <td>-</td>
         `;
         tbody.appendChild(row);
     });
@@ -445,7 +454,8 @@ startBatchBtn?.addEventListener("click", async () => {
 function startBatchProgressMonitoring(batchId) {
     clearInterval(batchProgressInterval);
 
-    batchProgressInterval = setInterval(async () => {
+    // 즉시 첫 번째 업데이트
+    async function updateProgress() {
         try {
             const progress = await apiCall(`/batch/progress/${batchId}/`);
 
@@ -476,7 +486,13 @@ function startBatchProgressMonitoring(batchId) {
         } catch (error) {
             console.error("진행 상황 조회 실패:", error);
         }
-    }, 30000); // 30초마다 갱신
+    }
+
+    // 즉시 첫 번째 호출
+    updateProgress();
+
+    // 5초마다 반복 갱신 (빠른 피드백)
+    batchProgressInterval = setInterval(updateProgress, 5000);
 }
 
 /**
@@ -486,30 +502,36 @@ function updateBatchTableStatus(files) {
     const tbody = document.getElementById("batch-table-body");
     const rows = tbody.querySelectorAll("tr");
 
+    console.log(`[Batch] updateBatchTableStatus: ${files.length}개 파일, ${rows.length}개 행`);
+
     rows.forEach((row, index) => {
         if (files[index]) {
             const file = files[index];
+            console.log(`[Batch] 파일 ${index}: ${file.name} - 상태: ${file.status}, 텍스트: ${file.result_text ? 'O' : 'X'}`);
+            
             const statusCell = row.children[2];
             const timeCell = row.children[3];
-            const resultCell = row.children[4];
+            const durationCell = row.children[4];
+            const wordCountCell = row.children[5];
+            const resultCell = row.children[6];
 
             // 상태 업데이트
             statusCell.innerHTML = `<span class="status-${file.status}">${file.status}</span>`;
             
-            // 처리 시간 & 오디오 길이 & 글자 수 표시
-            let detailsHtml = "";
-            if (file.processing_time_sec) {
-                detailsHtml += `처리: ${file.processing_time_sec.toFixed(1)}초`;
-            }
-            if (file.duration_sec) {
-                if (detailsHtml) detailsHtml += " / ";
-                detailsHtml += `음성: ${file.duration_sec.toFixed(1)}초`;
-            }
-            if (file.word_count !== undefined && file.word_count !== null) {
-                if (detailsHtml) detailsHtml += " / ";
-                detailsHtml += `글자: ${file.word_count}`;
-            }
-            timeCell.textContent = detailsHtml || "-";
+            // 처리 시간
+            timeCell.textContent = file.processing_time_sec 
+                ? `${file.processing_time_sec.toFixed(1)}초`
+                : "-";
+            
+            // 음성 길이
+            durationCell.textContent = file.duration_sec 
+                ? `${file.duration_sec.toFixed(1)}초`
+                : "-";
+            
+            // 글자 수
+            wordCountCell.textContent = (file.word_count !== undefined && file.word_count !== null)
+                ? file.word_count.toString()
+                : "-";
             
             // 결과 텍스트 업데이트
             if (file.result_text) {
