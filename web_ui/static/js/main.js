@@ -403,6 +403,7 @@ function renderBatchTable() {
             <td>${formatFileSize(file.size_mb * 1024 * 1024)}</td>
             <td><span class="status-pending">${file.status}</span></td>
             <td>-</td>
+            <td>-</td>
         `;
         tbody.appendChild(row);
     });
@@ -489,13 +490,87 @@ function updateBatchTableStatus(files) {
             const file = files[index];
             const statusCell = row.children[2];
             const timeCell = row.children[3];
+            const resultCell = row.children[4];
 
+            // 상태 업데이트
             statusCell.innerHTML = `<span class="status-${file.status}">${file.status}</span>`;
+            
+            // 처리 시간 업데이트
             if (file.processing_time_sec) {
                 timeCell.textContent = formatTime(file.processing_time_sec);
             }
+            
+            // 결과 텍스트 업데이트
+            if (file.result_text) {
+                // 긴 텍스트는 말줄임 처리
+                const maxLength = 50;
+                const displayText = file.result_text.length > maxLength 
+                    ? file.result_text.substring(0, maxLength) + "..." 
+                    : file.result_text;
+                resultCell.title = file.result_text;  // hover 시 전체 텍스트 보임
+                resultCell.textContent = displayText;
+                resultCell.style.cursor = "pointer";
+                
+                // 클릭 시 전체 결과 보기
+                resultCell.addEventListener("click", () => {
+                    showResultModal(file.name, file.result_text);
+                });
+            } else if (file.status === "done" && !file.result_text) {
+                resultCell.textContent = "(결과 없음)";
+            } else if (file.status === "error") {
+                resultCell.innerHTML = `<span style="color: red;">${file.error_message || "에러"}</span>`;
+            }
         }
     });
+}
+
+/**
+ * 결과 모달 표시
+ */
+function showResultModal(filename, resultText) {
+    const modal = document.createElement("div");
+    modal.className = "modal";
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+    `;
+    
+    const content = document.createElement("div");
+    content.style.cssText = `
+        background: white;
+        border-radius: 8px;
+        padding: 20px;
+        max-width: 80%;
+        max-height: 80%;
+        overflow-y: auto;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    `;
+    
+    content.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px;">
+            <h3 style="margin: 0;">${filename}</h3>
+            <button onclick="this.parentElement.parentElement.parentElement.remove()" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #999;">×</button>
+        </div>
+        <pre style="background: #f5f5f5; padding: 15px; border-radius: 4px; white-space: pre-wrap; word-wrap: break-word; max-height: 400px; overflow-y: auto;">${resultText}</pre>
+        <div style="margin-top: 15px; text-align: right;">
+            <button onclick="this.parentElement.parentElement.parentElement.remove()" style="padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">닫기</button>
+        </div>
+    `;
+    
+    modal.appendChild(content);
+    modal.addEventListener("click", (e) => {
+        if (e.target === modal) modal.remove();
+    });
+    
+    document.body.appendChild(modal);
 }
 
 // ============================================================================
