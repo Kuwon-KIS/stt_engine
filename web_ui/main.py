@@ -256,10 +256,17 @@ async def start_batch(
 ) -> BatchStartResponse:
     """배치 처리 시작"""
     try:
-        logger.info(f"배치 처리 시작 요청: {request.path} (병렬: {request.parallel_count})")
+        # 배치 경로 정규화 (상대경로 -> 절대경로)
+        batch_path = request.path
+        if not batch_path.startswith("/"):
+            # 상대경로면 BATCH_INPUT_DIR 사용
+            batch_path = str(BATCH_INPUT_DIR)
+            logger.info(f"배치 경로 정규화: 상대경로 {request.path} -> {batch_path}")
+        
+        logger.info(f"배치 처리 시작 요청: {batch_path} (병렬: {request.parallel_count})")
         
         # 파일 목록 조회
-        files = file_service.list_batch_files(request.path, request.extension)
+        files = file_service.list_batch_files(batch_path, request.extension)
         
         if not files:
             raise HTTPException(status_code=400, detail="처리할 파일이 없습니다")

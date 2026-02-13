@@ -63,15 +63,21 @@ class STTService:
             logger.info(f"[STT Service] 파일 처리: {file_path} (언어: {language}, 스트림: {is_stream})")
             
             # 파일 경로 변환 (Web UI 볼륨 -> API 접근 경로)
-            # Web UI: /app/data/uploads/file.wav
-            # API가 마운트된 볼륨: /app/web_ui/data/uploads/file.wav
+            # Web UI 컨테이너 마운트: /data/aiplatform/stt_engine_volumes/web_ui/data:/app/web_ui/data
+            # 경우 1: /app/data/uploads/... (레거시 경로) -> /app/web_ui/data/uploads/...
+            # 경우 2: /app/web_ui/data/... (현재 경로) -> 변환 불필요
             if file_path.startswith("/app/data/"):
                 # /app/data/ 경로를 /app/web_ui/data/로 변환
                 api_file_path = file_path.replace("/app/data/", "/app/web_ui/data/")
-            else:
+                logger.debug(f"[STT Service] 경로 변환 (레거시): {file_path} -> {api_file_path}")
+            elif file_path.startswith("/app/web_ui/data/"):
+                # 이미 올바른 경로 형식 (배치 처리 파일)
                 api_file_path = file_path
-            
-            logger.debug(f"[STT Service] 경로 변환: {file_path} -> {api_file_path}")
+                logger.debug(f"[STT Service] 경로 확인 (배치): {file_path} (변환 불필요)")
+            else:
+                # 다른 경로 형식은 그대로 사용
+                api_file_path = file_path
+                logger.warning(f"[STT Service] 알 수 없는 경로 형식: {file_path}")
             
             async with aiohttp.ClientSession() as session:
                 data = aiohttp.FormData()

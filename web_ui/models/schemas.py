@@ -57,7 +57,7 @@ class BatchFileListResponse(BaseModel):
 
 class BatchStartRequest(BaseModel):
     """배치 처리 시작 요청"""
-    path: str = Field(default="./data/batch_input")
+    path: str = Field(default="/app/web_ui/data/batch_input", description="배치 입력 파일 디렉토리 (절대 경로)")
     extension: str = Field(default=".wav")
     language: str = Field(default="ko")
     parallel_count: int = Field(default=2, ge=1, le=8)
