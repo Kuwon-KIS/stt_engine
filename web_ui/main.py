@@ -273,10 +273,21 @@ async def start_batch(
         
         # 배치 작업 생성
         from services.batch_service import BatchFile
-        batch_files = [
-            BatchFile(name=f["name"], path=f["path"])
-            for f in files
-        ]
+        
+        # 파일 경로를 API가 접근 가능한 경로로 변환
+        # Web UI: /app/data/batch_input/... -> API: /app/web_ui/data/batch_input/...
+        batch_files = []
+        for f in files:
+            file_path = f["path"]
+            # Web UI 경로를 API 경로로 변환
+            if file_path.startswith("/app/data/"):
+                api_path = file_path.replace("/app/data/", "/app/web_ui/data/")
+            else:
+                api_path = file_path
+            
+            batch_files.append(BatchFile(name=f["name"], path=api_path))
+            logger.debug(f"배치 파일 경로 변환: {file_path} -> {api_path}")
+        
         batch_id = batch_service.create_job(batch_files)
         
         # 백그라운드에서 배치 처리 시작
