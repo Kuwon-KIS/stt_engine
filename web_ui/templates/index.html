@@ -13,10 +13,10 @@
     <!-- 네비게이션 -->
     <nav class="navbar">
         <div class="navbar-container">
-            <div class="navbar-brand">📞 KIS 불완전판매 예방 녹취 분석</div>
+            <div class="navbar-brand">📞 KIS 불완전판매 예방 녹취 STT</div>
             <ul class="navbar-menu">
-                <li><a href="#upload-section" class="nav-link">분석</a></li>
-                <li><a href="#batch-section" class="nav-link">배치 처리</a></li>
+                <li><a href="#upload-section" class="nav-link">변환</a></li>
+                <li><a href="#batch-section" class="nav-link">일괄 변환</a></li>
             </ul>
         </div>
     </nav>
@@ -24,8 +24,8 @@
     <div class="container">
         <!-- 헤더 -->
         <header class="header">
-            <h1>금융상품 판매 녹취 분석</h1>
-            <p>금융상품 사전 녹취 음성을 텍스트로 변환하여 불완전판매 예방 및 규정 준수 검토</p>
+            <h1>금융상품 판매 녹취 STT 변환</h1>
+            <p>금융상품 사전 녹취 음성을 텍스트로 변환하여 불완전판매 예방 준비</p>
         </header>
 
         <!-- 메인 콘텐츠 -->
@@ -33,7 +33,7 @@
             
             <!-- =============== 업로드 섹션 =============== -->
             <section id="upload-section" class="section">
-                <h2>녹취 파일 업로드</h2>
+                <h2>녹취 파일 STT 변환</h2>
                 
                 <div class="upload-area" id="drop-zone">
                     <input type="file" id="file-input" accept=".wav,.mp3,.m4a,.flac,.ogg" hidden>
@@ -92,22 +92,22 @@
                 </div>
 
                 <button id="transcribe-btn" class="btn btn-primary" disabled>
-                    녹취 분석 시작
+                    STT 변환 시작
                 </button>
             </section>
 
             <!-- =============== 로딩 인디케이터 =============== -->
             <div id="loading-container" class="loading-container" style="display: none;">
                 <div class="spinner"></div>
-                <p id="loading-text">음성 분석 중...</p>
+                <p id="loading-text">음성을 텍스트로 변환 중...</p>
             </div>
 
             <!-- =============== 결과 섹션 =============== -->
             <section id="result-section" class="section" style="display: none;">
-                <h2>분석 결과</h2>
+                <h2>STT 변환 결과</h2>
                 
                 <div class="result-card">
-                    <h3>📝 녹취 텍스트</h3>
+                    <h3>📝 변환된 텍스트</h3>
                     <div class="result-text" id="result-text"></div>
                     <div class="button-group">
                         <button id="copy-btn" class="btn btn-secondary">복사</button>
@@ -135,10 +135,10 @@
 
             <!-- =============== 배치 섹션 =============== -->
             <section id="batch-section" class="section">
-                <h2>녹취 파일 일괄 분석</h2>
+                <h2>녹취 파일 일괄 STT 변환</h2>
                 
                 <div class="batch-info">
-                    <p>서버 디렉토리에 있는 여러 녹취 파일들을 한 번에 분석합니다.</p>
+                    <p>서버 디렉토리에 있는 여러 녹취 파일들을 한 번에 STT 변환합니다.</p>
                     <p class="path-info">📂 경로: <code>./data/batch_input</code></p>
                 </div>
 
@@ -158,19 +158,19 @@
                 </div>
 
                 <div class="form-group">
-                    <label for="batch-parallel">동시 분석 수:</label>
+                    <label for="batch-parallel">동시 변환 수:</label>
                     <input type="number" id="batch-parallel" value="2" min="1" max="8" class="form-input">
                 </div>
 
                 <div class="button-group">
                     <button id="load-files-btn" class="btn btn-secondary">파일 목록 로드</button>
-                    <button id="start-batch-btn" class="btn btn-primary" disabled>일괄 분석 시작</button>
+                    <button id="start-batch-btn" class="btn btn-primary" disabled>일괄 STT 변환</button>
                 </div>
 
                 <!-- 파일 테이블 -->
                 <div id="batch-table-container" class="batch-table-container" style="display: none;">
                     <div class="table-header">
-                        <h3>분석할 파일 (<span id="file-count">0</span>개)</h3>
+                        <h3>변환할 파일 (<span id="file-count">0</span>개)</h3>
                     </div>
                     <table class="batch-table">
                         <thead>
@@ -189,13 +189,13 @@
 
                 <!-- 배치 진행 상황 -->
                 <div id="batch-progress-container" class="batch-progress-container" style="display: none;">
-                    <h3>분석 진행 상황</h3>
+                    <h3>변환 진행 상황</h3>
                     <div class="progress-bar">
                         <div id="progress-fill" class="progress-fill"></div>
                     </div>
                     <div class="progress-stats">
                         <span>완료: <strong id="completed-count">0</strong></span>
-                        <span>분석중: <strong id="progress-count">0</strong></span>
+                        <span>변환중: <strong id="progress-count">0</strong></span>
                         <span>실패: <strong id="failed-count">0</strong></span>
                         <span>남은 시간: <strong id="remaining-time">-</strong></span>
                     </div>
@@ -206,7 +206,7 @@
 
     <!-- 푸터 -->
     <footer class="footer">
-        <p>&copy; 2026 KIS 불완전판매 예방 녹취 분석 시스템. All rights reserved.</p>
+        <p>&copy; 2026 KIS 불완전판매 예방 녹취 STT 변환 시스템. All rights reserved.</p>
     </footer>
 
     <!-- 스크립트 -->
