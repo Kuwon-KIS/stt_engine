@@ -36,9 +36,9 @@ from services.job_queue import transcribe_queue, JobStatus
 
 # FastAPI 앱 생성
 app = FastAPI(
-    title="STT Web UI",
+    title="KIS 불완전판매 예방 녹취 분석 시스템",
     version="1.0.0",
-    description="Speech-to-Text Web UI Server"
+    description="금융상품 판매 사전 녹취 음성을 텍스트로 변환하여 불완전판매 예방 및 규정 준수 검토"
 )
 
 # CORS 설정

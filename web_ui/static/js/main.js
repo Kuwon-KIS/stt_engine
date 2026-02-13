@@ -148,7 +148,7 @@ function handleFileSelect(file) {
  */
 async function uploadFile() {
     if (!selectedFile) {
-        showNotification("파일을 선택해주세요", "error");
+        showNotification("녹취 파일을 선택해주세요", "error");
         return;
     }
 
@@ -156,7 +156,7 @@ async function uploadFile() {
         const formData = new FormData();
         formData.append("file", selectedFile);
 
-        showLoading("파일 업로드 중...");
+        showLoading("녹취 파일 업로드 중...");
 
         const response = await fetch(API_BASE + "/upload/", {
             method: "POST",
@@ -268,7 +268,7 @@ async function transcribeFile() {
             }
         }
 
-        showLoading("음성을 텍스트로 변환 중...");
+        showLoading("녹취 음성 분석 중...");
 
         // STT 처리
         const language = languageSelect.value;
@@ -286,11 +286,11 @@ async function transcribeFile() {
 
         // 결과 표시
         displayResult(result);
-        showNotification("처리 완료", "info");
+        showNotification("녹취 분석 완료", "info");
 
     } catch (error) {
         hideLoading();
-        showNotification(`처리 실패: ${error.message}`, "error");
+        showNotification(`분석 실패: ${error.message}`, "error");
     }
 }
 
