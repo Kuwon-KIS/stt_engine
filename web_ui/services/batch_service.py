@@ -36,7 +36,9 @@ class BatchFile:
     status: str = FileStatus.PENDING.value
     processing_time_sec: Optional[float] = None
     error_message: Optional[str] = None
-    result_text: Optional[str] = None  # ← 결과 텍스트 저장
+    result_text: Optional[str] = None
+    duration_sec: Optional[float] = None  # 오디오 길이
+    word_count: Optional[int] = None  # 글자 수
 
 
 @dataclass
@@ -129,7 +131,9 @@ class BatchService:
         status: str,
         processing_time_sec: Optional[float] = None,
         error_message: Optional[str] = None,
-        result_text: Optional[str] = None
+        result_text: Optional[str] = None,
+        duration_sec: Optional[float] = None,
+        word_count: Optional[int] = None
     ):
         """파일 처리 상태 업데이트"""
         job = self.get_job(batch_id)
@@ -140,9 +144,11 @@ class BatchService:
                     file.processing_time_sec = processing_time_sec
                     file.error_message = error_message
                     file.result_text = result_text
+                    file.duration_sec = duration_sec
+                    file.word_count = word_count
                     
                     if status == FileStatus.DONE.value:
-                        logger.info(f"[Batch Service] {filename} 처리 완료 ({processing_time_sec:.2f}초)")
+                        logger.info(f"[Batch Service] {filename} 처리 완료 ({processing_time_sec:.2f}초, {word_count}자)")
                     elif status == FileStatus.ERROR.value:
                         logger.error(f"[Batch Service] {filename} 처리 실패: {error_message}")
                     break
@@ -207,12 +213,19 @@ class BatchService:
             processing_time = time.time() - start_time
             
             if result.get("success"):
+                # 결과에서 필요한 정보 추출
+                result_text = result.get("text", "")
+                duration_sec = result.get("duration", None)
+                word_count = len(result_text) if result_text else 0
+                
                 self.update_file_status(
                     batch_id,
                     file.name,
                     FileStatus.DONE.value,
                     processing_time_sec=processing_time,
-                    result_text=result.get("text", "")  # ← 결과 텍스트 저장
+                    result_text=result_text,
+                    duration_sec=duration_sec,
+                    word_count=word_count
                 )
             else:
                 error_msg = result.get("message", "알 수 없는 오류")
@@ -256,7 +269,9 @@ class BatchService:
                     "status": f.status,
                     "processing_time_sec": f.processing_time_sec,
                     "error_message": f.error_message,
-                    "result_text": f.result_text  # ← 결과 텍스트 추가
+                    "result_text": f.result_text,
+                    "duration_sec": f.duration_sec,
+                    "word_count": f.word_count
                 }
                 for f in job.files
             ]

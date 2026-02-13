@@ -208,15 +208,19 @@ async def transcribe(request: TranscribeRequest) -> TranscribeResponse:
         
         logger.info(f"STT 처리 완료: {processing_time:.2f}초")
         
+        text = result.get("text", "")
+        word_count = len(text) if text else 0
+        
         return TranscribeResponse(
             success=True,
             file_id=request.file_id,
             filename=Path(file_path).name,
-            text=result.get("text", ""),
+            text=text,
             language=request.language,
             duration_sec=result.get("duration", 0),
             processing_time_sec=processing_time,
-            backend=result.get("backend", "unknown")
+            backend=result.get("backend", "unknown"),
+            word_count=word_count
         )
     
     except HTTPException:

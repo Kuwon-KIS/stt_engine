@@ -35,6 +35,7 @@ class TranscribeResponse(BaseModel):
     duration_sec: float
     processing_time_sec: float
     backend: str
+    word_count: Optional[int] = None  # 글자 수
     error_code: Optional[str] = None
     failure_reason: Optional[dict] = None
 
@@ -77,6 +78,8 @@ class BatchFileInfo(BaseModel):
     processing_time_sec: Optional[float] = None
     error_message: Optional[str] = None
     result_text: Optional[str] = None
+    duration_sec: Optional[float] = None
+    word_count: Optional[int] = None
 
 
 class BatchProgressResponse(BaseModel):

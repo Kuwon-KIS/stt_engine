@@ -286,6 +286,7 @@ function displayResult(result) {
     document.getElementById("result-text").textContent = result.text || "(텍스트 없음)";
     document.getElementById("metric-duration").textContent = formatTime(result.duration_sec);
     document.getElementById("metric-time").textContent = formatTime(result.processing_time_sec);
+    document.getElementById("metric-word-count").textContent = (result.word_count || 0).toString();
     document.getElementById("metric-backend").textContent = result.backend || "-";
 
     // 섹션 전환
@@ -495,10 +496,20 @@ function updateBatchTableStatus(files) {
             // 상태 업데이트
             statusCell.innerHTML = `<span class="status-${file.status}">${file.status}</span>`;
             
-            // 처리 시간 업데이트
+            // 처리 시간 & 오디오 길이 & 글자 수 표시
+            let detailsHtml = "";
             if (file.processing_time_sec) {
-                timeCell.textContent = formatTime(file.processing_time_sec);
+                detailsHtml += `처리: ${file.processing_time_sec.toFixed(1)}초`;
             }
+            if (file.duration_sec) {
+                if (detailsHtml) detailsHtml += " / ";
+                detailsHtml += `음성: ${file.duration_sec.toFixed(1)}초`;
+            }
+            if (file.word_count !== undefined && file.word_count !== null) {
+                if (detailsHtml) detailsHtml += " / ";
+                detailsHtml += `글자: ${file.word_count}`;
+            }
+            timeCell.textContent = detailsHtml || "-";
             
             // 결과 텍스트 업데이트
             if (file.result_text) {
@@ -513,7 +524,11 @@ function updateBatchTableStatus(files) {
                 
                 // 클릭 시 전체 결과 보기
                 resultCell.addEventListener("click", () => {
-                    showResultModal(file.name, file.result_text);
+                    showResultModal(file.name, file.result_text, {
+                        duration_sec: file.duration_sec,
+                        processing_time_sec: file.processing_time_sec,
+                        word_count: file.word_count
+                    });
                 });
             } else if (file.status === "done" && !file.result_text) {
                 resultCell.textContent = "(결과 없음)";
@@ -527,7 +542,7 @@ function updateBatchTableStatus(files) {
 /**
  * 결과 모달 표시
  */
-function showResultModal(filename, resultText) {
+function showResultModal(filename, resultText, metadata = {}) {
     const modal = document.createElement("div");
     modal.className = "modal";
     modal.style.cssText = `
@@ -554,11 +569,22 @@ function showResultModal(filename, resultText) {
         box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     `;
     
+    // 메타데이터 정보 표시
+    let metadataHtml = "";
+    if (metadata.duration_sec !== undefined) {
+        metadataHtml += `<div style="font-size: 12px; color: #666; margin-bottom: 8px;">
+            오디오 길이: ${metadata.duration_sec.toFixed(1)}초 | 
+            처리 시간: ${metadata.processing_time_sec?.toFixed(1) || '-'}초 |
+            글자 수: ${metadata.word_count || '-'}
+        </div>`;
+    }
+    
     content.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px;">
             <h3 style="margin: 0;">${filename}</h3>
             <button onclick="this.parentElement.parentElement.parentElement.remove()" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #999;">×</button>
         </div>
+        ${metadataHtml}
         <pre style="background: #f5f5f5; padding: 15px; border-radius: 4px; white-space: pre-wrap; word-wrap: break-word; max-height: 400px; overflow-y: auto;">${resultText}</pre>
         <div style="margin-top: 15px; text-align: right;">
             <button onclick="this.parentElement.parentElement.parentElement.remove()" style="padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">닫기</button>
