@@ -54,7 +54,10 @@
                 </div>
 
                 <div class="form-group">
-                    <label for="backend-select">백엔드:</label>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <label for="backend-select">백엔드:</label>
+                        <span id="current-api-backend" style="font-size: 12px; color: #666;">API: 로딩 중...</span>
+                    </div>
                     <select id="backend-select">
                         <option value="">자동 선택</option>
                         <option value="faster-whisper">faster-whisper (빠름)</option>
@@ -80,18 +83,7 @@
                     </p>
                 </div>
 
-                <!-- 글로벌 백엔드 정보 표시 -->
-                <div class="backend-info-card">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <div>
-                            <span style="color: #666; font-size: 12px;">현재 API 백엔드:</span>
-                            <span id="global-backend" style="font-weight: bold; margin-left: 10px;">로딩 중...</span>
-                        </div>
-                        <button id="refresh-backend-btn" class="btn btn-small" title="백엔드 정보 새로고침">🔄</button>
-                    </div>
-                </div>
-
-                <button id="transcribe-btn" class="btn btn-primary" disabled>
+                <button id="transcribe-btn" class="btn btn-primary btn-large" disabled>
                     STT 변환 시작
                 </button>
             </section>

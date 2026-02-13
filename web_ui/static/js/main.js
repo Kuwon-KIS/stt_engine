@@ -101,8 +101,7 @@ const languageSelect = document.getElementById("language-select");
 const backendSelect = document.getElementById("backend-select");
 const streamingCheckbox = document.getElementById("streaming-checkbox");
 const setGlobalBackendCheckbox = document.getElementById("set-global-backend-checkbox");
-const refreshBackendBtn = document.getElementById("refresh-backend-btn");
-const globalBackendSpan = document.getElementById("global-backend");
+const currentApiBackend = document.getElementById("current-api-backend");
 
 // 드래그 & 드롭
 dropZone.addEventListener("dragover", (e) => {
@@ -191,26 +190,12 @@ async function fetchGlobalBackendInfo() {
         }
         const data = await response.json();
         const backendName = data.current_backend || "unknown";
-        globalBackendSpan.textContent = backendName;
-        globalBackendSpan.style.backgroundColor = getBackendColor(backendName);
+        currentApiBackend.textContent = `API: ${backendName}`;
         return backendName;
     } catch (error) {
         console.error("백엔드 정보 조회 실패:", error);
-        globalBackendSpan.textContent = "오류";
-        showNotification("백엔드 정보를 가져올 수 없습니다", "error");
+        currentApiBackend.textContent = "API: 오류";
     }
-}
-
-/**
- * 글로벌 백엔드 색상
- */
-function getBackendColor(backendName) {
-    const colors = {
-        "faster-whisper": "rgba(52, 211, 153, 0.3)",
-        "transformers": "rgba(96, 165, 250, 0.3)",
-        "openai-whisper": "rgba(251, 146, 60, 0.3)"
-    };
-    return colors[backendName] || "rgba(255, 255, 255, 0.2)";
 }
 
 /**
@@ -538,9 +523,6 @@ document.addEventListener("DOMContentLoaded", () => {
     
     // 글로벌 백엔드 정보 초기화
     fetchGlobalBackendInfo();
-    
-    // 리프레시 버튼
-    refreshBackendBtn?.addEventListener("click", fetchGlobalBackendInfo);
     
     // 글로벌 백엔드 설정 체크박스
     setGlobalBackendCheckbox?.addEventListener("change", () => {
