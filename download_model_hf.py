@@ -142,7 +142,7 @@ print_header("🚀 STT Engine 모델 준비 (다운로드 + 옵션 변환 + 압�
 
 # 기본 경로 설정
 BASE_DIR = Path(__file__).parent.absolute()
-models_dir = BASE_DIR / "models"
+models_dir = BASE_DIR / "build" / "models"
 model_specific_dir = models_dir / "openai_whisper-large-v3-turbo"
 
 print(f"📁 기본 경로: {BASE_DIR}")

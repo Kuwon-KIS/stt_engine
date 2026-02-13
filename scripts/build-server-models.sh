@@ -234,7 +234,7 @@ download_models() {
     fi
     
     # 모델 디렉토리 초기화 (선택사항)
-    if [ -d "$WORKSPACE/models" ]; then
+    if [ -d "$WORKSPACE/build/models" ]; then
         log_warn "기존 모델 디렉토리가 있습니다"
         log_info "옵션:"
         log_info "  1. 기존 모델 사용 (엔터 누르기)"
@@ -244,7 +244,7 @@ download_models() {
         
         if [ "$choice" = "rebuild" ]; then
             log_info "기존 모델 디렉토리 삭제 중..."
-            rm -rf "$WORKSPACE/models" || true
+            rm -rf "$WORKSPACE/build/models" || true
         else
             log_info "기존 모델 사용"
             # 모델 검증만 수행
@@ -253,7 +253,7 @@ download_models() {
         fi
     fi
     
-    mkdir -p "$WORKSPACE/models"
+    mkdir -p "$WORKSPACE/build/models"
     
     # 모델 다운로드 및 변환 실행
     log_info "모델 다운로드 및 변환 실행 중..."
@@ -261,11 +261,11 @@ download_models() {
     $PYTHON_BIN download_model_hf.py 2>&1 | tee -a "$BUILD_LOG"
     
     # 모델 디렉토리 검증
-    if [ ! -d "$WORKSPACE/models/ctranslate2_model" ]; then
+    if [ ! -d "$WORKSPACE/build/models/ctranslate2_model" ]; then
         log_error "CTranslate2 모델 변환 실패"
     fi
     
-    if [ ! -d "$WORKSPACE/models/openai_whisper-large-v3-turbo" ]; then
+    if [ ! -d "$WORKSPACE/build/models/openai_whisper-large-v3-turbo" ]; then
         log_warn "OpenAI Whisper 모델 다운로드 완료되지 않음 (계속 진행)"
     fi
     

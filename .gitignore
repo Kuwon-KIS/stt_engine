@@ -1,5 +1,4 @@
-# Model files
-models/
+# Model files (stored in build/models, ignored by build/ entry below)
 *.pth
 *.bin
 *.safetensors
