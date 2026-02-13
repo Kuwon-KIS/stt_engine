@@ -65,7 +65,7 @@ function formatFileSize(bytes) {
  */
 function formatTime(seconds) {
     if (!seconds) return "-";
-    if (seconds < 60) return seconds.toFixed(2) + "초";
+    if (seconds < 60) return Math.round(seconds) + "초";
     const mins = Math.floor(seconds / 60);
     const secs = (seconds % 60).toFixed(0);
     return `${mins}분 ${secs}초`;
@@ -523,9 +523,9 @@ function updateBatchTableStatus(files) {
                 ? `${file.processing_time_sec.toFixed(1)}초`
                 : "-";
             
-            // 음성 길이
+            // 음성 길이 (분:초 형식)
             durationCell.textContent = file.duration_sec 
-                ? `${file.duration_sec.toFixed(1)}초`
+                ? formatTime(file.duration_sec)
                 : "-";
             
             // 글자 수
