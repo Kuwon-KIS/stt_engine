@@ -6,7 +6,10 @@ from pathlib import Path
 
 # 기본 경로
 BASE_DIR = Path(__file__).parent
-DATA_DIR = BASE_DIR / "data"
+
+# 데이터 디렉토리는 /app/data로 마운트됨
+# Docker: -v /data/aiplatform/stt_engine_volumes/web_ui/data:/app/data
+DATA_DIR = Path("/app/data")
 UPLOAD_DIR = DATA_DIR / "uploads"
 RESULT_DIR = DATA_DIR / "results"
 BATCH_INPUT_DIR = DATA_DIR / "batch_input"

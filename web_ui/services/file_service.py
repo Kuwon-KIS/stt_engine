@@ -138,6 +138,18 @@ class FileService:
         """
         try:
             input_path = Path(input_dir)
+            logger.debug(f"[File Service] 배치 경로 확인: {input_path}")
+            logger.debug(f"[File Service] 경로 존재 여부: {input_path.exists()}")
+            logger.debug(f"[File Service] 경로 타입: {input_path.is_dir()}")
+            
+            if not input_path.exists():
+                logger.error(f"[File Service] 배치 디렉토리 없음: {input_path}")
+                return []
+            
+            if not input_path.is_dir():
+                logger.error(f"[File Service] 배치 경로가 디렉토리가 아님: {input_path}")
+                return []
+            
             files = []
             
             for file_path in input_path.glob(f"*{extension}"):
@@ -150,12 +162,13 @@ class FileService:
                         "modified": datetime.fromtimestamp(stat.st_mtime),
                         "status": "pending"
                     })
+                    logger.debug(f"[File Service] 파일 추가: {file_path.name}")
             
-            logger.info(f"[File Service] 배치 파일 목록: {len(files)}개")
+            logger.info(f"[File Service] 배치 파일 목록: {len(files)}개 (경로: {input_path})")
             return files
         
         except Exception as e:
-            logger.error(f"[File Service] 배치 파일 목록 조회 실패: {e}")
+            logger.error(f"[File Service] 배치 파일 목록 조회 실패: {e}", exc_info=True)
             return []
 
 

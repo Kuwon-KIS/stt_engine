@@ -256,19 +256,28 @@ async def start_batch(
 ) -> BatchStartResponse:
     """배치 처리 시작"""
     try:
+        # 요청 데이터 로깅
+        logger.info(f"[배치] 요청 수신: path={request.path}, ext={request.extension}, lang={request.language}, parallel={request.parallel_count}")
+        
         # 배치 경로 정규화 (상대경로 -> 절대경로)
         batch_path = request.path
+        logger.debug(f"[배치] 원본 경로: {batch_path}, startswith('/'): {batch_path.startswith('/')}")
+        
         if not batch_path.startswith("/"):
             # 상대경로면 BATCH_INPUT_DIR 사용
             batch_path = str(BATCH_INPUT_DIR)
-            logger.info(f"배치 경로 정규화: 상대경로 {request.path} -> {batch_path}")
+            logger.info(f"[배치] 경로 정규화: {request.path} -> {batch_path}")
+        else:
+            logger.info(f"[배치] 절대경로 사용: {batch_path}")
         
-        logger.info(f"배치 처리 시작 요청: {batch_path} (병렬: {request.parallel_count})")
+        logger.info(f"[배치] 파일 조회 시작: {batch_path} (확장자: {request.extension})")
         
         # 파일 목록 조회
         files = file_service.list_batch_files(batch_path, request.extension)
+        logger.info(f"[배치] 파일 조회 결과: {len(files)}개")
         
         if not files:
+            logger.error(f"[배치] 에러: 처리할 파일이 없음 (경로: {batch_path})")
             raise HTTPException(status_code=400, detail="처리할 파일이 없습니다")
         
         # 배치 작업 생성
@@ -289,6 +298,7 @@ async def start_batch(
             logger.debug(f"배치 파일 경로 변환: {file_path} -> {api_path}")
         
         batch_id = batch_service.create_job(batch_files)
+        logger.info(f"[배치] 작업 생성: {batch_id} ({len(batch_files)}개 파일)")
         
         # 백그라운드에서 배치 처리 시작
         async def process_batch_bg():
@@ -316,8 +326,8 @@ async def start_batch(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"배치 처리 시작 실패: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"[배치] 배치 처리 시작 실패: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"배치 처리 시작 실패: {str(e)}")
 
 
 @app.get("/api/batch/progress/{batch_id}/")
