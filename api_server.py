@@ -24,6 +24,7 @@ import json
 import wave
 from stt_engine import WhisperSTT
 from stt_utils import check_memory_available, check_audio_file
+from utils.performance_monitor import PerformanceMonitor
 
 # 로깅 설정
 logging.basicConfig(
@@ -299,6 +300,10 @@ async def transcribe(
     # 처리 시간 측정 시작
     start_time = time.time()
     
+    # 성능 모니터링 시작
+    perf_monitor = PerformanceMonitor()
+    perf_monitor.start()
+    
     try:
         # 1. 파일 경로 검증 (보안: /app 내부만 허용)
         file_path_obj = Path(file_path).resolve()
@@ -491,6 +496,9 @@ async def transcribe(
         
         logger.info(f"[API] ✅ STT 처리 성공 - 텍스트: {len(result.get('text', ''))} 글자")
         
+        # 성능 모니터링 종료
+        perf_metrics = perf_monitor.stop()
+        
         # 처리 시간 계산
         processing_time = time.time() - start_time
         
@@ -537,7 +545,8 @@ async def transcribe(
             "memory_info": {
                 "available_mb": memory_info.get('available_mb', 0),
                 "used_percent": memory_info.get('used_percent', 0)
-            }
+            },
+            "performance": perf_metrics.to_dict()
         }
         
         logger.debug(f"[API] 응답 생성 중 (텍스트 크기: {len(response_data['text'])} bytes)")
@@ -630,6 +639,12 @@ async def transcribe(
         )
     
     except Exception as e:
+        # 성능 모니터링 종료 (에러 상황)
+        try:
+            perf_monitor.stop()
+        except:
+            pass
+        
         logger.error(f"[API] 예상치 못한 오류: {type(e).__name__}: {str(e)}")
         logger.error("Traceback:", exc_info=True)
         memory_info = check_memory_available(logger=logger)

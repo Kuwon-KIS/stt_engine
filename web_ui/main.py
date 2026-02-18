@@ -220,7 +220,8 @@ async def transcribe(request: TranscribeRequest) -> TranscribeResponse:
             duration_sec=result.get("duration", 0),
             processing_time_sec=processing_time,
             backend=result.get("backend", "unknown"),
-            word_count=word_count
+            word_count=word_count,
+            performance=result.get("performance")  # API 서버로부터 받은 성능 메트릭
         )
     
     except HTTPException:

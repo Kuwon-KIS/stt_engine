@@ -2,8 +2,21 @@
 Pydantic 데이터 모델
 """
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import datetime
+
+# 성능 메트릭 관련
+class PerformanceMetrics(BaseModel):
+    """성능 측정 메트릭"""
+    cpu_percent_avg: float = Field(description="평균 CPU 사용률 (%)")
+    cpu_percent_max: float = Field(description="최대 CPU 사용률 (%)")
+    ram_mb_avg: float = Field(description="평균 RAM 사용량 (MB)")
+    ram_mb_peak: float = Field(description="피크 RAM 사용량 (MB)")
+    gpu_vram_mb_current: float = Field(description="현재 GPU VRAM (MB)")
+    gpu_vram_mb_peak: float = Field(description="피크 GPU VRAM (MB)")
+    gpu_percent: float = Field(description="GPU 유틸리티 (%)")
+    processing_time_sec: float = Field(description="처리 시간 (초)")
+
 
 # 업로드 관련
 class FileUploadResponse(BaseModel):
@@ -36,6 +49,7 @@ class TranscribeResponse(BaseModel):
     processing_time_sec: float
     backend: str
     word_count: Optional[int] = None  # 글자 수
+    performance: Optional[PerformanceMetrics] = None  # 성능 메트릭
     error_code: Optional[str] = None
     failure_reason: Optional[dict] = None
 
