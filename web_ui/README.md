@@ -114,6 +114,15 @@ docker-compose down
 파일 선택 → 업로드 → STT 변환 → 결과 표시 → 다운로드
 ```
 
+**결과 화면:**
+- 변환된 텍스트
+- 메타데이터: 음성 길이, 처리 시간, 글자 수, 백엔드
+- **⚡ 성능 메트릭** (v1.1+)
+  - CPU 평균/최대 사용률 (%)
+  - RAM 평균/피크 사용량 (MB)
+  - GPU VRAM 및 유틸리티 (%)
+  - 상세 정보는 메트릭 클릭으로 확인
+
 ### 2. 배치 처리
 
 여러 파일을 자동으로 일괄 처리합니다.
@@ -125,14 +134,31 @@ docker-compose down
 - 병렬 처리 수 (1-8)
 
 **모니터링:**
-- 실시간 진행 상황 표시
+- 실시간 진행 상황 표시 (진행률 바)
 - 파일별 처리 상태
 - 처리 시간 및 성공/실패 통계
 - 예상 남은 시간
+- **📊 성능 통계** (v1.1+) - 배치 완료 후 버튼
+  - 전체 평균 CPU/RAM/GPU 메트릭
+  - 최대 사용량 통계
+  - 총 처리 시간
+
+**배치 테이블 칼럼:**
+| 칼럼 | 설명 |
+|------|------|
+| 파일명 | 처리 파일 이름 |
+| 크기 | 파일 크기 |
+| 상태 | pending/processing/done/error |
+| 처리시간 | 소요 시간 (초) |
+| 음성길이 | 오디오 길이 (분:초) |
+| 글자수 | 인식된 텍스트 글자 수 |
+| 결과 | 인식된 텍스트 미리보기 (클릭으로 전문 보기) |
+| 성능 | CPU/RAM 요약 (클릭으로 상세 메트릭) |
 
 ### 3. 결과 관리
 
-- 처리 결과 저장 (자동)
+- 처리 결과 저장 (자동) - `{file_id}.txt`
+- **성능 로그 저장** (자동) - `{file_id}.performance.json` (v1.1+)
 - 다운로드: TXT, JSON 포맷
 - 결과 조회 및 복사
 - 메타데이터: 지속시간, 처리시간, 백엔드 정보
@@ -226,7 +252,18 @@ Body:
   "language": "ko",
   "duration_sec": 45.2,
   "processing_time_sec": 15.8,
-  "backend": "faster-whisper"
+  "backend": "faster-whisper",
+  "word_count": 23,
+  "performance": {
+    "cpu_percent_avg": 45.3,
+    "cpu_percent_max": 78.2,
+    "ram_mb_avg": 2048.5,
+    "ram_mb_peak": 3072.0,
+    "gpu_vram_mb_current": 4096.0,
+    "gpu_vram_mb_peak": 5120.0,
+    "gpu_percent": 89.5,
+    "processing_time_sec": 15.8
+  }
 }
 ```
 
@@ -286,7 +323,17 @@ GET /api/batch/progress/{batch_id}
     {
       "name": "file1.wav",
       "status": "done",
-      "processing_time_sec": 15.5
+      "processing_time_sec": 15.5,
+      "performance": {
+        "cpu_percent_avg": 45.3,
+        "cpu_percent_max": 78.2,
+        "ram_mb_avg": 2048.5,
+        "ram_mb_peak": 3072.0,
+        "gpu_vram_mb_current": 4096.0,
+        "gpu_vram_mb_peak": 5120.0,
+        "gpu_percent": 89.5,
+        "processing_time_sec": 15.5
+      }
     }
   ]
 }

@@ -149,7 +149,7 @@ curl -X POST http://localhost:8003/transcribe_by_upload \
 curl http://localhost:8003/health | jq
 ```
 
-### 응답 예시
+### 응답 예시 (v1.1+)
 
 ```json
 {
@@ -165,6 +165,16 @@ curl http://localhost:8003/health | jq
   "memory_info": {
     "available_mb": 14000,
     "used_percent": 10.5
+  },
+  "performance": {
+    "cpu_percent_avg": 45.3,
+    "cpu_percent_max": 78.2,
+    "ram_mb_avg": 2048.5,
+    "ram_mb_peak": 3072.0,
+    "gpu_vram_mb_current": 4096.0,
+    "gpu_vram_mb_peak": 5120.0,
+    "gpu_percent": 89.5,
+    "processing_time_sec": 1.23
   }
 }
 ```
@@ -184,10 +194,12 @@ curl http://localhost:8003/health | jq
 - 기본: 한국어 (ko)
 - 지원: 영어(en), 일본어(ja), 중국어(zh) 등
 
-✅ **성능 추적**
-- `processing_time_seconds`: 처리 시간 측정
-- `memory_info`: 메모리 사용 현황
-- `segments_processed`: 처리된 세그먼트 수
+✅ **성능 모니터링 (v1.1+)**
+- **CPU 추적**: 평균/최대 사용률 (%)
+- **메모리 추적**: 평균/최대 사용량 (MB)
+- **GPU 추적**: VRAM 사용량, GPU 활용도 (%)
+- **자동 로깅**: 처리 완료 후 자동 저장
+- **웹 UI 시각화**: 대시보드 및 배치 작업 성능 지표 표시
 
 📖 **자세한 가이드**: [docs/API_USAGE_GUIDE.md](docs/API_USAGE_GUIDE.md)
 
