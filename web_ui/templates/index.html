@@ -184,6 +184,7 @@
                                 <th>음성길이</th>
                                 <th>글자수</th>
                                 <th>결과</th>
+                                <th>성능</th>
                             </tr>
                         </thead>
                         <tbody id="batch-table-body">
@@ -204,6 +205,13 @@
                         <span>실패: <strong id="failed-count">0</strong></span>
                         <span>남은 시간: <strong id="remaining-time">-</strong></span>
                     </div>
+                    <div style="margin-top: 1.5rem;">
+                        <button id="batch-perf-stats-btn" class="btn btn-secondary" 
+                                onclick="showBatchPerformanceSummary(currentBatchId)" 
+                                style="display: none;">
+                            📊 성능 통계
+                        </button>
+                    </div>
                 </div>
             </section>
         </main>
@@ -216,5 +224,6 @@
 
     <!-- 스크립트 -->
     <script src="/static/js/main.js"></script>
+    <script src="/static/js/batch_performance.js"></script>
 </body>
 </html>

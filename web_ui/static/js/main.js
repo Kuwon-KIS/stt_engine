@@ -464,6 +464,7 @@ function renderBatchTable() {
             <td>-</td>
             <td>-</td>
             <td>-</td>
+            <td>-</td>
         `;
         tbody.appendChild(row);
     });
@@ -531,6 +532,12 @@ function startBatchProgressMonitoring(batchId) {
             if (completed + progress.failed === total) {
                 clearInterval(batchProgressInterval);
                 showNotification(`배치 처리 완료: ${completed}성공, ${progress.failed}실패`, "info");
+                
+                // 배치 완료 후 성능 통계 버튼 표시
+                const perfStatsBtn = document.getElementById("batch-perf-stats-btn");
+                if (perfStatsBtn) {
+                    perfStatsBtn.style.display = "inline-block";
+                }
             }
 
         } catch (error) {
@@ -564,6 +571,7 @@ function updateBatchTableStatus(files) {
             const durationCell = row.children[4];
             const wordCountCell = row.children[5];
             const resultCell = row.children[6];
+            const perfCell = row.children[7];  // 성능 메트릭 셀
 
             // 상태 업데이트
             statusCell.innerHTML = `<span class="status-${file.status}">${file.status}</span>`;
@@ -592,6 +600,23 @@ function updateBatchTableStatus(files) {
                     : file.result_text;
                 resultCell.title = file.result_text;  // hover 시 전체 텍스트 보임
                 resultCell.textContent = displayText;
+            } else {
+                resultCell.textContent = "-";
+            }
+            
+            // 성능 메트릭 업데이트
+            if (file.performance) {
+                const perfData = file.performance;
+                const perfText = `CPU: ${perfData.cpu_percent_avg?.toFixed(0)}% | RAM: ${perfData.ram_mb_peak?.toFixed(0)}MB`;
+                perfCell.textContent = perfText;
+                perfCell.title = `CPU: ${perfData.cpu_percent_avg?.toFixed(1)}% (max: ${perfData.cpu_percent_max?.toFixed(1)}%) | RAM: ${perfData.ram_mb_avg?.toFixed(0)}MB avg, ${perfData.ram_mb_peak?.toFixed(0)}MB peak | GPU: ${perfData.gpu_percent?.toFixed(1)}%`;
+                perfCell.style.cursor = "pointer";
+                perfCell.onclick = () => showBatchPerformanceDetail(file);
+            } else {
+                perfCell.textContent = "-";
+            }
+        }
+    });
                 resultCell.style.cursor = "pointer";
                 
                 // 클릭 시 전체 결과 보기
