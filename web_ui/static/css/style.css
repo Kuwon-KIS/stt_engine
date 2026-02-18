@@ -348,6 +348,56 @@ select:focus {
     color: var(--primary-color);
 }
 
+/* 성능 메트릭 섹션 */
+.performance-metrics {
+    background: #f0f4f8;
+    border: 1px solid #cbd5e1;
+    border-radius: 0.375rem;
+    padding: 1.5rem;
+    margin: 1.5rem 0;
+}
+
+.performance-metrics h3 {
+    margin-top: 0;
+    margin-bottom: 1rem;
+    font-size: 1rem;
+    color: var(--text-primary);
+}
+
+.perf-content {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.perf-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1rem;
+}
+
+.perf-item {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.375rem;
+    padding: 0.75rem;
+    display: flex;
+    flex-direction: column;
+}
+
+.perf-item label {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+}
+
+.perf-item value {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #0ea5e9;
+}
+
 /* ============================================================================
    배치 처리
    ============================================================================ */

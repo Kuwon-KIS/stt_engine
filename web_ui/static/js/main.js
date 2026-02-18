@@ -295,6 +295,56 @@ function displayResult(result) {
     document.getElementById("metric-word-count").textContent = wordCount.toString();
     
     document.getElementById("metric-backend").textContent = result.backend || "-";
+    
+    // 성능 메트릭 표시
+    if (result.performance) {
+        const perf = result.performance;
+        const perfSection = document.getElementById("performance-metrics");
+        if (perfSection) {
+            perfSection.style.display = "block";
+            
+            // 성능 메트릭 HTML 생성
+            const perfHtml = `
+                <div class="perf-row">
+                    <div class="perf-item">
+                        <label>CPU 평균</label>
+                        <value>${perf.cpu_percent_avg.toFixed(1)}%</value>
+                    </div>
+                    <div class="perf-item">
+                        <label>CPU 최대</label>
+                        <value>${perf.cpu_percent_max.toFixed(1)}%</value>
+                    </div>
+                </div>
+                <div class="perf-row">
+                    <div class="perf-item">
+                        <label>RAM 평균</label>
+                        <value>${perf.ram_mb_avg.toFixed(0)} MB</value>
+                    </div>
+                    <div class="perf-item">
+                        <label>RAM 피크</label>
+                        <value>${perf.ram_mb_peak.toFixed(0)} MB</value>
+                    </div>
+                </div>
+                <div class="perf-row">
+                    <div class="perf-item">
+                        <label>GPU VRAM</label>
+                        <value>${perf.gpu_vram_mb_current.toFixed(0)} MB</value>
+                    </div>
+                    <div class="perf-item">
+                        <label>GPU 사용률</label>
+                        <value>${perf.gpu_percent.toFixed(1)}%</value>
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById("perf-content").innerHTML = perfHtml;
+        }
+    } else {
+        const perfSection = document.getElementById("performance-metrics");
+        if (perfSection) {
+            perfSection.style.display = "none";
+        }
+    }
 
     // 섹션 전환
     document.getElementById("upload-section").style.display = "none";
