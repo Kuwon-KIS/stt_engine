@@ -104,6 +104,34 @@ class FileService:
             raise
     
     @staticmethod
+    def save_performance_log(file_id: str, performance_data: dict) -> str:
+        """
+        성능 측정 결과를 JSON으로 저장 (쌍을 이루는 로그)
+        
+        Args:
+            file_id: 파일 ID (결과 파일과 같은 ID)
+            performance_data: 성능 메트릭 딕셔너리
+        
+        Returns:
+            저장된 성능 로그 파일 경로
+        """
+        try:
+            import json
+            
+            perf_path = RESULT_DIR / f"{file_id}.performance.json"
+            
+            # 성능 데이터 저장
+            with open(perf_path, "w", encoding="utf-8") as f:
+                json.dump(performance_data, f, indent=2, ensure_ascii=False)
+            
+            logger.info(f"[File Service] 성능 로그 저장: {perf_path}")
+            return str(perf_path)
+        
+        except Exception as e:
+            logger.error(f"[File Service] 성능 로그 저장 실패: {e}")
+            raise
+    
+    @staticmethod
     def get_file_size_mb(file_path: str) -> float:
         """파일 크기를 MB 단위로 반환"""
         return os.path.getsize(file_path) / (1024 * 1024)

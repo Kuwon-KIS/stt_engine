@@ -206,6 +206,10 @@ async def transcribe(request: TranscribeRequest) -> TranscribeResponse:
             "backend": result.get("backend", "unknown")
         })
         
+        # 성능 메트릭 저장
+        if result.get("performance"):
+            file_service.save_performance_log(request.file_id, result.get("performance"))
+        
         logger.info(f"STT 처리 완료: {processing_time:.2f}초")
         
         text = result.get("text", "")

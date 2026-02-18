@@ -39,6 +39,7 @@ class BatchFile:
     result_text: Optional[str] = None
     duration_sec: Optional[float] = None  # 오디오 길이
     word_count: Optional[int] = None  # 글자 수
+    performance: Optional[dict] = None  # CPU/RAM/GPU 성능 메트릭
 
 
 @dataclass
@@ -133,7 +134,8 @@ class BatchService:
         error_message: Optional[str] = None,
         result_text: Optional[str] = None,
         duration_sec: Optional[float] = None,
-        word_count: Optional[int] = None
+        word_count: Optional[int] = None,
+        performance: Optional[dict] = None
     ):
         """파일 처리 상태 업데이트"""
         job = self.get_job(batch_id)
@@ -146,6 +148,7 @@ class BatchService:
                     file.result_text = result_text
                     file.duration_sec = duration_sec
                     file.word_count = word_count
+                    file.performance = performance
                     
                     if status == FileStatus.DONE.value:
                         logger.info(f"[Batch Service] {filename} 처리 완료 ({processing_time_sec:.2f}초, {word_count}자)")
@@ -217,6 +220,7 @@ class BatchService:
                 result_text = result.get("text", "")
                 duration_sec = result.get("duration", None)
                 word_count = len(result_text) if result_text else 0
+                performance = result.get("performance")  # API 서버로부터 받은 성능 메트릭
                 
                 self.update_file_status(
                     batch_id,
@@ -225,7 +229,8 @@ class BatchService:
                     processing_time_sec=processing_time,
                     result_text=result_text,
                     duration_sec=duration_sec,
-                    word_count=word_count
+                    word_count=word_count,
+                    performance=performance
                 )
             else:
                 error_msg = result.get("message", "알 수 없는 오류")
