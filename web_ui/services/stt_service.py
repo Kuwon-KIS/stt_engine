@@ -320,3 +320,6 @@ class STTService:
                 "error": str(e),
                 "privacy_rm_text": text if 'text' in locals() else ""
             }
+
+# 전역 인스턴스 생성
+stt_service = STTService()
