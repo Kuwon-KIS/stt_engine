@@ -663,8 +663,20 @@ function updateBatchTableStatus(files) {
                     : file.result_text;
                 resultCell.title = file.result_text;  // hover 시 전체 텍스트 보임
                 resultCell.textContent = displayText;
-            } else {
-                resultCell.textContent = "-";
+                resultCell.style.cursor = "pointer";
+                
+                // 클릭 시 전체 결과 보기
+                resultCell.onclick = () => {
+                    showResultModal(file.name, file.result_text, {
+                        duration_sec: file.duration_sec,
+                        processing_time_sec: file.processing_time_sec,
+                        word_count: file.word_count
+                    });
+                };
+            } else if (file.status === "done" && !file.result_text) {
+                resultCell.textContent = "(결과 없음)";
+            } else if (file.status === "error") {
+                resultCell.innerHTML = `<span style="color: red;">${file.error_message || "에러"}</span>`;
             }
             
             // 성능 메트릭 업데이트
@@ -677,23 +689,6 @@ function updateBatchTableStatus(files) {
                 perfCell.onclick = () => showBatchPerformanceDetail(file);
             } else {
                 perfCell.textContent = "-";
-            }
-        }
-    });
-                resultCell.style.cursor = "pointer";
-                
-                // 클릭 시 전체 결과 보기
-                resultCell.addEventListener("click", () => {
-                    showResultModal(file.name, file.result_text, {
-                        duration_sec: file.duration_sec,
-                        processing_time_sec: file.processing_time_sec,
-                        word_count: file.word_count
-                    });
-                });
-            } else if (file.status === "done" && !file.result_text) {
-                resultCell.textContent = "(결과 없음)";
-            } else if (file.status === "error") {
-                resultCell.innerHTML = `<span style="color: red;">${file.error_message || "에러"}</span>`;
             }
         }
     });
