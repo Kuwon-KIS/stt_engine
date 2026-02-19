@@ -6,8 +6,8 @@ STT 결과에 개인정보 제거 로직을 적용하는 서비스
 import logging
 from typing import Optional, Dict, Any
 
-from .vllm_client import VLLMClient
-from .privacy_remover import LLMProcessorForPrivacy
+from .privacy_removal.vllm_client import VLLMClient
+from .privacy_removal.privacy_remover import LLMProcessorForPrivacy
 
 logger = logging.getLogger(__name__)
 
