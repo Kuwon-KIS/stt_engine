@@ -132,6 +132,70 @@
                     <div id="perf-content" class="perf-content"></div>
                 </div>
 
+                <!-- Privacy Removal 섹션 ✨ -->
+                <div id="privacy-removal-section" class="privacy-section" style="display: none;">
+                    <div class="privacy-header">
+                        <h3>🔐 개인정보 제거</h3>
+                        <p>인식된 텍스트에서 개인정보를 자동으로 마스킹할 수 있습니다.</p>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="privacy-prompt-type">프롬프트 타입:</label>
+                        <select id="privacy-prompt-type">
+                            <option value="privacy_remover_default_v6">기본 (개인정보 마스킹)</option>
+                        </select>
+                    </div>
+
+                    <button id="privacy-removal-btn" class="btn btn-primary">
+                        개인정보 제거
+                    </button>
+
+                    <div id="privacy-processing" class="privacy-processing" style="display: none;">
+                        <div class="spinner-small"></div>
+                        <p>개인정보 제거 중...</p>
+                    </div>
+                </div>
+
+                <!-- 처리된 결과 섹션 -->
+                <div id="privacy-result-section" class="privacy-result-section" style="display: none;">
+                    <h3>✅ 처리된 결과</h3>
+                    
+                    <div class="privacy-info">
+                        <div class="info-item">
+                            <span class="info-label">개인정보 포함:</span>
+                            <span id="privacy-exist" class="info-value">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">발견 사유:</span>
+                            <span id="privacy-reason" class="info-value">-</span>
+                        </div>
+                    </div>
+
+                    <div class="result-card">
+                        <h4>처리된 텍스트</h4>
+                        <div class="result-text" id="privacy-result-text"></div>
+                        <div class="button-group">
+                            <button class="btn btn-secondary" onclick="copyPrivacyResult()">복사</button>
+                            <button class="btn btn-secondary" onclick="downloadPrivacyResult()">다운로드</button>
+                            <button class="btn btn-secondary" onclick="togglePrivacyComparison()">원본/처리 비교</button>
+                        </div>
+                    </div>
+
+                    <!-- 비교 뷰 -->
+                    <div id="privacy-comparison" class="privacy-comparison" style="display: none;">
+                        <div class="comparison-container">
+                            <div class="comparison-box">
+                                <h4>원본 텍스트</h4>
+                                <textarea id="privacy-original" readonly></textarea>
+                            </div>
+                            <div class="comparison-box">
+                                <h4>처리된 텍스트</h4>
+                                <textarea id="privacy-processed" readonly></textarea>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <button id="reset-btn" class="btn btn-secondary">다른 파일 처리</button>
             </section>
 

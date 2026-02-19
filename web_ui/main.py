@@ -4,12 +4,11 @@ Web UI 서버 메인 앱
 import asyncio
 import time
 import aiohttp
-from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks, Request
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.requests import Request
 from pathlib import Path
 import logging
 
@@ -591,6 +590,59 @@ async def api_health() -> dict:
         "stt_api": "ok" if stt_api_healthy else "error",
         "stt_api_url": STT_API_URL
     }
+
+# ============================================================================
+# Privacy Removal API 라우트 ✨
+# ============================================================================
+
+@app.post("/api/privacy-removal/")
+async def privacy_removal(request: Request) -> dict:
+    """
+    Privacy Removal 처리
+    
+    Request:
+    {
+        "text": "처리할 텍스트",
+        "prompt_type": "privacy_remover_default_v6" (optional)
+    }
+    
+    Response:
+    {
+        "success": bool,
+        "privacy_exist": "Y/N",
+        "exist_reason": "설명",
+        "privacy_rm_text": "처리된 텍스트"
+    }
+    """
+    try:
+        # 요청 본문 파싱
+        body = await request.json()
+        
+        text = body.get("text", "")
+        prompt_type = body.get("prompt_type", "privacy_remover_default_v6")
+        
+        if not text or not text.strip():
+            raise HTTPException(status_code=400, detail="텍스트가 비어있습니다")
+        
+        logger.info(f"[Privacy Removal API] 요청: 텍스트 길이={len(text)}, 프롬프트={prompt_type}")
+        
+        # STT Service를 통해 Privacy Removal 처리
+        result = await stt_service.process_privacy_removal(
+            text=text,
+            prompt_type=prompt_type
+        )
+        
+        return result
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[Privacy Removal API] 처리 오류: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e),
+            "privacy_rm_text": body.get("text", "") if 'body' in locals() else ""
+        }
 
 @app.on_event("startup")
 async def startup_event():

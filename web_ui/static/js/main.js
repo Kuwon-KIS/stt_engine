@@ -413,6 +413,9 @@ function displayResult(result) {
     document.getElementById("upload-section").style.display = "none";
     document.getElementById("result-section").style.display = "block";
     
+    // Privacy Removal 섹션 표시 ✨
+    showPrivacyRemovalOptions();
+    
     // 스크롤
     document.getElementById("result-section").scrollIntoView({ behavior: "smooth" });
 }
@@ -465,6 +468,7 @@ document.getElementById("reset-btn")?.addEventListener("click", () => {
     setGlobalBackendCheckbox.checked = false;
     document.getElementById("result-section").style.display = "none";
     document.getElementById("upload-section").style.display = "block";
+    resetPrivacyRemovalSection();  // Privacy Removal 초기화 ✨
 });
 
 // 버튼 이벤트
@@ -755,6 +759,173 @@ function showResultModal(filename, resultText, metadata = {}) {
 }
 
 // ============================================================================
+// Privacy Removal 기능
+// ============================================================================
+
+const privacyRemovalBtn = document.getElementById("privacy-removal-btn");
+const privacyRemovalSection = document.getElementById("privacy-removal-section");
+const privacyResultSection = document.getElementById("privacy-result-section");
+const privacyProcessing = document.getElementById("privacy-processing");
+const privacyPromptType = document.getElementById("privacy-prompt-type");
+
+/**
+ * Privacy Removal 처리 시작
+ */
+async function processPrivacyRemoval() {
+    const sttResultTextElem = document.getElementById("result-text");
+    const originalText = sttResultTextElem?.textContent || "";
+    
+    if (!originalText.trim()) {
+        showNotification("먼저 STT 결과를 생성해주세요", "warning");
+        return;
+    }
+    
+    const promptType = privacyPromptType.value || "privacy_remover_default_v6";
+    
+    // UI 업데이트
+    privacyRemovalBtn.disabled = true;
+    privacyProcessing.style.display = "flex";
+    
+    try {
+        showLoading("개인정보 제거 중...");
+        
+        // Web UI 백엔드 API 호출
+        const response = await fetch(API_BASE + "/privacy-removal/", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                text: originalText,
+                prompt_type: promptType
+            })
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || "개인정보 제거 실패");
+        }
+        
+        const data = await response.json();
+        
+        // 결과 처리
+        if (data.success) {
+            // 결과 표시
+            document.getElementById("privacy-result-text").textContent = data.privacy_rm_text;
+            document.getElementById("privacy-exist").textContent = 
+                data.privacy_exist === "Y" ? "예 🔴" : "아니오 ✅";
+            document.getElementById("privacy-reason").textContent = 
+                data.exist_reason || "(설명 없음)";
+            
+            // 비교 데이터 저장
+            document.getElementById("privacy-original").value = originalText;
+            document.getElementById("privacy-processed").value = data.privacy_rm_text;
+            
+            // 결과 섹션 표시
+            privacyResultSection.style.display = "block";
+            
+            showNotification("개인정보 제거 완료!", "success");
+            console.log("Privacy Removal 결과:", data);
+        } else {
+            throw new Error(data.error || "처리 실패");
+        }
+    } catch (error) {
+        console.error("개인정보 제거 오류:", error);
+        showNotification("개인정보 제거 중 오류가 발생했습니다: " + error.message, "error");
+    } finally {
+        privacyRemovalBtn.disabled = false;
+        privacyProcessing.style.display = "none";
+        hideLoading();
+    }
+}
+
+/**
+ * Privacy Removal 결과 복사
+ */
+function copyPrivacyResult() {
+    const resultText = document.getElementById("privacy-result-text").textContent;
+    if (!resultText) {
+        showNotification("복사할 텍스트가 없습니다", "warning");
+        return;
+    }
+    
+    navigator.clipboard.writeText(resultText).then(() => {
+        showNotification("복사되었습니다!", "success");
+    }).catch(err => {
+        showNotification("복사 실패: " + err.message, "error");
+    });
+}
+
+/**
+ * Privacy Removal 결과 다운로드
+ */
+function downloadPrivacyResult() {
+    const resultText = document.getElementById("privacy-result-text").textContent;
+    const originalText = document.getElementById("privacy-original").value;
+    const privacyExist = document.getElementById("privacy-exist").textContent;
+    
+    if (!resultText) {
+        showNotification("다운로드할 텍스트가 없습니다", "warning");
+        return;
+    }
+    
+    const content = `개인정보 제거 결과 보고서
+=====================================
+생성일시: ${new Date().toLocaleString('ko-KR')}
+
+[원본 텍스트]
+${originalText}
+
+[처리된 텍스트]
+${resultText}
+
+[개인정보 포함 여부]
+${privacyExist}
+
+=====================================
+이 파일은 자동으로 생성되었습니다.`;
+    
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `privacy_removal_${new Date().getTime()}.txt`;
+    link.click();
+}
+
+/**
+ * 원본/처리 비교 토글
+ */
+function togglePrivacyComparison() {
+    const compView = document.getElementById("privacy-comparison");
+    if (compView.style.display === "none") {
+        compView.style.display = "block";
+    } else {
+        compView.style.display = "none";
+    }
+}
+
+/**
+ * 결과 화면에서 Privacy Removal 섹션 표시
+ */
+function showPrivacyRemovalOptions() {
+    privacyRemovalSection.style.display = "block";
+    privacyResultSection.style.display = "none";
+    privacyRemovalBtn.disabled = false;
+}
+
+/**
+ * Privacy Removal 섹션 초기화
+ */
+function resetPrivacyRemovalSection() {
+    privacyRemovalSection.style.display = "none";
+    privacyResultSection.style.display = "none";
+    document.getElementById("privacy-result-text").textContent = "";
+    document.getElementById("privacy-exist").textContent = "-";
+    document.getElementById("privacy-reason").textContent = "-";
+    document.getElementById("privacy-comparison").style.display = "none";
+}
+
+// ============================================================================
 // 로딩 인디케이터
 // ============================================================================
 
@@ -799,10 +970,5 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
     
-    // 서버 헬스 체크
-    apiCall("/health").then(health => {
-        console.log("서버 상태:", health.status);
-    }).catch(error => {
-        console.error("서버 연결 실패:", error);
-    });
-});
+    // Privacy Removal 버튼 이벤트
+    privacyRemovalBtn?.addEventListener("click", processPrivacyRemoval);

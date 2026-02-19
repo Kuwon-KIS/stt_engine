@@ -232,7 +232,91 @@ class STTService:
                 "error": "unknown",
                 "message": str(e)
             }
-
-
-# 싱글톤 인스턴스
-stt_service = STTService()
+    
+    async def process_privacy_removal(
+        self,
+        text: str,
+        prompt_type: str = "privacy_remover_default_v6"
+    ) -> dict:
+        """
+        Privacy Removal 처리
+        STT 결과에서 개인정보를 자동으로 탐지 및 마스킹
+        
+        Args:
+            text: 처리할 텍스트 (STT 결과)
+            prompt_type: 사용할 프롬프트 타입
+        
+        Returns:
+            {
+                "success": bool,
+                "privacy_exist": "Y/N",
+                "exist_reason": "발견된 개인정보 사유",
+                "privacy_rm_text": "처리된 텍스트 (마스킹됨)"
+            }
+        """
+        try:
+            if not text or not text.strip():
+                return {
+                    "success": False,
+                    "error": "텍스트가 비어있습니다",
+                    "privacy_rm_text": ""
+                }
+            
+            logger.info(f"[Privacy Removal] 처리 시작: {len(text)} 글자, 프롬프트: {prompt_type}")
+            
+            async with aiohttp.ClientSession() as session:
+                payload = {
+                    "text": text,
+                    "prompt_type": prompt_type
+                }
+                
+                headers = {
+                    "Content-Type": "application/json"
+                }
+                
+                # Privacy Removal은 시간이 더 소요될 수 있으므로 타임아웃 더 길게
+                timeout_seconds = 600  # 10분
+                
+                try:
+                    async with session.post(
+                        f"{self.api_url}/api/privacy-removal/process",
+                        json=payload,
+                        headers=headers,
+                        timeout=aiohttp.ClientTimeout(total=timeout_seconds)
+                    ) as response:
+                        result = await response.json()
+                        
+                        if response.status == 200 and result.get("success"):
+                            logger.info(f"[Privacy Removal] 처리 완료: 개인정보 포함={result.get('privacy_exist')}")
+                            return result
+                        else:
+                            error_msg = result.get("error") or "알 수 없는 오류"
+                            logger.error(f"[Privacy Removal] API 오류: {error_msg}")
+                            return {
+                                "success": False,
+                                "error": error_msg,
+                                "privacy_rm_text": text  # Fallback: 원본 반환
+                            }
+                
+                except asyncio.TimeoutError:
+                    logger.error(f"[Privacy Removal] 타임아웃 ({timeout_seconds}초)")
+                    return {
+                        "success": False,
+                        "error": f"처리 타임아웃 ({timeout_seconds}초)",
+                        "privacy_rm_text": text
+                    }
+                except Exception as api_error:
+                    logger.error(f"[Privacy Removal] API 통신 오류: {api_error}")
+                    return {
+                        "success": False,
+                        "error": f"API 통신 오류: {str(api_error)}",
+                        "privacy_rm_text": text
+                    }
+        
+        except Exception as e:
+            logger.error(f"[Privacy Removal] 처리 오류: {e}", exc_info=True)
+            return {
+                "success": False,
+                "error": str(e),
+                "privacy_rm_text": text if 'text' in locals() else ""
+            }
