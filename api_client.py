@@ -1,6 +1,24 @@
 #!/usr/bin/env python3
 """
 STT API 클라이언트 - 테스트 및 통합용
+
+이 파일은 STT API 서버와 상호작용하기 위한 클라이언트 라이브러리입니다.
+
+구조:
+- STTClient: 기본 STT 트랜스크립션 클라이언트
+- PrivacyRemovalClient: Privacy Removal 기능 테스트용 (선택사항)
+- 커맨드라인 도구: 직접 실행 가능
+
+사용 예시:
+1. Python 코드에서:
+   from api_client import STTClient
+   client = STTClient("http://localhost:8003")
+   result = client.transcribe("audio.wav")
+
+2. 커맨드라인에서:
+   python3 api_client.py --file audio.wav
+   python3 api_client.py --health
+   python3 api_client.py --file audio.wav --remove-privacy
 """
 
 import requests
