@@ -270,10 +270,54 @@ RUN pip install -r requirements.txt
 
 ---
 
-## 📝 다음 단계
+## ✅ 코드 문법 검증 (Phase 5 완료)
+
+### Python 파일 검증
+모든 Python 파일이 **문법 오류 없음**을 확인했습니다.
+
+| 파일 | 상태 | 역할 |
+|------|------|------|
+| `api_server.py` | ✅ | 성능 모니터 통합 |
+| `utils/performance_monitor.py` | ✅ | CPU/RAM/GPU 측정 |
+| `web_ui/main.py` | ✅ | 성능 데이터 저장 |
+| `web_ui/models/schemas.py` | ✅ | PerformanceMetrics 모델 |
+| `web_ui/services/batch_service.py` | ✅ | 배치 성능 추적 |
+| `web_ui/services/file_service.py` | ✅ | 성능 로그 저장 |
+
+### 프론트엔드 파일 검증
+| 파일 | 상태 | 검증 항목 |
+|------|------|---------|
+| `web_ui/templates/index.html` | ✅ | HTML 문법 |
+| `web_ui/static/css/style.css` | ✅ | 괄호 짝 { } |
+| `web_ui/static/js/main.js` | ✅ | 괄호 짝 { } ( ) |
+| `web_ui/static/js/batch_performance.js` | ✅ | 괄호 짝 { } ( ) |
+
+---
+
+## 📁 문서 정리 완료 (Phase 5)
+
+### 루트 마크다운 파일 정리
+
+**필수 파일 (루트에 유지)**:
+- `README.md` - 프로젝트 개요
+- `QUICKSTART.md` - 5분 빠른 시작
+
+**이동된 파일 (docs/로 이동)**:
+- `BATCH_PROCESSING_GUIDE.md` → `docs/`
+- `FASTER_WHISPER_TURBO_FIX.md` → `docs/`
+- `SETUP_WEB_UI.md` → `docs/`
+- `WEB_UI_ARCHITECTURE.md` → `docs/`
+- `WEB_UI_DOCKER_DEPLOYMENT_COMPLETE.md` → `docs/`
+
+**Git 커밋**: `a90d253` - "Organize: Move non-essential markdown files to docs/ folder"
+
+---
+
+## 📝 배포 및 테스트
 
 ### 배포 준비
 1. Docker 이미지 빌드 (자동으로 requirements.txt 설치)
+   - `nvidia-ml-py3>=7.2.0`이 자동 설치됨
 2. 로컬 테스트 (성능 모니터링 정상 작동 확인)
 3. 프로덕션 배포 (오프라인 환경)
 
@@ -300,6 +344,19 @@ curl http://localhost:8003/transcribe -F "file=@audio.wav" | jq '.performance'
 
 ---
 
-**작성 날짜**: 2024년  
-**상태**: ✅ 모든 구현 완료 및 검증됨  
+## 📊 최종 커밋 로그
+
+```
+a90d253 Organize: Move non-essential markdown files to docs/
+0364163 Phase 5: Update documentation with performance monitoring features
+ce72120 Phase 4: Add batch performance display
+0023ac7 Phase 3: Display performance metrics in single-file results
+9a4381c Phase 2: Implement batch performance tracking and logging
+4d3e713 Phase 1: Implement API server performance monitoring
+```
+
+---
+
+**작성 날짜**: 2026년 2월  
+**최종 상태**: ✅ 모든 구현 완료 및 검증됨  
 **배포 준비**: 준비 완료
