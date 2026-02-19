@@ -545,6 +545,171 @@ STT_DEVICE=cpu
 
 ---
 
+## � Build & Deployment Strategy
+
+### Architecture Impact
+
+**변경 영향:**
+```
+Web UI (Port 8100) ← 호환성 완벽 유지 ✅
+  ↓
+STT Engine (Port 8003) ← 새로운 Privacy Removal 기능 추가 ✨
+  ├─ /transcribe (기존 + remove_privacy 파라미터)
+  ├─ /api/privacy-removal/process (신규)
+  └─ /api/privacy-removal/prompts (신규)
+```
+
+### 빌드 전략
+
+#### Phase 1: STT Engine 빌드 (지금)
+
+```bash
+# 1. STT Engine 빌드 (Privacy Removal 포함)
+bash build-engine-image.sh
+
+# 또는 수동으로
+docker build -t stt-engine:latest .
+
+# 2. 확인
+docker images | grep stt-engine
+```
+
+**특징:**
+- Privacy Removal 기능 포함
+- Backward compatible (기존 호출 그대로 작동)
+- Web UI는 변경 불필요
+
+#### Phase 2: Web UI 통합 (다음)
+
+Web UI에서 전체 Privacy Removal 프로세스를 trigger할 수 있도록 확장:
+
+**추가될 기능:**
+1. **STT 결과 화면에서 Privacy Removal 옵션**
+   - 체크박스: "개인정보 제거"
+   - 드롭다운: 프롬프트 타입 선택
+
+2. **API 흐름:**
+   ```
+   User uploads audio
+        ↓
+   STT (transcribe)
+        ↓
+   Web UI: "개인정보 제거?" 체크박스 제시
+        ↓
+   선택 시: /api/privacy-removal/process 호출
+        ↓
+   결과 표시
+   ```
+
+3. **필요한 코드 변경:**
+   - `web_ui/templates/index.html`: UI 추가 (체크박스)
+   - `web_ui/static/js/main.js`: Privacy removal 호출 로직
+   - `web_ui/services/stt_service.py`: API 통신 추가
+   - `web_ui/main.py`: 라우트 추가
+
+### API Backward Compatibility
+
+**중요:** 모든 기존 코드는 그대로 작동합니다
+
+| 시나리오 | /transcribe 호출 | 결과 |
+|---------|-----------------|------|
+| remove_privacy 없음 | 기존 코드 그대로 | ✅ 정상 작동 |
+| remove_privacy=false | 명시적으로 비활성화 | ✅ 정상 작동 |
+| remove_privacy=true | Privacy removal 활성화 | ✅ 새 기능 |
+
+**Web UI 관점:**
+- 현재: 기존 Web UI 이미지 그대로 사용 가능 ✅
+- 향후: UI 개선 후 Web UI만 재빌드
+
+---
+
+## 🔧 Web UI Integration (Planned)
+
+### When: Phase 2 (After STT Engine deployment)
+
+### Architecture
+
+```
+┌─────────────────────────────────────────┐
+│  Web UI Frontend (web_ui/templates/)    │
+│  ┌───────────────────────────────────┐  │
+│  │ 1. Audio Upload                   │  │
+│  │ 2. STT Results Display            │  │
+│  │ 3. Privacy Removal Options ✨     │  │
+│  │    - Checkbox: Enable/Disable     │  │
+│  │    - Dropdown: Prompt Type        │  │
+│  │ 4. Processed Results Display      │  │
+│  └───────────────────────────────────┘  │
+│              ↓ (API calls)              │
+├─────────────────────────────────────────┤
+│  Web UI Backend (web_ui/main.py)        │
+│  ├─ POST /api/transcribe/               │
+│  └─ POST /api/privacy-removal/ (신규)   │
+│              ↓ (HTTP)                   │
+├─────────────────────────────────────────┤
+│  STT Engine (api_server/app.py)         │
+│  ├─ POST /transcribe                    │
+│  └─ POST /api/privacy-removal/process   │
+└─────────────────────────────────────────┘
+```
+
+### Implementation Checklist
+
+- [ ] **web_ui/templates/index.html**
+  - [ ] Privacy removal 옵션 UI 추가
+  - [ ] 결과 표시 영역 개선
+
+- [ ] **web_ui/static/js/main.js**
+  - [ ] Privacy removal 호출 함수 추가
+  - [ ] UI 이벤트 리스너 등록
+  - [ ] 결과 처리 로직
+
+- [ ] **web_ui/main.py**
+  - [ ] Privacy removal 라우트 추가
+  - [ ] 에러 처리
+
+- [ ] **web_ui/services/stt_service.py**
+  - [ ] Privacy removal 메서드 추가
+  - [ ] STT Engine API 호출
+
+- [ ] **배포**
+  - [ ] Web UI 이미지 빌드
+  - [ ] Docker 재배포
+
+---
+
+## 📊 Deployment Checklist
+
+### Immediate (지금)
+
+- [x] Privacy Removal 기능 구현 완료
+- [x] STT Engine API 완성
+- [ ] **STT Engine 빌드 및 배포**
+  ```bash
+  bash build-engine-image.sh
+  docker-compose up -d
+  ```
+
+- [ ] 기본 테스트
+  ```bash
+  # 1. STT Engine 상태 확인
+  curl http://localhost:8003/health
+  
+  # 2. 새 엔드포인트 확인
+  curl http://localhost:8003/api/privacy-removal/prompts
+  
+  # 3. Web UI 작동 확인
+  curl http://localhost:8100/
+  ```
+
+### Future (다음 단계)
+
+- [ ] Web UI Privacy Removal 기능 추가
+- [ ] Web UI 빌드 및 배포
+- [ ] 통합 테스트
+
+---
+
 ## 📝 Notes
 
 - 기존 vLLM 서비스를 재사용 (새로 만들지 않음)
@@ -552,10 +717,17 @@ STT_DEVICE=cpu
 - 프롬프트는 메모리에 캐싱되어 성능 최적화
 - 에러 시 원본 텍스트 반환으로 안정성 확보
 
+### API Backward Compatibility
+
+Web UI와 STT Engine은 **완전히 독립적**:
+- Web UI는 기존 이미지로 계속 사용 가능
+- Privacy Removal은 **선택사항** (optional parameter)
+- 기존 코드는 100% 호환
+
 ---
 
-**Document Version:** 1.0
-**Last Updated:** 2024
-**Status:** Production Ready ✅
+**Document Version:** 2.0
+**Last Updated:** 2026년 2월
+**Status:** Phase 1 Complete ✅ | Phase 2 Planning 📋
 
 For latest updates, visit: [Repository](https://github.com/Kuwon-KIS/stt_engine)
