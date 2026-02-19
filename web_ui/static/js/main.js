@@ -103,33 +103,96 @@ const streamingCheckbox = document.getElementById("streaming-checkbox");
 const setGlobalBackendCheckbox = document.getElementById("set-global-backend-checkbox");
 const currentApiBackend = document.getElementById("current-api-backend");
 
-// 드래그 & 드롭
-dropZone.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    dropZone.classList.add("active");
-});
+// ============================================================================
+// 파일 업로드 이벤트 핸들러 설정 (DOMContentLoaded 후)
+// ============================================================================
 
-dropZone.addEventListener("dragleave", () => {
-    dropZone.classList.remove("active");
-});
-
-dropZone.addEventListener("drop", (e) => {
-    e.preventDefault();
-    dropZone.classList.remove("active");
-    handleFileSelect(e.dataTransfer.files[0]);
-});
-
-dropZone.addEventListener("click", () => fileInput.click());
-fileInput.addEventListener("change", (e) => {
-    if (e.target.files.length) {
-        handleFileSelect(e.target.files[0]);
+/**
+ * 모든 파일 업로드 이벤트 리스너 등록
+ */
+function initializeFileUploadHandlers() {
+    console.log("[Init] 파일 업로드 핸들러 초기화 시작");
+    
+    if (!dropZone) {
+        console.error("[Error] drop-zone 요소를 찾을 수 없습니다");
+        return;
     }
-});
+    
+    if (!fileInput) {
+        console.error("[Error] file-input 요소를 찾을 수 없습니다");
+        return;
+    }
+    
+    if (!browseBtn) {
+        console.error("[Error] browse-btn 요소를 찾을 수 없습니다");
+        return;
+    }
 
-browseBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    fileInput.click();
-});
+    // 드래그 & 드롭 이벤트
+    // dragover: 파일을 드래그하여 영역 위에 올렸을 때
+    dropZone.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.add("active");
+        console.log("[DragDrop] dragover 이벤트 발생");
+    });
+
+    // dragleave: 드래그하던 파일을 영역 밖으로 나갔을 때
+    dropZone.addEventListener("dragleave", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.remove("active");
+        console.log("[DragDrop] dragleave 이벤트 발생");
+    });
+
+    // dragend: 드래그 작업이 완료되었을 때
+    dropZone.addEventListener("dragend", (e) => {
+        e.preventDefault();
+        dropZone.classList.remove("active");
+        console.log("[DragDrop] dragend 이벤트 발생");
+    });
+
+    // drop: 파일을 드롭했을 때
+    dropZone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.remove("active");
+        
+        console.log("[DragDrop] drop 이벤트 발생, 파일 수:", e.dataTransfer.files.length);
+        
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            const file = e.dataTransfer.files[0];
+            console.log("[DragDrop] 드롭된 파일:", file.name, file.type, file.size);
+            handleFileSelect(file);
+        }
+    });
+
+    // 드롭 존 클릭 이벤트 (파일 입력 트리거)
+    dropZone.addEventListener("click", (e) => {
+        console.log("[Click] drop-zone 클릭 감지");
+        fileInput.click();
+    });
+
+    // 파일 입력 요소의 change 이벤트
+    fileInput.addEventListener("change", (e) => {
+        console.log("[FileInput] change 이벤트 발생, 파일 수:", e.target.files.length);
+        if (e.target.files && e.target.files.length > 0) {
+            const file = e.target.files[0];
+            console.log("[FileInput] 선택된 파일:", file.name, file.type, file.size);
+            handleFileSelect(file);
+        }
+    });
+
+    // "클릭하여 선택" 버튼 이벤트
+    browseBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log("[Browse] 버튼 클릭");
+        fileInput.click();
+    });
+    
+    console.log("[Init] 파일 업로드 핸들러 초기화 완료");
+}
 
 /**
  * 파일 선택 처리
@@ -718,6 +781,9 @@ function hideLoading() {
 
 document.addEventListener("DOMContentLoaded", () => {
     console.log("STT Web UI 로드됨");
+    
+    // 파일 업로드 핸들러 초기화 (반드시 먼저)
+    initializeFileUploadHandlers();
     
     // 글로벌 백엔드 정보 초기화
     fetchGlobalBackendInfo();
