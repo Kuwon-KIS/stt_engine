@@ -58,7 +58,11 @@ app = FastAPI(
 # 모델 초기화
 # 환경변수 STT_DEVICE로 cpu/cuda 선택 가능 (기본값: cpu)
 try:
-    model_path = Path(__file__).parent / "models" / "openai_whisper-large-v3-turbo"
+    # Docker 환경: /app/models에 마운트됨
+    # 로컬 개발: models/ 디렉토리 사용
+    docker_model_path = Path("/app/models/openai_whisper-large-v3-turbo")
+    local_model_path = Path(__file__).parent.parent / "models" / "openai_whisper-large-v3-turbo"
+    model_path = docker_model_path if docker_model_path.exists() else local_model_path
     device = os.getenv("STT_DEVICE", "cpu")
     
     # 환경변수로 compute_type 지정 가능 (기본값: device에 따라 자동)
