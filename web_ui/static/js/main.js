@@ -971,4 +971,4 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     
     // Privacy Removal 버튼 이벤트
-    privacyRemovalBtn?.addEventListener("click", processPrivacyRemoval);
+    privacyRemovalBtn?.addEventListener("click", processPrivacyRemoval);});
