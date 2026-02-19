@@ -50,6 +50,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# CSP (Content Security Policy) 헤더 설정 - 보안 프로그램 호환성 개선
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
+
+class CSPMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        # CSP 헤더 설정 - 보안 프로그램(Menlo Security 등)과의 호환성 개선
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' http://* https://*; "
+            "style-src 'self' 'unsafe-inline' http://* https://* https://fonts.googleapis.com; "
+            "font-src 'self' http://* https://* https://fonts.gstatic.com data:; "
+            "img-src 'self' http://* https://* data:; "
+            "connect-src 'self' http://* https://* wss://*; "
+            "frame-src 'self'; "
+            "object-src 'none';"
+        )
+        return response
+
+app.add_middleware(CSPMiddleware)
+
 # 정적 파일 마운트
 BASE_DIR = Path(__file__).parent
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
