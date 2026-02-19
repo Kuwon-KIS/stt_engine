@@ -18,10 +18,17 @@ from fastapi.responses import JSONResponse, FileResponse
 from pathlib import Path
 import tempfile
 import os
+import sys
 import logging
 import time
 import json
 import wave
+
+# Docker 환경에서 모듈을 찾을 수 있도록 경로 설정
+app_root = Path(__file__).parent.parent
+if str(app_root) not in sys.path:
+    sys.path.insert(0, str(app_root))
+
 from stt_engine import WhisperSTT
 from stt_utils import check_memory_available, check_audio_file
 from utils.performance_monitor import PerformanceMonitor

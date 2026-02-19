@@ -26,11 +26,21 @@ api_server/
 
 if __name__ == "__main__":
     import sys
+    import os
+    from pathlib import Path
+    
+    # Docker 환경에서 Python path 설정
+    # /app에서 실행될 때 api_server 패키지를 찾을 수 있도록 설정
+    app_root = Path(__file__).parent
+    if str(app_root) not in sys.path:
+        sys.path.insert(0, str(app_root))
+    
     import uvicorn
+    
+    # 이제 api_server 패키지를 import할 수 있음
     from api_server.app import app
 
     # 환경변수로 설정 가능
-    import os
     host = os.getenv("API_HOST", "0.0.0.0")
     port = int(os.getenv("API_PORT", "8003"))
 

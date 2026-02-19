@@ -20,6 +20,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # 프로젝트 파일 복사
 COPY main.py api_server.py stt_engine.py stt_utils.py ./
+COPY api_server/ ./api_server/
 COPY utils/ ./utils/
 
 # 모델, 오디오, 로그 디렉토리 생성
