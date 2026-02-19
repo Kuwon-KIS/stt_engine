@@ -36,6 +36,8 @@ class LLMProcessorForPrivacy:
         self.vllm_client = vllm_client
         
         if prompts_dir is None:
+            # Docker 환경: /app/api_server/services/privacy_removal/prompts
+            # 로컬 개발: api_server/services/privacy_removal/prompts
             current_file_dir = Path(__file__).parent
             self.prompts_dir = current_file_dir / "prompts"
         else:
