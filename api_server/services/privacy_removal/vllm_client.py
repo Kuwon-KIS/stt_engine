@@ -28,12 +28,12 @@ class VLLMClient:
         VLLMClient 초기화
         
         Args:
-            base_url: vLLM 서버 URL (기본값: http://localhost:8000)
+            base_url: vLLM 서버 URL (기본값: http://localhost:8001)
             model_name: 모델명 (기본값: 환경변수 VLLM_MODEL 또는 기본값)
             timeout: 요청 타임아웃 (초)
         """
-        self.base_url = base_url or os.getenv("VLLM_API_URL", "http://localhost:8000")
-        self.model_name = model_name or os.getenv("VLLM_MODEL", "meta-llama/Llama-2-7b-hf")
+        self.base_url = base_url or os.getenv("VLLM_API_URL", "http://localhost:8001")
+        self.model_name = model_name or os.getenv("VLLM_MODEL", "Qwen3-30B-A3B-Thinking-2507-FP8")
         self.timeout = timeout
         
         logger.info(f"[VLLMClient] URL: {self.base_url}, Model: {self.model_name}")

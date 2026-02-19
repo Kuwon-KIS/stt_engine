@@ -33,8 +33,8 @@ class PrivacyRemovalService:
         PrivacyRemovalService 초기화
         
         Args:
-            vllm_base_url: vLLM 서버 URL (기본값: localhost:8000)
-            vllm_model: vLLM 모델명
+            vllm_base_url: vLLM 서버 URL (기본값: localhost:8001)
+            vllm_model: vLLM 모델명 (기본값: Qwen3-30B-A3B-Thinking-2507-FP8)
         """
         self.vllm_client = VLLMClient(
             base_url=vllm_base_url,
