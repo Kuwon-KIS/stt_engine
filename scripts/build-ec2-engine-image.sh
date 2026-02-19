@@ -140,19 +140,21 @@ check_existing_image() {
     
     if docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "^$IMAGE_TAG$"; then
         log_warn "기존 이미지가 있습니다: $IMAGE_TAG"
-        log_info "옵션:"
-        log_info "  1. 기존 이미지 사용 (엔터 누르기)"
-        log_info "  2. 새로 빌드 (rebuild 입력)"
+        echo ""
+        echo "📋 선택 옵션:"
+        echo "   [1] 기존 이미지 사용 (기본값 - 엔터만 누르기)"
+        echo "   [2] 새로 빌드 (rebuild 입력)"
+        echo ""
         
-        read -p "선택 (기본: 사용): " choice
+        read -p "⚙️  선택 입력 >> " choice
         
-        if [ "$choice" != "rebuild" ]; then
-            log_success "기존 이미지 사용"
+        if [ "$choice" != "rebuild" ] && [ "$choice" != "2" ]; then
+            log_success "기존 이미지 사용: $IMAGE_TAG"
             echo "SKIP_BUILD=1"
             return 0
         fi
         
-        log_info "기존 이미지 제거 중..."
+        log_warn "기존 이미지 삭제 및 새로 빌드합니다"
         docker rmi "$IMAGE_TAG" || true
     fi
     

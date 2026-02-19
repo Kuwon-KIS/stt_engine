@@ -106,11 +106,18 @@ log_step "2" "이전 이미지 확인"
 
 if docker images | grep -q "^stt-web-ui"; then
     log_success "기존 이미지를 찾았습니다"
-    read -p "기존 이미지를 삭제하고 진행하시겠습니까? (y/n): " -n 1 -r
+    echo ""
+    echo "📋 선택 옵션:"
+    echo "   [1] 기존 이미지 사용 (기본값 - n 입력)"
+    echo "   [2] 새로 빌드 (y 입력)"
+    echo ""
+    read -p "⚙️  기존 이미지를 삭제하고 새로 빌드하시겠습니까? (y/n): " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         docker rmi stt-web-ui:* || true
         log_success "기존 이미지 삭제 완료"
+    else
+        log_success "기존 이미지 사용"
     fi
 else
     log_success "기존 이미지 없음 (새로운 빌드)"
