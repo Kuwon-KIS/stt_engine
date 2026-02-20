@@ -3,6 +3,7 @@ Web UI 서버 설정
 """
 import os
 from pathlib import Path
+from datetime import timedelta
 
 # 기본 경로
 BASE_DIR = Path(__file__).parent
@@ -25,6 +26,41 @@ UPLOAD_DIR = DATA_DIR / "uploads"
 RESULT_DIR = DATA_DIR / "results"
 BATCH_INPUT_DIR = DATA_DIR / "batch_input"
 DB_PATH = DATA_DIR / "db.sqlite"
+
+# === Phase 1: 데이터베이스 설정 ===
+DATABASE_URL = f"sqlite:///{DATA_DIR / 'stt_web.db'}"
+
+# === Phase 1: 세션 설정 ===
+SESSION_SECRET_KEY = os.getenv("SESSION_SECRET_KEY", "dev-secret-key-change-in-production")
+SESSION_TIMEOUT = timedelta(hours=8)
+
+# === Phase 1: 인증된 직원 정보 ===
+# 프로덕션: LDAP 또는 DB에서 동적 조회 권장
+ALLOWED_EMPLOYEES = {
+    "10001": {"name": "김철수", "dept": "영업팀"},
+    "10002": {"name": "이영희", "dept": "기획팀"},
+    "10003": {"name": "박민수", "dept": "기술팀"},
+}
+
+# === Phase 1: AI Agent 설정 ===
+AI_AGENTS = {
+    "stt": {
+        "url": os.getenv("STT_AGENT_URL", "http://localhost:8001"),
+        "timeout": int(os.getenv("STT_AGENT_TIMEOUT", 300))
+    },
+    "classification": {
+        "url": os.getenv("CLASSIFICATION_AGENT_URL", "http://localhost:8002"),
+        "timeout": int(os.getenv("CLASSIFICATION_AGENT_TIMEOUT", 60))
+    },
+    "improper_detection": {
+        "url": os.getenv("IMPROPER_DETECTION_AGENT_URL", "http://localhost:8003"),
+        "timeout": int(os.getenv("IMPROPER_DETECTION_AGENT_TIMEOUT", 120))
+    },
+    "incomplete_detection": {
+        "url": os.getenv("INCOMPLETE_DETECTION_AGENT_URL", "http://localhost:8004"),
+        "timeout": int(os.getenv("INCOMPLETE_DETECTION_AGENT_TIMEOUT", 120))
+    }
+}
 
 # 디렉토리 생성
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)

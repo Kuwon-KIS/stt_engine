@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from pathlib import Path
 import logging
 
@@ -21,8 +22,12 @@ from config import (
     WEB_HOST, WEB_PORT, 
     CORS_ORIGINS,
     UPLOAD_DIR, RESULT_DIR, BATCH_INPUT_DIR,
-    STT_API_URL
+    STT_API_URL,
+    SESSION_SECRET_KEY
 )
+# Phase 1: 인증 및 DB 임포트
+from app.utils.db import init_db
+from app.routes import auth
 from models.schemas import (
     FileUploadResponse, TranscribeRequest, TranscribeResponse,
     BatchFileListResponse, BatchStartRequest, BatchStartResponse,
@@ -39,6 +44,9 @@ app = FastAPI(
     version="1.0.0",
     description="금융상품 판매 사전 녹취 음성을 텍스트로 변환하여 불완전판매 예방 및 규정 준수 검토"
 )
+
+# === Phase 1: SessionMiddleware 등록 (CORS 이전에 등록) ===
+app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET_KEY)
 
 # CORS 설정
 app.add_middleware(
@@ -77,6 +85,11 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 
 # 템플릿
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
+
+# ============================================================================
+# === Phase 1: 인증 라우터 등록 ===
+# ============================================================================
+app.include_router(auth.router)
 
 # ============================================================================
 # 1. 대시보드 및 기본 라우트
@@ -609,6 +622,10 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 @app.on_event("startup")
 async def startup_event():
     """서버 시작"""
+    # === Phase 1: DB 초기화 ===
+    init_db()
+    logger.info("✅ Database initialized")
+    
     logger.info("=" * 60)
     logger.info("STT Web UI Server 시작")
     logger.info(f"주소: http://{WEB_HOST}:{WEB_PORT}")
