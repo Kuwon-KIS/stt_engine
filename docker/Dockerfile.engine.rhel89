@@ -97,7 +97,7 @@ RUN python3.11 -m pip install --upgrade \
     pip setuptools wheel
 
 # ============================================================================
-# Step 7: PyTorch 및 CUDA 런타임 라이브러리 설치 (먼저 설치) - ROOT로 실행
+# Step 6: PyTorch 및 CUDA 런타임 라이브러리 설치 (먼저 설치) - ROOT로 실행
 # 
 # PyTorch 2.8.0 사용 - cu129 (CUDA 12.9) 공식 지원
 # PyTorch 2.6.0은 cu129 인덱스에서 사용 불가 (cu124만 지원)
@@ -116,7 +116,7 @@ RUN python3.11 -m pip install \
 
 # ============================================================================
 # ============================================================================
-# Step 8: pip + setuptools + wheel 업그레이드 (모든 패키지 설치 준비)
+# Step 7: pip + setuptools + wheel 업그레이드 (모든 패키지 설치 준비)
 # ============================================================================
 # pip를 먼저 업그레이드 → 최신 pip로 setuptools/wheel 설치
 # setuptools의 pkg_resources가 librosa(transformers 백엔드)에서 필요함
@@ -125,7 +125,7 @@ RUN python3.11 -m pip install --no-cache-dir --upgrade pip && \
     python3.11 -m pip install --no-cache-dir --upgrade --force-reinstall setuptools>=68.0 wheel
 
 # ============================================================================
-# Step 9: 모든 애플리케이션 의존성 설치 (모든 백엔드 활용 가능)
+# Step 8: 모든 애플리케이션 의존성 설치 (모든 백엔드 활용 가능)
 # ============================================================================
 # PyTorch 2.8.0이 이미 설치됨 (Step 7)
 # setuptools>=68.0이 이미 설치됨 (Step 8)
@@ -181,16 +181,16 @@ RUN mkdir -p /usr/local/lib /usr/local/lib64 && \
 ENV LD_LIBRARY_PATH="/opt/app-root/lib/python3.11/site-packages/nvidia/cudnn/lib:/opt/app-root/lib/python3.11/site-packages/nvidia/cusparse/lib:/opt/app-root/lib/python3.11/site-packages/nvidia/cusparselt/lib:/opt/app-root/lib/python3.11/site-packages/nvidia/cublas/lib:/opt/app-root/lib/python3.11/site-packages/nvidia/cuda_runtime/lib:/opt/app-root/lib/python3.11/site-packages/cusparselt/lib:/opt/app-root/lib/python3.11/site-packages/torch/lib:/usr/local/lib:/usr/local/lib64"
 
 # ============================================================================
-# Step 10: 라이브러리 검증 (빌드 시 확인)
+# Step 9: 라이브러리 검증 (빌드 시 확인)
 # ============================================================================
-# Verify that critical CUDA libraries are discoverable
-RUN python3.11 << 'EOF'
+
+RUN python3.11 << 'VERIFY_EOF'
 import ctypes
 import os
+import subprocess
 
-print("\n=== CUDA Library Verification ===")
+print('\n=== CUDA Library Verification ===')
 
-# Critical libraries that PyTorch needs
 libs_to_find = [
     'libcusparseLt.so.0',
     'libcublas.so.12',
@@ -199,25 +199,23 @@ libs_to_find = [
     'libcudnn.so.9',
 ]
 
-# Try to load each library
 for lib_name in libs_to_find:
     try:
         lib = ctypes.CDLL(lib_name)
-        print(f"✅ {lib_name}: FOUND")
+        print(f'✅ {lib_name}: FOUND')
     except OSError as e:
-        print(f"❌ {lib_name}: NOT FOUND - {e}")
+        print(f'❌ {lib_name}: NOT FOUND - {e}')
 
-print("\n=== ldconfig cache ===")
-os.system("ldconfig -p | grep -E 'libcusparseLt|libcudnn|libcublas' | head -10")
+print('\n=== ldconfig cache ===')
+subprocess.run('ldconfig -p | grep -E "libcusparseLt|libcudnn|libcublas" | head -10', shell=True)
 
-print("\n=== Library paths ===")
-os.system("find /opt/app-root -name 'libcusparseLt*' -o -name 'libcudnn.so*' 2>/dev/null")
-os.system("find /usr/local -name 'libcusparseLt*' 2>/dev/null")
-
-EOF
+print('\n=== Library paths ===')
+subprocess.run('find /opt/app-root -name libcusparseLt* -o -name libcudnn.so* 2>/dev/null', shell=True)
+subprocess.run('find /usr/local -name libcusparseLt* 2>/dev/null', shell=True)
+VERIFY_EOF
 
 # ============================================================================
-# Step 11: 디렉토리 생성 및 권한 설정 (ROOT로 실행)
+# Step 10: 디렉토리 생성 및 권한 설정 (ROOT로 실행)
 # 
 # 주의: USER 전환 BEFORE 모든 디렉토리/권한 설정 완료
 # ROOT 권한이 필요한 mkdir/chown은 USER 전환 전에 완료해야 함
@@ -240,7 +238,7 @@ RUN mkdir -p /opt/app-root/src/.cache && \
 USER stt-user
 
 # ============================================================================
-# Step 12: 애플리케이션 파일 복사 (stt-user 권한)
+# Step 11: 애플리케이션 파일 복사 (stt-user 권한)
 # ============================================================================
 
 # 애플리케이션 파일 복사
@@ -258,7 +256,7 @@ ENV HF_HOME=/app/models
 ENV STT_DEVICE=cpu
 
 # ============================================================================
-# Step 13: 헬스 체크 및 포트 노출
+# Step 12: 헬스 체크 및 포트 노출
 # ============================================================================
 
 # Health check: 60초마다 체크, 10초 타임아웃, 3번 실패 시 unhealthy
@@ -269,7 +267,7 @@ HEALTHCHECK --interval=60s --timeout=10s --start-period=5s --retries=3 \
 EXPOSE 8003
 
 # ============================================================================
-# Step 14: 시작 명령어
+# Step 13: 시작 명령어
 # ============================================================================
 
 CMD ["python3.11", "main.py"]
