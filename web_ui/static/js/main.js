@@ -19,7 +19,7 @@ const API_BASE = "/api";
 // ============================================================================
 
 /**
- * API 호출 함수
+ * API 호출 함수 (ENHANCED)
  */
 async function apiCall(endpoint, method = "GET", data = null) {
     const options = {
@@ -33,18 +33,36 @@ async function apiCall(endpoint, method = "GET", data = null) {
         options.body = JSON.stringify(data);
     }
 
+    console.log(`[API] ${method} ${endpoint}`, data || "");
+
     try {
         const response = await fetch(API_BASE + endpoint, options);
-        const json = await response.json();
-
-        if (!response.ok) {
-            throw new Error(json.error || json.detail || "요청 실패");
+        
+        // 응답 상태 로깅
+        console.log(`[API Response] ${endpoint}: ${response.status} ${response.statusText}`);
+        
+        let json;
+        try {
+            json = await response.json();
+        } catch (parseError) {
+            console.error(`[API Parse Error] ${endpoint}:`, parseError);
+            throw new Error(`응답 파싱 실패: ${response.statusText}`);
         }
 
+        if (!response.ok) {
+            // 에러 응답 처리 (ENHANCED)
+            const errorMessage = json.error || json.detail || json.error_code || "요청 실패";
+            const errorCode = json.error_code || "UNKNOWN";
+            console.error(`[API Error] ${endpoint} (${errorCode}):`, errorMessage);
+            throw new Error(`[${errorCode}] ${errorMessage}`);
+        }
+
+        console.log(`[API Success] ${endpoint}:`, json);
         return json;
+        
     } catch (error) {
-        console.error("API 호출 실패:", error);
-        showNotification(error.message, "error");
+        console.error(`[API Call Failed] ${endpoint}:`, error.message);
+        // UI 알림 없음 - 호출처에서 처리
         throw error;
     }
 }
@@ -323,11 +341,21 @@ async function transcribeFile() {
         const backend = backendSelect.value || undefined;
         const isStream = streamingCheckbox.checked;
         
+        // 처리 옵션 (NEW)
+        const privacyRemoval = document.getElementById("privacy-removal-checkbox")?.checked || false;
+        const classification = document.getElementById("classification-checkbox")?.checked || false;
+        const aiAgent = document.getElementById("ai-agent-checkbox")?.checked || false;
+        
+        console.log("[Transcribe] 처리 옵션:", { privacy_removal: privacyRemoval, classification, ai_agent });
+        
         const result = await apiCall("/transcribe/", "POST", {
             file_id: uploadResult.file_id,
             language: language,
             backend: backend,
-            is_stream: isStream
+            is_stream: isStream,
+            privacy_removal: privacyRemoval,      // NEW
+            classification: classification,        // NEW
+            ai_agent: aiAgent                     // NEW
         });
 
         hideLoading();
@@ -339,6 +367,7 @@ async function transcribeFile() {
     } catch (error) {
         hideLoading();
         showNotification(`분석 실패: ${error.message}`, "error");
+        console.error("[Transcribe Error]", error);
     }
 }
 
@@ -358,6 +387,24 @@ function displayResult(result) {
     document.getElementById("metric-word-count").textContent = wordCount.toString();
     
     document.getElementById("metric-backend").textContent = result.backend || "-";
+    
+    // 처리 단계 표시 (NEW)
+    if (result.processing_steps) {
+        console.log("[Result] Processing Steps:", result.processing_steps);
+        displayProcessingSteps(result.processing_steps);
+    }
+    
+    // Privacy Removal 결과 표시 (NEW)
+    if (result.privacy_removal) {
+        console.log("[Result] Privacy Removal:", result.privacy_removal);
+        displayPrivacyResults(result.privacy_removal);
+    }
+    
+    // Classification 결과 표시 (NEW)
+    if (result.classification) {
+        console.log("[Result] Classification:", result.classification);
+        displayClassificationResults(result.classification);
+    }
     
     // 성능 메트릭 표시
     if (result.performance) {
@@ -420,6 +467,70 @@ function displayResult(result) {
     document.getElementById("result-section").scrollIntoView({ behavior: "smooth" });
 }
 
+/**
+ * 처리 단계 표시 (NEW)
+ */
+function displayProcessingSteps(steps) {
+    const section = document.getElementById("processing-steps-section");
+    const content = document.getElementById("processing-steps-content");
+    
+    if (!section || !content) return;
+    
+    const stepsHtml = `
+        <div style="padding: 8px; background: ${steps.stt ? '#d4edda' : '#f8d7da'}; border-radius: 4px;">
+            <span>${steps.stt ? '✅' : '❌'} STT 변환</span>
+        </div>
+        <div style="padding: 8px; background: ${steps.privacy_removal ? '#d4edda' : '#f8d7da'}; border-radius: 4px;">
+            <span>${steps.privacy_removal ? '✅' : '❌'} 개인정보 제거</span>
+        </div>
+        <div style="padding: 8px; background: ${steps.classification ? '#d4edda' : '#f8d7da'}; border-radius: 4px;">
+            <span>${steps.classification ? '✅' : '❌'} 통화 분류</span>
+        </div>
+        <div style="padding: 8px; background: ${steps.ai_agent ? '#d4edda' : '#f8d7da'}; border-radius: 4px;">
+            <span>${steps.ai_agent ? '✅' : '❌'} AI Agent 처리</span>
+        </div>
+    `;
+    
+    content.innerHTML = stepsHtml;
+    section.style.display = "block";
+}
+
+/**
+ * Privacy Removal 결과 표시 (NEW)
+ */
+function displayPrivacyResults(privacy) {
+    const section = document.getElementById("privacy-result-section");
+    if (!section) return;
+    
+    const hasPrivacy = privacy.exist ? "예 (개인정보 감지됨)" : "아니오";
+    const reason = privacy.reason || "확인되지 않음";
+    const processedText = privacy.processed_text || "-";
+    
+    document.getElementById("privacy-exist").textContent = hasPrivacy;
+    document.getElementById("privacy-reason").textContent = reason;
+    document.getElementById("privacy-text").textContent = processedText;
+    
+    section.style.display = "block";
+    console.log("[Privacy Results] 표시됨");
+}
+
+/**
+ * Classification 결과 표시 (NEW)
+ */
+function displayClassificationResults(classification) {
+    const section = document.getElementById("classification-result-section");
+    if (!section) return;
+    
+    document.getElementById("class-code").textContent = classification.code || "-";
+    document.getElementById("class-category").textContent = classification.category || "-";
+    document.getElementById("class-confidence").textContent = 
+        classification.confidence ? `${(classification.confidence * 100).toFixed(1)}%` : "-";
+    document.getElementById("class-reason").textContent = classification.reason || "-";
+    
+    section.style.display = "block";
+    console.log("[Classification Results] 표시됨");
+}
+
 // 결과 액션
 document.getElementById("copy-btn")?.addEventListener("click", () => {
     const text = document.getElementById("result-text").textContent;
@@ -435,23 +546,27 @@ document.getElementById("download-txt-btn")?.addEventListener("click", () => {
     element.setAttribute("download", "result.txt");
     element.style.display = "none";
     document.body.appendChild(element);
+    console.log("[다운로드] TXT 파일 다운로드 시작");
     element.click();
     document.body.removeChild(element);
-    showNotification("파일이 다운로드되었습니다", "info");
+    showNotification("TXT 파일이 다운로드되었습니다", "info");
 });
 
 document.getElementById("download-json-btn")?.addEventListener("click", async () => {
     try {
+        console.log(`[다운로드] JSON 파일 다운로드 요청: ${currentFileId}`);
         const data = await apiCall(`/results/${currentFileId}/export?format=json`);
         const element = document.createElement("a");
         element.setAttribute("href", "data:application/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2)));
         element.setAttribute("download", "result.json");
         element.style.display = "none";
         document.body.appendChild(element);
+        console.log("[다운로드] JSON 파일 다운로드 시작");
         element.click();
         document.body.removeChild(element);
-        showNotification("파일이 다운로드되었습니다", "info");
+        showNotification("JSON 파일이 다운로드되었습니다", "info");
     } catch (error) {
+        console.error("[다운로드실패]", error);
         showNotification(`다운로드 실패: ${error.message}`, "error");
     }
 });
@@ -545,10 +660,20 @@ startBatchBtn?.addEventListener("click", async () => {
         startBatchBtn.disabled = true;
         startBatchBtn.textContent = "처리 중...";
 
+        // 처리 옵션 (NEW)
+        const privacyRemoval = document.getElementById("privacy-removal-checkbox")?.checked || false;
+        const classification = document.getElementById("classification-checkbox")?.checked || false;
+        const aiAgent = document.getElementById("ai-agent-checkbox")?.checked || false;
+        
+        console.log("[배치] 처리 옵션:", { privacy_removal: privacyRemoval, classification, ai_agent });
+
         const result = await apiCall("/batch/start/", "POST", {
             extension: batchExtensionInput.value || ".wav",
             language: batchLanguageSelect.value,
-            parallel_count: parseInt(batchParallelInput.value) || 2
+            parallel_count: parseInt(batchParallelInput.value) || 2,
+            privacy_removal: privacyRemoval,     // NEW
+            classification: classification,       // NEW
+            ai_agent: aiAgent                    // NEW
         });
 
         currentBatchId = result.batch_id;
@@ -560,6 +685,7 @@ startBatchBtn?.addEventListener("click", async () => {
 
     } catch (error) {
         showNotification(`배치 처리 시작 실패: ${error.message}`, "error");
+        console.error("[배치 Error]", error);
     } finally {
         startBatchBtn.disabled = false;
         startBatchBtn.textContent = "배치 처리 시작";
@@ -567,14 +693,16 @@ startBatchBtn?.addEventListener("click", async () => {
 });
 
 /**
- * 배치 진행 상황 모니터링
+ * 배치 진행 상황 모니터링 (ENHANCED)
  */
 function startBatchProgressMonitoring(batchId) {
     clearInterval(batchProgressInterval);
+    let consoleErrorCount = 0;
 
     // 즉시 첫 번째 업데이트
     async function updateProgress() {
         try {
+            console.log(`[배치진행] 진행상황 조회: ${batchId}`);
             const progress = await apiCall(`/batch/progress/${batchId}/`);
 
             // UI 업데이트
@@ -592,13 +720,25 @@ function startBatchProgressMonitoring(batchId) {
             document.getElementById("remaining-time").textContent = 
                 formatTime(progress.estimated_remaining_sec);
 
+            console.log(`[배치진행] 진행률: ${completed}/${total} (${percentage.toFixed(1)}%)`);
+            
+            // 실패 파일이 있으면 경고 로깅
+            if (progress.failed > 0 && progress.files) {
+                const failedFiles = progress.files.filter(f => f.status === "failed");
+                failedFiles.forEach(f => {
+                    console.warn(`[배치실패] ${f.filename}: ${f.error || '알 수 없는 오류'}`);
+                });
+            }
+
             // 파일 상태 업데이트
             updateBatchTableStatus(progress.files);
 
             // 완료 여부 확인
             if (completed + progress.failed === total) {
                 clearInterval(batchProgressInterval);
-                showNotification(`배치 처리 완료: ${completed}성공, ${progress.failed}실패`, "info");
+                const successMessage = `배치 처리 완료: ${completed}성공, ${progress.failed}실패`;
+                console.log(`[배치완료] ${successMessage}`);
+                showNotification(successMessage, "info");
                 
                 // 배치 완료 후 성능 통계 버튼 표시
                 const perfStatsBtn = document.getElementById("batch-perf-stats-btn");
@@ -606,9 +746,20 @@ function startBatchProgressMonitoring(batchId) {
                     perfStatsBtn.style.display = "inline-block";
                 }
             }
+            
+            // 에러 카운트 리셋
+            consoleErrorCount = 0;
 
         } catch (error) {
-            console.error("진행 상황 조회 실패:", error);
+            consoleErrorCount++;
+            console.error(`[배치조회실패] 시도 ${consoleErrorCount}: ${error.message}`);
+            
+            // 연속 3회 실패 시 모니터링 중단
+            if (consoleErrorCount >= 3) {
+                console.error("[배치조회] 연속 3회 실패로 모니터링 중단");
+                clearInterval(batchProgressInterval);
+                showNotification("배치 진행상황 조회 실패. 수동으로 새로고침해주세요.", "error");
+            }
         }
     }
 

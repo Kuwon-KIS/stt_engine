@@ -74,6 +74,24 @@
                 </div>
 
                 <div class="form-group">
+                    <label>⭐ 처리 단계 선택:</label>
+                    <div style="margin-top: 8px; padding: 10px; background: #f9f9f9; border-radius: 4px;">
+                        <label style="display: block; margin-bottom: 8px;">
+                            <input type="checkbox" id="privacy-removal-checkbox">
+                            🔐 개인정보 제거
+                        </label>
+                        <label style="display: block; margin-bottom: 8px;">
+                            <input type="checkbox" id="classification-checkbox">
+                            📊 통화 분류
+                        </label>
+                        <label style="display: block;">
+                            <input type="checkbox" id="ai-agent-checkbox">
+                            🤖 AI Agent 처리
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-group">
                     <label>
                         <input type="checkbox" id="set-global-backend-checkbox">
                         ✨ 글로벌 백엔드로 설정 (API 기본값 변경)
@@ -107,6 +125,35 @@
                         <button id="download-json-btn" class="btn btn-secondary">JSON 다운로드</button>
                     </div>
                 </div>
+
+                <!-- 처리 단계 현황 (NEW) -->
+                <div id="processing-steps-section" class="result-card" style="display: none;">
+                    <h3>✅ 처리 단계 현황</h3>
+                    <div id="processing-steps-content" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;"></div>
+                </div>
+
+                <!-- Privacy Removal 결과 (NEW) -->
+                <div id="privacy-result-section" class="result-card" style="display: none;">
+                    <h3>🔐 개인정보 제거 결과</h3>
+                    <div>
+                        <p><strong>개인정보 존재:</strong> <span id="privacy-exist">-</span></p>
+                        <p><strong>개인정보 유형:</strong> <span id="privacy-reason">-</span></p>
+                        <p><strong>처리된 텍스트:</strong></p>
+                        <div id="privacy-text" style="background: #f5f5f5; padding: 8px; border-radius: 4px; max-height: 200px; overflow-y: auto;"></div>
+                    </div>
+                </div>
+
+                <!-- Classification 결과 (NEW) -->
+                <div id="classification-result-section" class="result-card" style="display: none;">
+                    <h3>📊 통화 분류 결과</h3>
+                    <div>
+                        <p><strong>분류 코드:</strong> <span id="class-code">-</span></p>
+                        <p><strong>분류 카테고리:</strong> <span id="class-category">-</span></p>
+                        <p><strong>신뢰도:</strong> <span id="class-confidence">-</span></p>
+                        <p><strong>분류 사유:</strong> <span id="class-reason">-</span></p>
+                    </div>
+                </div>
+
                 <div class="metrics">
                     <div class="metric-item">
                         <span class="metric-label">음성 길이:</span>

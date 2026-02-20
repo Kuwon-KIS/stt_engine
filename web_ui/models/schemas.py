@@ -36,6 +36,17 @@ class TranscribeRequest(BaseModel):
     language: str = Field(default="ko")
     backend: Optional[str] = None
     is_stream: bool = Field(default=False, description="Streaming 모드 사용 여부")
+    privacy_removal: bool = Field(default=False, description="개인정보 제거 여부")
+    classification: bool = Field(default=False, description="통화 분류 여부")
+    ai_agent: bool = Field(default=False, description="AI Agent 처리 여부")
+
+
+class ProcessingStepsStatus(BaseModel):
+    """처리 단계별 완료 여부"""
+    stt: bool = Field(description="STT 완료")
+    privacy_removal: bool = Field(description="Privacy Removal 완료")
+    classification: bool = Field(description="Classification 완료")
+    ai_agent: bool = Field(description="AI Agent 완료")
 
 
 class TranscribeResponse(BaseModel):
@@ -50,6 +61,9 @@ class TranscribeResponse(BaseModel):
     backend: str
     word_count: Optional[int] = None  # 글자 수
     performance: Optional[PerformanceMetrics] = None  # 성능 메트릭
+    processing_steps: Optional[ProcessingStepsStatus] = None  # 처리 단계 (NEW)
+    privacy_removal: Optional[Dict[str, Any]] = None  # Privacy Removal 결과 (NEW)
+    classification: Optional[Dict[str, Any]] = None  # Classification 결과 (NEW)
     error_code: Optional[str] = None
     failure_reason: Optional[dict] = None
 

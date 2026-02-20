@@ -196,27 +196,59 @@ async def transcribe(request: TranscribeRequest) -> TranscribeResponse:
         files = list(UPLOAD_DIR.glob(f"{request.file_id}*"))
         
         if not files:
+            logger.error(f"[Transcribe] 파일을 찾을 수 없습니다: {request.file_id}")
             raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다")
         
         file_path = str(files[0])
         
-        logger.info(f"STT 처리 시작: {file_path} (언어: {request.language}, 스트리밍: {request.is_stream}, 백엔드: {request.backend})")
+        logger.info(f"[Transcribe] ===== 처리 시작 =====")
+        logger.info(f"[Transcribe] 파일: {file_path}")
+        logger.info(f"[Transcribe] 언어: {request.language}, 스트리밍: {request.is_stream}, 백엔드: {request.backend}")
+        logger.info(f"[Transcribe] 처리 단계: Privacy={request.privacy_removal}, Classification={request.classification}, AI={request.ai_agent}")
         
         start_time = time.time()
-        result = await stt_service.transcribe_local_file(
-            file_path=file_path,
-            language=request.language,
-            is_stream=request.is_stream,
-            backend=request.backend
-        )
+        
+        try:
+            result = await stt_service.transcribe_local_file(
+                file_path=file_path,
+                language=request.language,
+                is_stream=request.is_stream,
+                backend=request.backend,
+                privacy_removal=request.privacy_removal,
+                classification=request.classification,
+                ai_agent=request.ai_agent
+            )
+        except Exception as api_call_error:
+            logger.error(f"[Transcribe] API 호출 중 예외 발생: {type(api_call_error).__name__}: {api_call_error}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail=f"API 호출 실패: {str(api_call_error)}"
+            )
+        
         processing_time = time.time() - start_time
         
         if not result.get("success"):
-            logger.error(f"STT 처리 실패: {result}")
+            error_msg = result.get("message", "처리 중 오류 발생")
+            error_code = result.get("error_code", result.get("error", "UNKNOWN"))
+            logger.error(f"[Transcribe] 처리 실패 (code={error_code}): {error_msg}")
             raise HTTPException(
                 status_code=500,
-                detail=result.get("message", "처리 중 오류 발생")
+                detail=error_msg
             )
+        
+        # 처리 단계 로깅
+        processing_steps = result.get("processing_steps", {})
+        logger.info(f"[Transcribe] 처리 단계 완료: STT={processing_steps.get('stt')}, Privacy={processing_steps.get('privacy_removal')}, Classification={processing_steps.get('classification')}, AI={processing_steps.get('ai_agent')}")
+        
+        # Privacy Removal 결과 로깅
+        if request.privacy_removal and result.get("privacy_removal"):
+            privacy_result = result.get("privacy_removal", {})
+            logger.info(f"[Transcribe] Privacy Removal 결과: 개인정보 존재={privacy_result.get('privacy_exist')}, 사유={privacy_result.get('exist_reason')}")
+        
+        # Classification 결과 로깅
+        if request.classification and result.get("classification"):
+            class_result = result.get("classification", {})
+            logger.info(f"[Transcribe] Classification 결과: 코드={class_result.get('code')}, 신뢰도={class_result.get('confidence')}%, 카테고리={class_result.get('category')}")
         
         # 결과 저장
         file_service.save_result(request.file_id, result.get("text", ""), {
@@ -224,14 +256,19 @@ async def transcribe(request: TranscribeRequest) -> TranscribeResponse:
             "language": request.language,
             "duration_sec": result.get("duration", 0),
             "processing_time_sec": processing_time,
-            "backend": result.get("backend", "unknown")
+            "backend": result.get("backend", "unknown"),
+            "processing_steps": processing_steps,
+            "privacy_removal": result.get("privacy_removal"),
+            "classification": result.get("classification")
         })
         
         # 성능 메트릭 저장
         if result.get("performance"):
             file_service.save_performance_log(request.file_id, result.get("performance"))
         
-        logger.info(f"STT 처리 완료: {processing_time:.2f}초")
+        logger.info(f"[Transcribe] ===== 처리 완료 =====")
+        logger.info(f"[Transcribe] 소요 시간: {processing_time:.2f}초")
+        logger.info(f"[Transcribe] 텍스트 길이: {len(result.get('text', ''))} 글자")
         
         text = result.get("text", "")
         word_count = len(text) if text else 0
@@ -246,13 +283,16 @@ async def transcribe(request: TranscribeRequest) -> TranscribeResponse:
             processing_time_sec=processing_time,
             backend=result.get("backend", "unknown"),
             word_count=word_count,
-            performance=result.get("performance")  # API 서버로부터 받은 성능 메트릭
+            performance=result.get("performance"),
+            processing_steps=result.get("processing_steps"),
+            privacy_removal=result.get("privacy_removal"),
+            classification=result.get("classification")
         )
     
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"STT 처리 중 오류: {e}", exc_info=True)
+        logger.error(f"[Transcribe] STT 처리 중 예외: {type(e).__name__}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -288,10 +328,11 @@ async def start_batch(
     try:
         # 요청 데이터 로깅
         logger.info(f"[배치] ===== 요청 수신 =====")
-        logger.info(f"[배치] request.path = {request.path}")
-        logger.info(f"[배치] request.extension = {request.extension}")
-        logger.info(f"[배치] request.language = {request.language}")
-        logger.info(f"[배치] request.parallel_count = {request.parallel_count}")
+        logger.info(f"[배치] 경로: {request.path}")
+        logger.info(f"[배치] 확장자: {request.extension}")
+        logger.info(f"[배치] 언어: {request.language}")
+        logger.info(f"[배치] 병렬 처리: {request.parallel_count}")
+        logger.info(f"[배치] 처리 단계: Privacy={getattr(request, 'privacy_removal', False)}, Classification={getattr(request, 'classification', False)}")
         
         # BATCH_INPUT_DIR 값 확인
         logger.info(f"[배치] BATCH_INPUT_DIR 설정값 = {BATCH_INPUT_DIR}")
@@ -312,9 +353,9 @@ async def start_batch(
         logger.info(f"[배치] 최종 조회 경로: {batch_path}")
         
         # 파일 목록 조회
-        logger.info(f"[배치] list_batch_files 호출 시작 (경로: {batch_path})")
+        logger.info(f"[배치] 파일 목록 조회 시작 (경로: {batch_path})")
         files = file_service.list_batch_files(batch_path, request.extension)
-        logger.info(f"[배치] list_batch_files 호출 결과: {len(files)}개 파일")
+        logger.info(f"[배치] 파일 목록 조회 완료: {len(files)}개 파일")
         
         if not files:
             logger.error(f"[배치] 에러: 처리할 파일이 없음 (경로: {batch_path})")
@@ -335,27 +376,53 @@ async def start_batch(
                 api_path = file_path
             
             batch_files.append(BatchFile(name=f["name"], path=api_path))
-            logger.debug(f"배치 파일 경로 변환: {file_path} -> {api_path}")
+            logger.debug(f"[배치] 파일 경로 변환: {file_path} -> {api_path}")
         
         batch_id = batch_service.create_job(batch_files)
         logger.info(f"[배치] 작업 생성: {batch_id} ({len(batch_files)}개 파일)")
         
+        # 처리 옵션 로깅
+        privacy_removal = getattr(request, 'privacy_removal', False)
+        classification = getattr(request, 'classification', False)
+        ai_agent = getattr(request, 'ai_agent', False)
+        logger.info(f"[배치] 처리 옵션: Privacy={privacy_removal}, Classification={classification}, AI={ai_agent}")
+        
         # 백그라운드에서 배치 처리 시작
         async def process_batch_bg():
+            logger.info(f"[배치] 백그라운드 처리 시작 (batch_id: {batch_id})")
+            
             async def process_file(file_path: str) -> dict:
-                return await stt_service.transcribe_local_file(
-                    file_path=file_path,
-                    language=request.language,
-                    is_stream=False
-                )
+                logger.info(f"[배치] 파일 처리 시작: {file_path}")
+                try:
+                    result = await stt_service.transcribe_local_file(
+                        file_path=file_path,
+                        language=request.language,
+                        is_stream=False,
+                        privacy_removal=privacy_removal,
+                        classification=classification,
+                        ai_agent=ai_agent
+                    )
+                    logger.info(f"[배치] 파일 처리 완료: {file_path}")
+                    return result
+                except Exception as file_error:
+                    logger.error(f"[배치] 파일 처리 중 오류 (file={file_path}): {type(file_error).__name__}: {file_error}", exc_info=True)
+                    return {
+                        "success": False,
+                        "error": "processing_error",
+                        "error_code": "FILE_PROCESSING_ERROR",
+                        "message": f"파일 처리 실패: {str(file_error)}"
+                    }
             
             await batch_service.process_batch(
                 batch_id=batch_id,
                 processor_fn=process_file,
                 parallel_count=request.parallel_count
             )
+            logger.info(f"[배치] 백그라운드 처리 완료 (batch_id: {batch_id})")
         
         background_tasks.add_task(process_batch_bg)
+        
+        logger.info(f"[배치] ===== 요청 완료 =====")
         
         return BatchStartResponse(
             batch_id=batch_id,
@@ -366,7 +433,7 @@ async def start_batch(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[배치] 배치 처리 시작 실패: {str(e)}", exc_info=True)
+        logger.error(f"[배치] 배치 처리 시작 실패: {type(e).__name__}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"배치 처리 시작 실패: {str(e)}")
 
 
@@ -374,10 +441,23 @@ async def start_batch(
 async def get_batch_progress(batch_id: str) -> BatchProgressResponse:
     """배치 진행 상황"""
     try:
+        logger.info(f"[배치] 진행 상황 조회: {batch_id}")
         progress = batch_service.get_progress(batch_id)
         
         if not progress:
+            logger.error(f"[배치] 배치 작업을 찾을 수 없음: {batch_id}")
             raise HTTPException(status_code=404, detail="배치 작업을 찾을 수 없습니다")
+        
+        logger.info(f"[배치] 진행 상황: 총={progress['total']}, 완료={progress['completed']}, 실패={progress['failed']}, 진행 중={progress['in_progress']}")
+        
+        # 파일별 상태 로깅
+        if progress.get("files"):
+            for file_info in progress["files"]:
+                status = file_info.get("status", "unknown")
+                if status == "failed":
+                    logger.warning(f"[배치] 실패 파일: {file_info.get('name')} - {file_info.get('error_message', 'Unknown error')}")
+                elif status == "done":
+                    logger.debug(f"[배치] 완료 파일: {file_info.get('name')}")
         
         return BatchProgressResponse(  # type: ignore
             batch_id=progress["batch_id"],
@@ -392,7 +472,7 @@ async def get_batch_progress(batch_id: str) -> BatchProgressResponse:
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"배치 진행 조회 실패: {e}")
+        logger.error(f"[배치] 배치 진행 조회 실패: {type(e).__name__}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -404,13 +484,17 @@ async def get_batch_progress(batch_id: str) -> BatchProgressResponse:
 async def get_result(file_id: str):
     """처리 결과 조회"""
     try:
+        logger.info(f"[결과] 결과 조회: {file_id}")
         result_path = RESULT_DIR / f"{file_id}.txt"
         
         if not result_path.exists():
+            logger.error(f"[결과] 결과 파일을 찾을 수 없음: {file_id}")
             raise HTTPException(status_code=404, detail="결과를 찾을 수 없습니다")
         
         with open(result_path, "r", encoding="utf-8") as f:
             text = f.read()
+        
+        logger.info(f"[결과] 결과 조회 완료: {file_id} ({len(text)} 글자)")
         
         return {
             "success": True,
@@ -420,7 +504,7 @@ async def get_result(file_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"결과 조회 실패: {e}")
+        logger.error(f"[결과] 결과 조회 실패: {type(e).__name__}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -428,9 +512,11 @@ async def get_result(file_id: str):
 async def export_result(file_id: str, format: str = "txt"):
     """결과 다운로드"""
     try:
+        logger.info(f"[결과] 결과 내보내기: {file_id} (형식: {format})")
         result_path = RESULT_DIR / f"{file_id}.txt"
         
         if not result_path.exists():
+            logger.error(f"[결과] 결과 파일을 찾을 수 없음: {file_id}")
             raise HTTPException(status_code=404, detail="결과를 찾을 수 없습니다")
         
         if format == "json":
@@ -444,11 +530,14 @@ async def export_result(file_id: str, format: str = "txt"):
                 "exported_at": time.strftime("%Y-%m-%d %H:%M:%S")
             }
             
+            logger.info(f"[결과] JSON 형식으로 내보내기 완료: {file_id}")
+            
             return JSONResponse(
                 content=json_data,
                 media_type="application/json"
             )
         else:  # txt
+            logger.info(f"[결과] TXT 형식으로 내보내기 완료: {file_id}")
             return FileResponse(
                 result_path,
                 filename=f"{file_id}_result.txt",
@@ -458,7 +547,7 @@ async def export_result(file_id: str, format: str = "txt"):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"결과 내보내기 실패: {e}")
+        logger.error(f"[결과] 결과 내보내기 실패: {type(e).__name__}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

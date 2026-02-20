@@ -41,7 +41,10 @@ class STTService:
         file_path: str,
         language: str = "ko",
         is_stream: bool = False,
-        backend: str = None
+        backend: str = None,
+        privacy_removal: bool = False,
+        classification: bool = False,
+        ai_agent: bool = False
     ) -> dict:
         """
         로컬 파일을 STT API에 전달 (파일 경로 방식)
@@ -55,27 +58,26 @@ class STTService:
             language: 언어 코드
             is_stream: 스트리밍 모드 사용 여부
             backend: 백엔드 선택 (faster-whisper, transformers, openai-whisper)
+            privacy_removal: 개인정보 제거 여부
+            classification: 통화 분류 여부
+            ai_agent: AI Agent 처리 여부
         
         Returns:
-            처리 결과 딕셔너리
+            처리 결과 딕셔너리 (processing_steps 포함)
         """
         try:
-            logger.info(f"[STT Service] 파일 처리: {file_path} (언어: {language}, 스트림: {is_stream})")
+            logger.info(f"[STT Service] 파일 처리 시작: {file_path}")
+            logger.info(f"  - 언어: {language}, 스트림: {is_stream}, 백엔드: {backend}")
+            logger.info(f"  - 처리 단계: Privacy={privacy_removal}, Classification={classification}, AI={ai_agent}")
             
             # 파일 경로 변환 (Web UI 볼륨 -> API 접근 경로)
-            # Web UI 컨테이너 마운트: /data/aiplatform/stt_engine_volumes/web_ui/data:/app/web_ui/data
-            # 경우 1: /app/data/uploads/... (레거시 경로) -> /app/web_ui/data/uploads/...
-            # 경우 2: /app/web_ui/data/... (현재 경로) -> 변환 불필요
             if file_path.startswith("/app/data/"):
-                # /app/data/ 경로를 /app/web_ui/data/로 변환
                 api_file_path = file_path.replace("/app/data/", "/app/web_ui/data/")
                 logger.debug(f"[STT Service] 경로 변환 (레거시): {file_path} -> {api_file_path}")
             elif file_path.startswith("/app/web_ui/data/"):
-                # 이미 올바른 경로 형식 (배치 처리 파일)
                 api_file_path = file_path
                 logger.debug(f"[STT Service] 경로 확인 (배치): {file_path} (변환 불필요)")
             else:
-                # 다른 경로 형식은 그대로 사용
                 api_file_path = file_path
                 logger.warning(f"[STT Service] 알 수 없는 경로 형식: {file_path}")
             
@@ -85,58 +87,96 @@ class STTService:
                 data.add_field("language", language)
                 data.add_field("is_stream", str(is_stream).lower())
                 
+                # 처리 단계 옵션 추가
+                data.add_field("privacy_removal", str(privacy_removal).lower())
+                data.add_field("classification", str(classification).lower())
+                data.add_field("ai_agent", str(ai_agent).lower())
+                
                 # backend 지정
                 if backend:
                     data.add_field("backend", backend)
-                    logger.info(f"[STT Service] 백엔드 지정: {backend}")
                 
-                # 타임아웃을 파일 길이에 따라 동적으로 설정 (최소 600초)
                 estimated_timeout = max(600, self.timeout)
-                logger.info(f"[STT Service] 타임아웃 설정: {estimated_timeout}초")
+                logger.info(f"[STT Service] API 타임아웃: {estimated_timeout}초")
                 
                 try:
+                    logger.debug(f"[STT Service] POST 요청: {self.api_url}/transcribe")
                     async with session.post(
                         f"{self.api_url}/transcribe",
                         data=data,
                         timeout=aiohttp.ClientTimeout(total=estimated_timeout)
                     ) as response:
                         logger.info(f"[STT Service] API 응답 수신: status={response.status}")
-                        result = await response.json()
+                        
+                        try:
+                            result = await response.json()
+                        except Exception as json_err:
+                            logger.error(f"[STT Service] JSON 파싱 실패: {json_err}")
+                            response_text = await response.text()
+                            logger.error(f"[STT Service] 응답 원문: {response_text[:500]}")
+                            return {
+                                "success": False,
+                                "error": "json_parse_error",
+                                "message": f"응답 파싱 오류: {str(json_err)}"
+                            }
+                        
                         logger.info(f"[STT Service] JSON 파싱 완료")
                         
                         if response.status == 200:
-                            logger.info(f"[STT Service] 처리 완료: {len(result.get('text', ''))} 글자")
+                            success = result.get("success", False)
+                            if success:
+                                text_len = len(result.get('text', ''))
+                                logger.info(f"[STT Service] STT 완료: {text_len} 글자")
+                                
+                                # processing_steps 로깅
+                                steps = result.get("processing_steps", {})
+                                logger.info(f"[STT Service] 처리 단계: STT={steps.get('stt')}, Privacy={steps.get('privacy_removal')}, Classification={steps.get('classification')}, AI={steps.get('ai_agent')}")
+                                
+                                if steps.get('privacy_removal'):
+                                    privacy_result = result.get('privacy_removal', {})
+                                    logger.info(f"[STT Service] Privacy Removal: 개인정보 존재={privacy_result.get('privacy_exist')}")
+                                
+                                if steps.get('classification'):
+                                    class_result = result.get('classification', {})
+                                    logger.info(f"[STT Service] Classification: {class_result.get('code')} (신뢰도: {class_result.get('confidence')}%)")
+                            else:
+                                logger.error(f"[STT Service] API 처리 실패: {result.get('error', 'Unknown error')}")
                         else:
-                            logger.error(f"[STT Service] 처리 실패: {result}")
+                            logger.error(f"[STT Service] HTTP {response.status}: {result}")
                         
                         return result
-                except asyncio.TimeoutError as te:
-                    logger.error(f"[STT Service] API 타임아웃 ({estimated_timeout}초): {file_path}")
+                
+                except asyncio.TimeoutError:
+                    logger.error(f"[STT Service] API 타임아웃 ({estimated_timeout}초): {api_file_path}")
                     return {
                         "success": False,
                         "error": "timeout",
+                        "error_code": "API_TIMEOUT",
                         "message": f"API 처리 시간 초과 ({estimated_timeout}초)"
                     }
+                except aiohttp.ClientError as client_err:
+                    logger.error(f"[STT Service] HTTP 클라이언트 오류: {type(client_err).__name__}: {client_err}")
+                    return {
+                        "success": False,
+                        "error": "http_error",
+                        "error_code": "HTTP_CLIENT_ERROR",
+                        "message": f"HTTP 통신 오류: {str(client_err)}"
+                    }
                 except Exception as ae:
-                    logger.error(f"[STT Service] API 통신 오류: {ae}", exc_info=True)
+                    logger.error(f"[STT Service] API 통신 오류: {type(ae).__name__}: {ae}", exc_info=True)
                     return {
                         "success": False,
                         "error": "api_error",
+                        "error_code": "API_ERROR",
                         "message": f"API 통신 오류: {str(ae)}"
                     }
         
-        except asyncio.TimeoutError:
-            logger.error(f"[STT Service] 타임아웃: {file_path}")
-            return {
-                "success": False,
-                "error": "timeout",
-                "message": f"처리 시간 초과 ({self.timeout}초)"
-            }
         except Exception as e:
-            logger.error(f"[STT Service] 에러: {e}", exc_info=True)
+            logger.error(f"[STT Service] 파일 처리 오류: {type(e).__name__}: {e}", exc_info=True)
             return {
                 "success": False,
                 "error": "unknown",
+                "error_code": "UNKNOWN_ERROR",
                 "message": str(e)
             }
     
@@ -153,19 +193,24 @@ class STTService:
             logger.error(f"[STT Service] 백엔드 정보 조회 실패: {e}")
             return {}
     
-    async def process_transcribe_job(self, job) -> dict:
+    async def process_transcribe_job(self, job, privacy_removal: bool = False, classification: bool = False, ai_agent: bool = False) -> dict:
         """
         비동기 작업 큐에서 호출되는 메서드
         job 객체의 상태를 업데이트하면서 처리
         
         Args:
             job: TranscribeJob 객체
+            privacy_removal: 개인정보 제거 여부
+            classification: 통화 분류 여부
+            ai_agent: AI Agent 처리 여부
         
         Returns:
             처리 결과 딕셔너리
         """
         try:
             logger.info(f"[STT Service] 비동기 처리 시작: {job.job_id}")
+            logger.info(f"  - 파일: {job.file_path}")
+            logger.info(f"  - 처리 단계: Privacy={privacy_removal}, Classification={classification}, AI={ai_agent}")
             
             # 파일 경로 변환
             file_path = job.file_path
@@ -184,10 +229,13 @@ class STTService:
                 data.add_field("file_path", api_file_path)
                 data.add_field("language", job.language)
                 data.add_field("is_stream", str(job.is_stream).lower())
+                data.add_field("privacy_removal", str(privacy_removal).lower())
+                data.add_field("classification", str(classification).lower())
+                data.add_field("ai_agent", str(ai_agent).lower())
                 
                 # 장시간 처리를 고려하여 충분한 타임아웃 설정
                 estimated_timeout = max(600, self.timeout)
-                logger.info(f"[STT Service] 타임아웃 설정: {estimated_timeout}초 (job: {job.job_id})")
+                logger.info(f"[STT Service] 비동기 처리 API 호출: job={job.job_id}, timeout={estimated_timeout}초")
                 
                 try:
                     async with session.post(
@@ -196,40 +244,72 @@ class STTService:
                         timeout=aiohttp.ClientTimeout(total=estimated_timeout)
                     ) as response:
                         logger.info(f"[STT Service] API 응답 수신: status={response.status} (job: {job.job_id})")
-                        result = await response.json()
+                        
+                        try:
+                            result = await response.json()
+                        except Exception as json_err:
+                            logger.error(f"[STT Service] JSON 파싱 실패 (job: {job.job_id}): {json_err}")
+                            return {
+                                "success": False,
+                                "error": "json_parse_error",
+                                "error_code": "JSON_PARSE_ERROR",
+                                "message": f"응답 파싱 오류: {str(json_err)}"
+                            }
+                        
                         logger.info(f"[STT Service] JSON 파싱 완료 (job: {job.job_id})")
                         
                         # 진행률 업데이트: API 처리 완료
                         job.progress = 90
                         
                         if response.status == 200:
-                            logger.info(f"[STT Service] 처리 완료: {len(result.get('text', ''))} 글자 (job: {job.job_id})")
-                            job.progress = 100
+                            success = result.get("success", False)
+                            if success:
+                                text_len = len(result.get('text', ''))
+                                logger.info(f"[STT Service] 처리 완료: {text_len} 글자 (job: {job.job_id})")
+                                
+                                # processing_steps 로깅
+                                steps = result.get("processing_steps", {})
+                                logger.info(f"[STT Service] 처리 단계 (job: {job.job_id}): STT={steps.get('stt')}, Privacy={steps.get('privacy_removal')}, Classification={steps.get('classification')}")
+                                
+                                job.progress = 100
+                            else:
+                                logger.error(f"[STT Service] 처리 실패 (job: {job.job_id}): {result.get('error', 'Unknown error')}")
                         else:
-                            logger.error(f"[STT Service] 처리 실패: {result} (job: {job.job_id})")
+                            logger.error(f"[STT Service] HTTP {response.status} (job: {job.job_id}): {result}")
                         
                         return result
                 
-                except asyncio.TimeoutError as te:
+                except asyncio.TimeoutError:
                     logger.error(f"[STT Service] API 타임아웃 ({estimated_timeout}초, job: {job.job_id})")
                     return {
                         "success": False,
                         "error": "timeout",
+                        "error_code": "API_TIMEOUT",
                         "message": f"API 처리 시간 초과 ({estimated_timeout}초)"
                     }
+                except aiohttp.ClientError as client_err:
+                    logger.error(f"[STT Service] HTTP 클라이언트 오류 (job: {job.job_id}): {type(client_err).__name__}: {client_err}")
+                    return {
+                        "success": False,
+                        "error": "http_error",
+                        "error_code": "HTTP_CLIENT_ERROR",
+                        "message": f"HTTP 통신 오류: {str(client_err)}"
+                    }
                 except Exception as ae:
-                    logger.error(f"[STT Service] API 통신 오류: {ae} (job: {job.job_id})", exc_info=True)
+                    logger.error(f"[STT Service] API 통신 오류 (job: {job.job_id}): {type(ae).__name__}: {ae}", exc_info=True)
                     return {
                         "success": False,
                         "error": "api_error",
+                        "error_code": "API_ERROR",
                         "message": f"API 통신 오류: {str(ae)}"
                     }
         
         except Exception as e:
-            logger.error(f"[STT Service] 비동기 처리 오류: {e} (job: {job.job_id})", exc_info=True)
+            logger.error(f"[STT Service] 비동기 처리 오류 (job: {job.job_id}): {type(e).__name__}: {e}", exc_info=True)
             return {
                 "success": False,
                 "error": "unknown",
+                "error_code": "UNKNOWN_ERROR",
                 "message": str(e)
             }
     
