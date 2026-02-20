@@ -3,7 +3,7 @@
 Phase 2: 파일 업로드, 조회, 삭제 등의 REST API
 """
 
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Request, Depends
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Request, Depends, Query
 import logging
 
 from app.services.file_service import FileService
@@ -93,15 +93,15 @@ async def upload_file(
 async def delete_file_handler(
     filename: str,
     request: Request,
-    folder_path: str = None,
+    folder_path: str = Query(None),
     db: Session = Depends(get_db)
 ):
     """
     파일 삭제
     
     Args:
-        filename: 삭제할 파일명
-        folder_path: 폴더 경로 (선택, 없으면 최상위)
+        filename: 삭제할 파일명 (path parameter)
+        folder_path: 폴더 경로 (query parameter, 선택)
     
     Returns:
         dict: 삭제 결과
