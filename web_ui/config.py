@@ -35,7 +35,9 @@ SESSION_SECRET_KEY = os.getenv("SESSION_SECRET_KEY", "dev-secret-key-change-in-p
 SESSION_TIMEOUT = timedelta(hours=8)
 
 # === Phase 1: 인증된 직원 정보 ===
-# 프로덕션: LDAP 또는 DB에서 동적 조회 권장
+# 주의: 아이디만 입력 (비밀번호 없음)
+# 구분값으로 사용하며, 프로덕션에서는 LDAP 또는 DB에서 동적 조회 권장
+# 아이디는 6자리 숫자 형식 (예: 10001, 10002, 10003)
 ALLOWED_EMPLOYEES = {
     "10001": {"name": "김철수", "dept": "영업팀"},
     "10002": {"name": "이영희", "dept": "기획팀"},

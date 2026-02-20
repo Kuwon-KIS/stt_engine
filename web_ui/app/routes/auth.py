@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 # === Pydantic 모델 ===
 class LoginRequest(BaseModel):
     """로그인 요청 모델"""
-    emp_id: str
+    emp_id: str  # 6자리 숫자 아이디 (구분값, 비밀번호 없음)
 
 
 class LoginResponse(BaseModel):
