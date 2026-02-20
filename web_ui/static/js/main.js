@@ -464,9 +464,6 @@ function displayResult(result) {
     document.getElementById("upload-section").style.display = "none";
     document.getElementById("result-section").style.display = "block";
     
-    // Privacy Removal 섹션 표시 ✨
-    showPrivacyRemovalOptions();
-    
     // 스크롤
     document.getElementById("result-section").scrollIntoView({ behavior: "smooth" });
 }
@@ -488,7 +485,7 @@ function displayProcessingSteps(steps) {
             <span>${steps.privacy_removal ? '✅' : '❌'} 개인정보 제거</span>
         </div>
         <div style="padding: 8px; background: ${steps.classification ? '#d4edda' : '#f8d7da'}; border-radius: 4px;">
-            <span>${steps.classification ? '✅' : '❌'} 통화 분류</span>
+            <span>${steps.classification ? '✅' : '❌'} 음성 내용 분류</span>
         </div>
         <div style="padding: 8px; background: ${steps.incomplete_elements ? '#d4edda' : '#f8d7da'}; border-radius: 4px;">
             <span>${steps.incomplete_elements ? '✅' : '❌'} 불완전판매요소 검증</span>
