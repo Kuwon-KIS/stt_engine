@@ -677,12 +677,19 @@
         // 로그아웃
         async function logout() {
             try {
-                const response = await apiCall('/api/auth/logout', 'POST');
+                const response = await fetch('/api/auth/logout', {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+                
                 if (response.ok) {
                     window.location.href = '/';
+                } else {
+                    showNotification('로그아웃 실패', 'error');
                 }
             } catch (error) {
-                showNotification(error.message, 'error');
+                console.error('Logout error:', error);
+                showNotification('로그아웃 중 오류 발생: ' + error.message, 'error');
             }
         }
     </script>

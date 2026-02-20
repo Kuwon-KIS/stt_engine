@@ -110,9 +110,9 @@ app.include_router(analysis.router)
 # 1. 대시보드 및 기본 라우트
 # ============================================================================
 
-@app.get("/login", response_class=HTMLResponse)
+@app.get("/", response_class=HTMLResponse)
 async def login_page(request: Request):
-    """로그인 페이지"""
+    """로그인 페이지 (root)"""
     try:
         return templates.TemplateResponse("login.html", {"request": request})
     except Exception as e:
@@ -120,9 +120,19 @@ async def login_page(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/login", response_class=HTMLResponse)
+async def login_page_alias(request: Request):
+    """로그인 페이지 (별칭)"""
+    try:
+        return templates.TemplateResponse("login.html", {"request": request})
+    except Exception as e:
+        logger.error(f"로그인 페이지 로드 실패: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/old", response_class=HTMLResponse)
 async def dashboard(request: Request):
-    """대시보드 페이지"""
+    """대시보드 페이지 (구 버전)"""
     try:
         return templates.TemplateResponse("index.html", {"request": request})
     except Exception as e:

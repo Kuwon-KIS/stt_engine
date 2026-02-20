@@ -615,8 +615,11 @@
         }
 
         function logout() {
-            fetch('/api/auth/logout', { method: 'POST' })
-                .then(() => { window.location.href = '/login'; });
+            fetch('/api/auth/logout', { 
+                method: 'POST',
+                credentials: 'include'
+            })
+                .then(() => { window.location.href = '/'; });
         }
     </script>
 </body>
