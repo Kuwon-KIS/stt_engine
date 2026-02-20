@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>분석 - KIS 불완전판매 예방 분석 시스템</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background-color: rgba(0, 0, 0, 0.1);
+            color: white;
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 24px;
+        }
+
+        .user-info {
+            display: flex;
+            gap: 20px;
+        }
+
+        .logout-btn {
+            background-color: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .logout-btn:hover {
+            background-color: rgba(255, 255, 255, 0.3);
+        }
+
+        .container {
+            flex: 1;
+            padding: 40px;
+            max-width: 1200px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .panel {
+            background-color: white;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .panel h2 {
+            margin-bottom: 20px;
+            color: #333;
+            font-size: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 10px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .checkbox-group {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .checkbox-group label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 0;
+            cursor: pointer;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+
+        .btn-primary {
+            background-color: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: #764ba2;
+        }
+
+        .btn-secondary {
+            background-color: #e0e0e0;
+            color: #333;
+        }
+
+        .btn-secondary:hover {
+            background-color: #d0d0d0;
+        }
+
+        .progress-container {
+            display: none;
+            background-color: white;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .progress-container.show {
+            display: block;
+        }
+
+        .progress-item {
+            margin-bottom: 30px;
+        }
+
+        .progress-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 24px;
+            background-color: #e0e0e0;
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            width: 0%;
+            transition: width 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .progress-stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .stat-box {
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 4px;
+            text-align: center;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .results-container {
+            display: none;
+        }
+
+        .results-container.show {
+            display: block;
+        }
+
+        .result-item {
+            background-color: white;
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+        }
+
+        .result-item.failed {
+            border-left-color: #ff6b6b;
+        }
+
+        .result-item.completed {
+            border-left-color: #51cf66;
+        }
+
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .result-filename {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .result-status {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .result-status.completed {
+            background-color: #e7f5e7;
+            color: #2d6a2d;
+        }
+
+        .result-status.failed {
+            background-color: #ffe7e7;
+            color: #6a2d2d;
+        }
+
+        .result-content {
+            font-size: 14px;
+            color: #666;
+            line-height: 1.6;
+        }
+
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background-color: white;
+            padding: 16px 20px;
+            border-radius: 4px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            max-width: 400px;
+            animation: slideIn 0.3s ease-out;
+            z-index: 1000;
+        }
+
+        .notification.success {
+            border-left: 4px solid #51cf66;
+        }
+
+        .notification.error {
+            border-left: 4px solid #ff6b6b;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .current-file {
+            font-size: 13px;
+            color: #666;
+            margin-top: 10px;
+            font-style: italic;
+        }
+
+        @media (max-width: 768px) {
+            .progress-stats {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .header {
+                flex-direction: column;
+                gap: 10px;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🔍 분석</h1>
+        <div class="user-info">
+            <span id="username"></span>
+            <button class="logout-btn" onclick="logout()">로그아웃</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- 분석 시작 -->
+        <div class="panel" id="startPanel">
+            <h2>분석 설정</h2>
+            
+            <div class="form-group">
+                <label for="folderSelect">분석할 폴더</label>
+                <select id="folderSelect">
+                    <option value="">폴더 선택...</option>
+                </select>
+            </div>
+
+            <div class="checkbox-group">
+                <label>
+                    <input type="checkbox" id="classificationCheck" checked>
+                    📊 음성 분류
+                </label>
+                <label>
+                    <input type="checkbox" id="validationCheck" checked>
+                    ⚠️ 불완전판매요소 검증
+                </label>
+            </div>
+
+            <div class="button-group">
+                <button class="btn btn-secondary" onclick="goBack()">← 뒤로</button>
+                <button class="btn btn-primary" onclick="startAnalysis()">분석 시작</button>
+            </div>
+        </div>
+
+        <!-- 진행 상황 -->
+        <div class="progress-container" id="progressPanel">
+            <h2>📈 분석 진행 중</h2>
+
+            <div class="progress-item">
+                <div class="progress-title">전체 진행률</div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="overallProgress" style="width: 0%;">0%</div>
+                </div>
+                <div class="current-file" id="currentFile"></div>
+            </div>
+
+            <div class="progress-stats">
+                <div class="stat-box">
+                    <div class="stat-label">전체 파일</div>
+                    <div class="stat-value" id="totalFiles">0</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">처리 완료</div>
+                    <div class="stat-value" id="processedFiles">0</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">남은 시간</div>
+                    <div class="stat-value" id="timeRemaining">-</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">상태</div>
+                    <div class="stat-value" id="jobStatus" style="font-size: 16px;">진행중</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 결과 -->
+        <div class="results-container" id="resultsPanel">
+            <h2>📋 분석 결과</h2>
+            <div id="resultsList"></div>
+        </div>
+    </div>
+
+    <script src="/static/js/common.js"></script>
+    <script>
+        let currentJobId = null;
+        let progressInterval = null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            checkSession();
+            loadFolders();
+        });
+
+        async function checkSession() {
+            const response = await fetch('/api/auth/session');
+            if (!response.ok) {
+                window.location.href = '/login';
+                return;
+            }
+            const data = await response.json();
+            document.getElementById('username').textContent = data.name + ' 님';
+        }
+
+        async function loadFolders() {
+            try {
+                const response = await apiCall('/api/files/folders', 'GET');
+                const data = await response.json();
+                
+                const select = document.getElementById('folderSelect');
+                select.innerHTML = '<option value="">폴더 선택...</option>';
+                
+                data.folders.forEach(folder => {
+                    const option = document.createElement('option');
+                    option.value = folder;
+                    option.textContent = folder;
+                    select.appendChild(option);
+                });
+            } catch (error) {
+                showNotification('폴더 로드 실패', 'error');
+            }
+        }
+
+        async function startAnalysis() {
+            const folderPath = document.getElementById('folderSelect').value;
+            if (!folderPath) {
+                showNotification('폴더를 선택하세요', 'error');
+                return;
+            }
+
+            try {
+                const response = await apiCall('/api/analysis/start', 'POST', {
+                    folder_path: folderPath,
+                    include_classification: document.getElementById('classificationCheck').checked,
+                    include_validation: document.getElementById('validationCheck').checked
+                });
+
+                const data = await response.json();
+                if (!data.success) {
+                    throw new Error(data.message || '분석 시작 실패');
+                }
+
+                currentJobId = data.job_id;
+                
+                // UI 변경
+                document.getElementById('startPanel').style.display = 'none';
+                document.getElementById('progressPanel').classList.add('show');
+                
+                showNotification('분석이 시작되었습니다', 'success');
+                
+                // 진행률 추적 시작
+                progressInterval = setInterval(checkProgress, 2000);
+                checkProgress();
+            } catch (error) {
+                showNotification(error.message, 'error');
+            }
+        }
+
+        async function checkProgress() {
+            if (!currentJobId) return;
+
+            try {
+                const response = await apiCall(`/api/analysis/progress/${currentJobId}`, 'GET');
+                const data = await response.json();
+
+                // UI 업데이트
+                document.getElementById('overallProgress').style.width = data.progress + '%';
+                document.getElementById('overallProgress').textContent = data.progress + '%';
+                document.getElementById('totalFiles').textContent = data.total_files;
+                document.getElementById('processedFiles').textContent = data.processed_files;
+                document.getElementById('jobStatus').textContent = formatStatus(data.status);
+
+                if (data.current_file) {
+                    document.getElementById('currentFile').textContent = `현재: ${data.current_file}`;
+                }
+
+                if (data.estimated_time_remaining) {
+                    const mins = Math.ceil(data.estimated_time_remaining / 60);
+                    document.getElementById('timeRemaining').textContent = `${mins}분`;
+                }
+
+                // 완료 확인
+                if (data.status === 'completed' || data.status === 'failed') {
+                    clearInterval(progressInterval);
+                    
+                    if (data.status === 'completed') {
+                        showNotification('분석이 완료되었습니다', 'success');
+                    } else {
+                        showNotification('분석 중 오류가 발생했습니다', 'error');
+                    }
+                    
+                    // 결과 표시
+                    showResults();
+                }
+            } catch (error) {
+                console.error('진행률 조회 실패:', error);
+            }
+        }
+
+        async function showResults() {
+            if (!currentJobId) return;
+
+            try {
+                const response = await apiCall(`/api/analysis/results/${currentJobId}`, 'GET');
+                const data = await response.json();
+
+                document.getElementById('progressPanel').classList.remove('show');
+                document.getElementById('resultsPanel').classList.add('show');
+
+                const resultsList = document.getElementById('resultsList');
+                resultsList.innerHTML = '';
+
+                data.results.forEach(result => {
+                    const resultDiv = document.createElement('div');
+                    resultDiv.className = `result-item ${result.status}`;
+                    
+                    let content = `
+                        <div class="result-header">
+                            <span class="result-filename">${result.filename}</span>
+                            <span class="result-status ${result.status}">${formatStatus(result.status)}</span>
+                        </div>
+                    `;
+
+                    if (result.status === 'completed' && result.transcription) {
+                        content += `
+                            <div class="result-content">
+                                <strong>인식 텍스트:</strong><br>
+                                ${result.transcription.text || '(인식 실패)'}
+                            </div>
+                        `;
+                    }
+
+                    resultDiv.innerHTML = content;
+                    resultsList.appendChild(resultDiv);
+                });
+            } catch (error) {
+                showNotification('결과 조회 실패', 'error');
+            }
+        }
+
+        function formatStatus(status) {
+            const map = {
+                'pending': '대기중',
+                'processing': '진행중',
+                'completed': '완료',
+                'failed': '실패'
+            };
+            return map[status] || status;
+        }
+
+        function goBack() {
+            window.location.href = '/upload';
+        }
+
+        function logout() {
+            fetch('/api/auth/logout', { method: 'POST' })
+                .then(() => { window.location.href = '/login'; });
+        }
+    </script>
+</body>
+</html>

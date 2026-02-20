@@ -27,7 +27,7 @@ from config import (
 )
 # Phase 1: 인증 및 DB 임포트
 from app.utils.db import init_db
-from app.routes import auth, files
+from app.routes import auth, files, analysis
 from models.schemas import (
     FileUploadResponse, TranscribeRequest, TranscribeResponse,
     BatchFileListResponse, BatchStartRequest, BatchStartResponse,
@@ -96,6 +96,10 @@ app.include_router(auth.router)
 # ============================================================================
 app.include_router(files.router)
 
+# === Phase 3: 분석 라우터 등록 ===
+# ============================================================================
+app.include_router(analysis.router)
+
 # ============================================================================
 # 1. 대시보드 및 기본 라우트
 # ============================================================================
@@ -122,6 +126,21 @@ async def upload_page(request: Request):
         return templates.TemplateResponse("upload.html", {"request": request})
     except Exception as e:
         logger.error(f"업로드 페이지 로드 실패: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/analysis", response_class=HTMLResponse)
+async def analysis_page(request: Request):
+    """분석 페이지 (Phase 3)"""
+    # 세션 확인
+    emp_id = request.session.get("emp_id")
+    if not emp_id:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다")
+    
+    try:
+        return templates.TemplateResponse("analysis.html", {"request": request})
+    except Exception as e:
+        logger.error(f"분석 페이지 로드 실패: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
