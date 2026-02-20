@@ -416,11 +416,11 @@ class STTService:
         return {
             "success": True,
             "text": dummy_text,
-            "duration": 60,
+            "duration_sec": 60,
             "backend": "dummy",
             "language": language,
             "processing_steps": {
-                "stt": "dummy",
+                "stt": True,  # ✅ boolean으로 수정
                 "privacy_removal": False,
                 "classification": False,
                 "ai_agent": False
