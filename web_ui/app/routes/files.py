@@ -93,7 +93,7 @@ async def upload_file(
 async def delete_file_handler(
     filename: str,
     request: Request,
-    folder_path: str = Query(None),
+    folder_path: str = Query(...),  # 필수 파라미터
     db: Session = Depends(get_db)
 ):
     """
@@ -101,7 +101,7 @@ async def delete_file_handler(
     
     Args:
         filename: 삭제할 파일명 (path parameter)
-        folder_path: 폴더 경로 (query parameter, 선택)
+        folder_path: 폴더 경로 (query parameter, 필수)
     
     Returns:
         dict: 삭제 결과

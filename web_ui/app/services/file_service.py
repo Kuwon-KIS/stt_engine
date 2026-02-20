@@ -216,7 +216,7 @@ class FileService:
         Args:
             emp_id: 사번
             filename: 파일명
-            folder_path: 폴더 경로
+            folder_path: 폴더 경로 (필수)
             db: DB 세션
         
         Returns:
@@ -226,6 +226,10 @@ class FileService:
             HTTPException: 삭제 실패
         """
         try:
+            # folder_path 필수 확인
+            if not folder_path:
+                raise HTTPException(status_code=400, detail="폴더를 먼저 선택해주세요")
+            
             # 사용자 검증
             if db:
                 employee = db.query(Employee).filter(
@@ -245,19 +249,17 @@ class FileService:
             
             # DB에서 삭제
             if db:
-                query = db.query(FileUpload).filter(
+                # folder_path가 지정되면 해당 폴더에서만 삭제
+                files_to_delete = db.query(FileUpload).filter(
                     FileUpload.emp_id == emp_id,
-                    FileUpload.filename == filename
+                    FileUpload.filename == filename,
+                    FileUpload.folder_path == folder_path
                 )
                 
-                # folder_path 필터 (None인 경우 처리)
-                if folder_path:
-                    query = query.filter(FileUpload.folder_path == folder_path)
-                else:
-                    query = query.filter(FileUpload.folder_path.is_(None))
-                
-                query.delete()
+                # 삭제할 레코드 수
+                delete_count = files_to_delete.delete()
                 db.commit()
+                logger.info(f"DB에서 파일 삭제: {delete_count}개 레코드")
                 
                 # 폴더가 비어있으면 정리
                 user_dir = file_utils.get_user_upload_dir(emp_id)
