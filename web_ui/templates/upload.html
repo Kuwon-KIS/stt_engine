@@ -439,12 +439,18 @@
         // 폴더 목록 로드
         async function loadFolders(showError = true) {
             try {
-                const response = await apiCall('/api/files/folders', 'GET');
-                if (!response.ok) throw new Error('폴더 로드 실패');
+                const response = await fetch('/api/files/folders', {
+                    credentials: 'include'
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`폴더 로드 실패 (상태: ${response.status})`);
+                }
                 
                 const data = await response.json();
                 renderFolders(data.folders || []);
             } catch (error) {
+                console.error('폴더 로드 에러:', error);
                 if (showError) {
                     showNotification(error.message, 'error');
                 }
@@ -490,12 +496,18 @@
                     ? `/api/files/list?folder_path=${encodeURIComponent(currentFolder)}`
                     : '/api/files/list';
                 
-                const response = await apiCall(url, 'GET');
-                if (!response.ok) throw new Error('파일 로드 실패');
+                const response = await fetch(url, {
+                    credentials: 'include'
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`파일 로드 실패 (상태: ${response.status})`);
+                }
                 
                 const data = await response.json();
                 renderFiles(data.files || []);
             } catch (error) {
+                console.error('파일 로드 에러:', error);
                 if (showError) {
                     showNotification(error.message, 'error');
                 }
@@ -571,9 +583,10 @@
                 await uploadFile(file);
             }
             
-            // 업로드 후 목록 새로고침 (에러 메시지 표시하지 않음)
-            loadFiles(false);
-            loadFolders(false);
+            // 업로드 후 목록 새로고침
+            console.log('파일 업로드 완료, 목록 새로고침...');
+            loadFiles(true);
+            loadFolders(true);
             document.getElementById('fileInput').value = '';
         }
 
@@ -632,6 +645,7 @@
                 
                 const result = JSON.parse(response);
                 showNotification(`업로드 완료: ${file.name}`, 'success');
+                console.log('파일 업로드 성공:', file.name, result);
                 
                 document.getElementById('uploadProgress').classList.remove('show');
                 
