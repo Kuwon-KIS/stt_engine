@@ -121,15 +121,3 @@ services:
 networks:
   stt-network:
     driver: bridge
-    # Mac에서 host.docker.internal을 통해 호스트 머신 포트에 접근 가능
-    # 사용 예: http://host.docker.internal:8003
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-
-# 네트워크 정의
-networks:
-  default:
-    name: stt-local-network
-    driver: bridge

@@ -143,6 +143,7 @@ RUN python3.11 -m pip install \
 
 # ============================================================================
 # Step 10: CUDA 라이브러리 위치 탐색 및 경로 등록
+# ============================================================================
 
 # Create ldconfig config file with ALL CUDA library paths
 RUN cat > /etc/ld.so.conf.d/torch-cuda.conf << 'EOF'
