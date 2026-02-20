@@ -69,6 +69,8 @@ async def start_analysis(
             from app.utils.db import SessionLocal
             new_db = SessionLocal()
             try:
+                logger.info(f"[스레드] 분석 시작: job_id={response.job_id}, files={file_list}")
+                logger.info(f"[스레드] asyncio.run() 호출 전")
                 asyncio.run(
                     AnalysisService.process_analysis_async(
                         response.job_id,
@@ -80,6 +82,12 @@ async def start_analysis(
                         new_db
                     )
                 )
+                logger.info(f"[스레드] asyncio.run() 반환 후")
+                logger.info(f"[스레드] 분석 완료: job_id={response.job_id}")
+            except Exception as e:
+                logger.error(f"[스레드] 분석 에러: {str(e)}", exc_info=True)
+                import traceback
+                logger.error(f"[스레드] Traceback:\n{traceback.format_exc()}")
             finally:
                 new_db.close()
         

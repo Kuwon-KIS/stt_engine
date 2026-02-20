@@ -52,6 +52,7 @@ class AnalysisProgressResponse(BaseModel):
     started_at: datetime = Field(..., description="시작 시간")
     updated_at: datetime = Field(..., description="업데이트 시간")
     estimated_time_remaining: Optional[int] = Field(None, description="예상 남은 시간 (초)")
+    results: Optional[List[dict]] = Field(default_factory=list, description="분석 결과 목록")
 
 
 class TranscriptionResult(BaseModel):
