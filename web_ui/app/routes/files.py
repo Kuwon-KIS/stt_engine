@@ -4,11 +4,13 @@ Phase 2: 파일 업로드, 조회, 삭제 등의 REST API
 """
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Request, Depends
+import logging
 
 from app.services.file_service import FileService
 from app.utils.db import get_db
 from sqlalchemy.orm import Session
 
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/api/files",
@@ -108,6 +110,8 @@ async def delete_file(
     emp_id = request.session.get("emp_id")
     if not emp_id:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다")
+    
+    logger.info(f"파일 삭제 요청: emp_id={emp_id}, filename={filename}, folder_path={folder_path}")
     
     result = FileService.delete_file(emp_id, filename, folder_path, db)
     return result
