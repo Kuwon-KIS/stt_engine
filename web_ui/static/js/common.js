@@ -17,7 +17,7 @@ async function checkSession() {
             return await response.json();
         } else if (response.status === 401) {
             // 로그인 필요
-            window.location.href = '/static/login.html';
+            window.location.href = '/';
             return null;
         }
     } catch (error) {
@@ -32,8 +32,8 @@ async function checkSession() {
  */
 async function logout() {
     try {
-        await fetch('/api/auth/logout', { method: 'POST' });
-        window.location.href = '/static/login.html';
+        await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+        window.location.href = '/';
     } catch (error) {
         console.error('Logout failed:', error);
         showNotification('로그아웃 실패', 'error');
