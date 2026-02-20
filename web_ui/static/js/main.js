@@ -346,7 +346,7 @@ async function transcribeFile() {
         const classification = document.getElementById("classification-checkbox")?.checked || false;
         const aiAgent = document.getElementById("ai-agent-checkbox")?.checked || false;
         
-        console.log("[Transcribe] 처리 옵션:", { privacy_removal: privacyRemoval, classification, ai_agent });
+        console.log("[Transcribe] 처리 옵션:", { privacy_removal: privacyRemoval, classification, ai_agent: aiAgent });
         
         const result = await apiCall("/transcribe/", "POST", {
             file_id: uploadResult.file_id,
