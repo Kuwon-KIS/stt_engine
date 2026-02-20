@@ -704,8 +704,39 @@
         }
 
         // 분석 시작
-        function startAnalysis() {
-            window.location.href = '/analysis';
+        async function startAnalysis() {
+            // 폴더 선택 확인
+            if (!currentFolder) {
+                showNotification('먼저 폴더를 선택해주세요', 'warning');
+                return;
+            }
+
+            if (!confirm(`"${currentFolder}" 폴더를 분석하시겠습니까?`)) return;
+
+            try {
+                console.log('분석 시작 요청:', currentFolder);
+                
+                const data = await apiCall('/api/analysis/start', 'POST', {
+                    folder_path: currentFolder,
+                    include_classification: true,
+                    include_validation: true
+                });
+
+                if (!data || !data.success) {
+                    throw new Error(data?.message || '분석 시작 실패');
+                }
+
+                console.log('분석 시작 성공:', data.job_id);
+                showNotification('분석이 시작되었습니다. 결과 페이지로 이동합니다.', 'success');
+                
+                // 1초 후 분석 페이지로 이동
+                setTimeout(() => {
+                    window.location.href = `/analysis?job_id=${data.job_id}`;
+                }, 1000);
+            } catch (error) {
+                console.error('분석 시작 에러:', error);
+                showNotification(error.message, 'error');
+            }
         }
 
         // 로그아웃

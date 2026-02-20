@@ -64,32 +64,24 @@ class AnalysisService:
             # 작업 ID 생성
             job_id = f"job_{uuid.uuid4().hex[:12]}"
             
+            # 파일 목록과 옵션 준비
+            file_list = [f.filename for f in files]
+            options = {
+                "include_classification": request.include_classification,
+                "include_validation": request.include_validation
+            }
+            
             # DB에 분석 작업 저장
             analysis_job = AnalysisJob(
                 job_id=job_id,
                 emp_id=emp_id,
                 folder_path=request.folder_path,
+                file_ids=file_list,
+                options=options,
                 status="pending",
-                total_files=len(files),
-                completed_files=0,
-                failed_files=0,
-                include_classification=request.include_classification,
-                include_validation=request.include_validation,
                 started_at=datetime.utcnow()
             )
             db.add(analysis_job)
-            
-            # 진행률 레코드 생성
-            analysis_progress = AnalysisProgress(
-                job_id=job_id,
-                emp_id=emp_id,
-                status="pending",
-                progress=0,
-                total_files=len(files),
-                processed_files=0,
-                started_at=datetime.utcnow()
-            )
-            db.add(analysis_progress)
             db.commit()
             
             # 메모리에 작업 추적
@@ -130,35 +122,44 @@ class AnalysisService:
             AnalysisProgressResponse
         """
         try:
-            # DB에서 진행률 조회
-            progress = db.query(AnalysisProgress).filter(
-                AnalysisProgress.job_id == job_id,
-                AnalysisProgress.emp_id == emp_id
+            # DB에서 분석 작업 조회
+            job = db.query(AnalysisJob).filter(
+                AnalysisJob.job_id == job_id,
+                AnalysisJob.emp_id == emp_id
             ).first()
             
-            if not progress:
+            if not job:
                 raise ValueError("작업을 찾을 수 없습니다")
             
-            # 예상 남은 시간 계산
-            if progress.status == "processing" and progress.processed_files > 0:
-                elapsed = (datetime.utcnow() - progress.started_at).total_seconds()
-                avg_time_per_file = elapsed / progress.processed_files
-                remaining_files = progress.total_files - progress.processed_files
-                estimated_remaining = int(avg_time_per_file * remaining_files)
-            else:
-                estimated_remaining = None
+            # 파일 목록과 총 파일 수
+            file_ids = job.file_ids or []
+            total_files = len(file_ids)
+            
+            # 분석 결과 조회
+            results = db.query(AnalysisResult).filter(
+                AnalysisResult.job_id == job_id
+            ).all()
+            
+            processed_files = len(results)
+            progress = int((processed_files / total_files * 100)) if total_files > 0 else 0
+            
+            # 현재 상태에 따라 조정
+            if job.status == "pending":
+                progress = 0
+            elif job.status == "completed":
+                progress = 100
             
             return AnalysisProgressResponse(
                 job_id=job_id,
-                status=progress.status,
-                progress=progress.progress,
-                current_file=progress.current_filename,
-                total_files=progress.total_files,
-                processed_files=progress.processed_files,
-                error_message=progress.error_message,
-                started_at=progress.started_at,
-                updated_at=progress.updated_at,
-                estimated_time_remaining=estimated_remaining
+                status=job.status,
+                progress=progress,
+                current_file=None,
+                total_files=total_files,
+                processed_files=processed_files,
+                error_message=None,
+                started_at=job.started_at,
+                updated_at=job.completed_at or datetime.utcnow(),
+                estimated_time_remaining=None
             )
         
         except ValueError as e:

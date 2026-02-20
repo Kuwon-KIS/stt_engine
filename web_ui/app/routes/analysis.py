@@ -7,6 +7,8 @@ from fastapi import APIRouter, HTTPException, Request, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
 import asyncio
 import threading
+import traceback
+import logging
 
 from app.services.analysis_service import AnalysisService
 from app.utils.db import get_db
@@ -14,6 +16,8 @@ from app.models.analysis_schemas import (
     AnalysisStartRequest, AnalysisStartResponse, AnalysisProgressResponse, AnalysisResultListResponse
 )
 from app.models.database import FileUpload
+
+logger = logging.getLogger(__name__)
 
 
 router = APIRouter(
@@ -45,8 +49,11 @@ async def start_analysis(
         raise HTTPException(status_code=401, detail="로그인이 필요합니다")
     
     try:
+        logger.info(f"분석 시작 요청: emp_id={emp_id}, folder_path={request_data.folder_path}")
+        
         # 분석 시작
         response = AnalysisService.start_analysis(emp_id, request_data, db)
+        logger.info(f"분석 시작 성공: job_id={response.job_id}")
         
         # 해당 폴더의 파일 목록 조회
         files = db.query(FileUpload).filter(
@@ -82,8 +89,10 @@ async def start_analysis(
         return response
     
     except ValueError as e:
+        logger.error(f"분석 시작 ValueError: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        logger.error(f"분석 시작 에러: {str(e)}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
