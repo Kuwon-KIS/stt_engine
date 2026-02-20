@@ -106,15 +106,23 @@ async def delete_file_handler(
     Returns:
         dict: 삭제 결과
     """
-    logger.info(f"DELETE 라우터 호출 - filename={filename}, folder_path={folder_path}")
-    
-    # 세션에서 사번 추출
-    emp_id = request.session.get("emp_id")
-    if not emp_id:
-        logger.warning("세션 없음 - 미인증")
-        raise HTTPException(status_code=401, detail="로그인이 필요합니다")
-    
-    logger.info(f"파일 삭제 요청: emp_id={emp_id}, filename={filename}, folder_path={folder_path}")
-    
-    result = FileService.delete_file(emp_id, filename, folder_path, db)
-    return result
+    try:
+        logger.info(f"DELETE 라우터 호출 - filename={filename}, folder_path={folder_path}")
+        
+        # 세션에서 사번 추출
+        emp_id = request.session.get("emp_id")
+        if not emp_id:
+            logger.warning("세션 없음 - 미인증")
+            raise HTTPException(status_code=401, detail="로그인이 필요합니다")
+        
+        logger.info(f"파일 삭제 요청: emp_id={emp_id}, filename={filename}, folder_path={folder_path}")
+        
+        result = FileService.delete_file(emp_id, filename, folder_path, db)
+        logger.info(f"파일 삭제 성공: {result}")
+        return result
+    except HTTPException as e:
+        logger.error(f"HTTP 예외 - status: {e.status_code}, detail: {e.detail}")
+        raise
+    except Exception as e:
+        logger.error(f"예상치 못한 에러: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
