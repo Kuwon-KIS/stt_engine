@@ -49,9 +49,15 @@ app = FastAPI(
 app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET_KEY)
 
 # CORS 설정
+# 주의: allow_credentials=True일 때 allow_origins는 ["*"]가 아니어야 함
+cors_origins = CORS_ORIGINS if isinstance(CORS_ORIGINS, list) else ["*"]
+# 만약 wildcard라면 localhost만 허용 (개발 환경)
+if cors_origins == ["*"]:
+    cors_origins = ["http://localhost:8100", "http://127.0.0.1:8100"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS if isinstance(CORS_ORIGINS, list) else ["*"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -103,6 +109,16 @@ app.include_router(analysis.router)
 # ============================================================================
 # 1. 대시보드 및 기본 라우트
 # ============================================================================
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    """로그인 페이지"""
+    try:
+        return templates.TemplateResponse("login.html", {"request": request})
+    except Exception as e:
+        logger.error(f"로그인 페이지 로드 실패: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
