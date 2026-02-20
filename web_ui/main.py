@@ -27,7 +27,7 @@ from config import (
 )
 # Phase 1: 인증 및 DB 임포트
 from app.utils.db import init_db
-from app.routes import auth
+from app.routes import auth, files
 from models.schemas import (
     FileUploadResponse, TranscribeRequest, TranscribeResponse,
     BatchFileListResponse, BatchStartRequest, BatchStartResponse,
@@ -92,6 +92,11 @@ templates = Jinja2Templates(directory=BASE_DIR / "templates")
 app.include_router(auth.router)
 
 # ============================================================================
+# === Phase 2: 파일 관리 라우터 등록 ===
+# ============================================================================
+app.include_router(files.router)
+
+# ============================================================================
 # 1. 대시보드 및 기본 라우트
 # ============================================================================
 
@@ -102,6 +107,21 @@ async def dashboard(request: Request):
         return templates.TemplateResponse("index.html", {"request": request})
     except Exception as e:
         logger.error(f"대시보드 로드 실패: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/upload", response_class=HTMLResponse)
+async def upload_page(request: Request):
+    """파일 업로드 페이지 (Phase 2)"""
+    # 세션 확인
+    emp_id = request.session.get("emp_id")
+    if not emp_id:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다")
+    
+    try:
+        return templates.TemplateResponse("upload.html", {"request": request})
+    except Exception as e:
+        logger.error(f"업로드 페이지 로드 실패: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
