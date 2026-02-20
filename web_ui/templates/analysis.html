@@ -425,20 +425,33 @@
 
         async function loadFolders() {
             try {
-                const response = await apiCall('/api/files/folders', 'GET');
-                const data = await response.json();
+                console.log('폴더 로드 시작...');
+                const data = await apiCall('/api/files/folders', 'GET');
+                
+                if (!data) {
+                    console.error('폴더 데이터가 없습니다');
+                    return;
+                }
+                
+                console.log('폴더 로드 응답:', data);
                 
                 const select = document.getElementById('folderSelect');
                 select.innerHTML = '<option value="">폴더 선택...</option>';
                 
-                data.folders.forEach(folder => {
-                    const option = document.createElement('option');
-                    option.value = folder;
-                    option.textContent = folder;
-                    select.appendChild(option);
-                });
+                if (data.folders && data.folders.length > 0) {
+                    data.folders.forEach(folder => {
+                        const option = document.createElement('option');
+                        option.value = folder;
+                        option.textContent = folder;
+                        select.appendChild(option);
+                    });
+                    console.log(`총 ${data.folders.length}개 폴더 로드됨`);
+                } else {
+                    console.warn('폴더가 없습니다');
+                }
             } catch (error) {
-                showNotification('폴더 로드 실패', 'error');
+                console.error('폴더 로드 에러:', error);
+                showNotification('폴더 로드 실패: ' + error.message, 'error');
             }
         }
 
@@ -450,15 +463,14 @@
             }
 
             try {
-                const response = await apiCall('/api/analysis/start', 'POST', {
+                const data = await apiCall('/api/analysis/start', 'POST', {
                     folder_path: folderPath,
                     include_classification: document.getElementById('classificationCheck').checked,
                     include_validation: document.getElementById('validationCheck').checked
                 });
 
-                const data = await response.json();
-                if (!data.success) {
-                    throw new Error(data.message || '분석 시작 실패');
+                if (!data || !data.success) {
+                    throw new Error(data?.message || '분석 시작 실패');
                 }
 
                 currentJobId = data.job_id;
