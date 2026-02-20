@@ -339,3 +339,73 @@ def build_transcribe_response(
         memory_info=memory_info_obj,
         performance=perf_metrics_obj,
     )
+
+
+async def perform_ai_agent(
+    text: str,
+    stt_result: dict,
+    classification_result: dict = None,
+    privacy_removal_result: dict = None,
+) -> dict:
+    """
+    AI Agent 처리
+    
+    Args:
+        text: 처리할 텍스트 (정제된 텍스트 또는 원본)
+        stt_result: STT 결과
+        classification_result: 분류 결과
+        privacy_removal_result: 개인정보 제거 결과
+    
+    Returns:
+        {
+            'success': bool,
+            'agent_response': str,           # Agent의 응답
+            'chat_thread_id': str,          # 채팅 스레드 ID
+            'agent_type': str,              # 'external', 'vllm', 'dummy'
+            'error': str                    # 에러 메시지 (실패 시)
+        }
+    """
+    try:
+        from api_server.services.ai_agent_service import get_ai_agent_service
+        
+        logger.info(f"[Transcribe/AIAgent] AI Agent 처리 시작 (텍스트 길이: {len(text)})")
+        
+        # 정제된 텍스트 우선 사용 (privacy_removal 이미 실행했으면)
+        query_text = privacy_removal_result.get('processed_text', text) if privacy_removal_result else text
+        
+        # Classification 정보 추가
+        context = f"[분류: {classification_result.get('category', 'N/A')}] "if classification_result else ""
+        full_query = context + query_text
+        
+        service = await get_ai_agent_service()
+        result = await service.process(
+            user_query=full_query,
+            use_streaming=False,
+            chat_thread_id=None,
+            timeout=30
+        )
+        
+        if result.get('success'):
+            logger.info(f"[Transcribe/AIAgent] ✅ Agent 처리 완료 (agent_type: {result.get('agent_type')})")
+            return {
+                'success': True,
+                'agent_response': result.get('response'),
+                'chat_thread_id': result.get('chat_thread_id'),
+                'agent_type': result.get('agent_type'),
+                'processing_time_sec': result.get('processing_time_sec', 0)
+            }
+        else:
+            logger.error(f"[Transcribe/AIAgent] Agent 처리 실패: {result.get('error')}")
+            return {
+                'success': False,
+                'error': result.get('error', 'Unknown error'),
+                'agent_type': result.get('agent_type', 'unknown')
+            }
+    
+    except Exception as e:
+        logger.error(f"[Transcribe/AIAgent] 처리 오류: {type(e).__name__}: {e}", exc_info=True)
+        return {
+            'success': False,
+            'error': f"{type(e).__name__}: {str(e)}",
+            'agent_type': 'error'
+        }

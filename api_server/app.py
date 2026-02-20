@@ -389,11 +389,35 @@ async def transcribe_v2(
                     reason=classification_response.get('reason')
                 )
         
-        # 5. 처리 시간 계산
+        # 5. AI Agent 처리 (선택)
+        ai_agent_enabled = ai_agent.lower() in ['true', '1', 'yes', 'on']
+        agent_result = None
+        
+        if ai_agent_enabled:
+            logger.info(f"[API] AI Agent 처리 시작")
+            from api_server.transcribe_endpoint import perform_ai_agent
+            
+            # 정제된 텍스트 또는 원본 사용
+            agent_text = privacy_result.text if privacy_result else stt_result.get('text', '')
+            
+            agent_response = await perform_ai_agent(
+                text=agent_text,
+                stt_result=stt_result,
+                classification_result=classification_result,
+                privacy_removal_result=privacy_result
+            )
+            
+            if agent_response.get('success'):
+                agent_result = agent_response
+                logger.info(f"[API] ✅ AI Agent 처리 완료")
+            else:
+                logger.warning(f"[API] ⚠️ AI Agent 처리 실패: {agent_response.get('error')}")
+        
+        # 6. 처리 시간 계산
         processing_time = time.time() - start_time
         perf_metrics = perf_monitor.stop()
         
-        # 6. 응답 구성
+        # 7. 응답 구성
         response = build_transcribe_response(
             stt_result=stt_result,
             file_check=file_check,
@@ -407,9 +431,15 @@ async def transcribe_v2(
             processing_mode="streaming" if is_streaming else "normal"
         )
         
+        # AI Agent 결과 추가
+        if agent_result:
+            response.agent_response = agent_result.get('agent_response')
+            response.agent_type = agent_result.get('agent_type')
+            response.chat_thread_id = agent_result.get('chat_thread_id')
+        
         logger.info(f"[API] ✅ 요청 처리 완료 (처리시간: {processing_time:.2f}초)")
         
-        # 7. 내보내기 처리
+        # 8. 내보내기 처리
         if export and export.lower() in ["txt", "json"]:
             if export.lower() == "txt":
                 # 텍스트 파일 다운로드
@@ -429,7 +459,7 @@ async def transcribe_v2(
                     media_type="application/json; charset=utf-8"
                 )
         
-        # 8. JSON 응답
+        # 9. JSON 응답
         return JSONResponse(
             content=response.dict(),
             status_code=200,
@@ -1714,6 +1744,191 @@ async def list_available_prompts(
     prompts = service.get_available_prompts()
     logger.info(f"[PrivacyRemoval] 프롬프트 목록 조회: {prompts}")
     return {"available_prompts": prompts}
+
+
+# ============================================================================
+# AI Agent 엔드포인트
+# ============================================================================
+
+@app.post("/ai-agent/process")
+async def process_with_agent(
+    user_query: str = Body(..., description="처리할 쿼리 (정제된 STT 텍스트)"),
+    use_streaming: bool = Body(False, description="스트리밍 모드 사용 여부"),
+    chat_thread_id: Optional[str] = Body(None, description="채팅 스레드 ID"),
+    timeout: int = Body(30, description="요청 타임아웃 (초)")
+):
+    """
+    텍스트를 AI Agent로 처리합니다.
+    
+    **Request Body:**
+    ```json
+    {
+        "user_query": "정제된 STT 텍스트",
+        "use_streaming": false,
+        "chat_thread_id": null,
+        "timeout": 30
+    }
+    ```
+    
+    **Response:**
+    ```json
+    {
+        "success": true,
+        "response": "Agent의 응답 텍스트",
+        "chat_thread_id": "thread_id",
+        "agent_type": "external|vllm|dummy",
+        "processing_time_sec": 2.5,
+        "error": null
+    }
+    ```
+    
+    Fallback 순서:
+    1. 외부 Agent (설정된 경우)
+    2. vLLM Fallback
+    3. Dummy Agent (테스트용)
+    """
+    try:
+        from api_server.services.ai_agent_service import get_ai_agent_service
+        
+        logger.info(f"[AIAgent] 요청 수신 (query 길이: {len(user_query)})")
+        
+        service = await get_ai_agent_service()
+        result = await service.process(
+            user_query=user_query,
+            use_streaming=use_streaming,
+            chat_thread_id=chat_thread_id,
+            timeout=timeout
+        )
+        
+        logger.info(f"[AIAgent] ✅ 처리 완료 (agent_type: {result.get('agent_type')})")
+        return result
+    
+    except Exception as e:
+        logger.error(f"[AIAgent] 처리 오류: {type(e).__name__}: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": f"{type(e).__name__}: {str(e)}",
+            "response": None,
+            "agent_type": "error",
+            "processing_time_sec": 0
+        }
+
+
+@app.post("/ai-agent/dummy")
+async def dummy_agent(
+    user_query: str = Body(..., description="처리할 쿼리"),
+    chat_thread_id: Optional[str] = Body(None, description="채팅 스레드 ID")
+):
+    """
+    Dummy AI Agent 엔드포인트 (테스트용)
+    
+    **Request Body:**
+    ```json
+    {
+        "user_query": "사용자 쿼리",
+        "chat_thread_id": null
+    }
+    ```
+    
+    **Response:**
+    ```json
+    {
+        "success": true,
+        "response": "Dummy 응답",
+        "chat_thread_id": "thread_id",
+        "agent_type": "dummy",
+        "processing_time_sec": 0.1
+    }
+    ```
+    """
+    try:
+        import time
+        from api_server.services.ai_agent_service import AIAgentService
+        
+        logger.info(f"[Dummy Agent] 요청 수신 (query 길이: {len(user_query)})")
+        
+        start_time = time.time()
+        service = AIAgentService()
+        result = service._call_dummy_agent(
+            user_query=user_query,
+            chat_thread_id=chat_thread_id
+        )
+        result['processing_time_sec'] = time.time() - start_time
+        
+        logger.info(f"[Dummy Agent] ✅ 응답 생성 완료")
+        return result
+    
+    except Exception as e:
+        logger.error(f"[Dummy Agent] 오류: {type(e).__name__}: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": f"{type(e).__name__}: {str(e)}",
+            "response": None,
+            "agent_type": "dummy",
+            "processing_time_sec": 0
+        }
+
+
+@app.get("/ai-agent/health")
+async def agent_health():
+    """
+    AI Agent 서비스 상태 확인
+    
+    **Response:**
+    ```json
+    {
+        "status": "ok|warning|error",
+        "agent_url": "설정된 Agent URL",
+        "vllm_url": "vLLM URL",
+        "external_agent_available": true|false,
+        "vllm_available": true|false,
+        "fallback_enabled": true
+    }
+    ```
+    """
+    try:
+        from api_server.services.ai_agent_service import get_ai_agent_service
+        
+        service = await get_ai_agent_service()
+        
+        # Agent 가용성 확인
+        external_available = False
+        if service.agent_url:
+            try:
+                import requests
+                response = requests.get(f"{service.agent_url}/health", timeout=5)
+                external_available = response.status_code == 200
+            except:
+                pass
+        
+        # vLLM 가용성 확인
+        vllm_available = False
+        try:
+            import requests
+            response = requests.get(f"{service.vllm_base_url}/health", timeout=5)
+            vllm_available = response.status_code == 200
+        except:
+            pass
+        
+        status = "ok" if external_available or vllm_available else "warning"
+        
+        logger.info(f"[AIAgent] 헬스 체크: external={external_available}, vllm={vllm_available}")
+        
+        return {
+            "status": status,
+            "agent_url": service.agent_url or "(not configured)",
+            "vllm_url": service.vllm_base_url,
+            "external_agent_available": external_available,
+            "vllm_available": vllm_available,
+            "fallback_enabled": service.enable_fallback
+        }
+    
+    except Exception as e:
+        logger.error(f"[AIAgent] 헬스 체크 오류: {e}")
+        return {
+            "status": "error",
+            "error": str(e)
+        }
 
 
 if __name__ == "__main__":

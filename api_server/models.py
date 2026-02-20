@@ -102,6 +102,22 @@ class ClassificationResult(BaseModel):
 
 class AIAgentResult(BaseModel):
     """AI Agent 처리 결과"""
+    agent_response: Optional[str] = Field(
+        default=None,
+        description="Agent의 응답 텍스트"
+    )
+    agent_type: Optional[str] = Field(
+        default=None,
+        description="사용된 Agent 타입 (external, vllm, dummy)"
+    )
+    chat_thread_id: Optional[str] = Field(
+        default=None,
+        description="채팅 스레드 ID (대화 연속성)"
+    )
+    processing_time_sec: Optional[float] = Field(
+        default=None,
+        description="처리 시간 (초)"
+    )
     extracted_info: Optional[Dict[str, Any]] = Field(
         default=None,
         description="추출된 정보"
