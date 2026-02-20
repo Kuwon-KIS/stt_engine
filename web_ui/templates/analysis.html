@@ -531,6 +531,11 @@
                 const resultsList = document.getElementById('resultsList');
                 resultsList.innerHTML = '';
 
+                if (data.results.length === 0) {
+                    resultsList.innerHTML = '<p style="text-align: center; color: #999;">분석 결과가 없습니다</p>';
+                    return;
+                }
+
                 data.results.forEach(result => {
                     const resultDiv = document.createElement('div');
                     resultDiv.className = `result-item ${result.status}`;
@@ -542,13 +547,49 @@
                         </div>
                     `;
 
-                    if (result.status === 'completed' && result.transcription) {
-                        content += `
-                            <div class="result-content">
-                                <strong>인식 텍스트:</strong><br>
-                                ${result.transcription.text || '(인식 실패)'}
-                            </div>
-                        `;
+                    if (result.status === 'completed') {
+                        if (result.transcription) {
+                            content += `
+                                <div class="result-content">
+                                    <strong>🎙️ 인식 텍스트:</strong><br>
+                                    ${result.transcription.text || '(인식 실패)'}
+                                    <div style="margin-top: 8px; font-size: 12px; color: #999;">
+                                        신뢰도: ${(result.transcription.confidence * 100).toFixed(1)}% | 음성 길이: ${result.transcription.duration.toFixed(1)}초
+                                    </div>
+                                </div>
+                            `;
+                        }
+                        
+                        if (result.classification) {
+                            content += `
+                                <div class="result-content" style="margin-top: 12px;">
+                                    <strong>📊 분류:</strong><br>
+                                    ${result.classification.category}
+                                    <div style="margin-top: 4px; font-size: 12px; color: #999;">
+                                        신뢰도: ${(result.classification.confidence * 100).toFixed(1)}%
+                                    </div>
+                                </div>
+                            `;
+                        }
+                        
+                        if (result.validation) {
+                            const riskColors = {
+                                'low': '#51cf66',
+                                'medium': '#ffd43b',
+                                'high': '#ff6b6b'
+                            };
+                            content += `
+                                <div class="result-content" style="margin-top: 12px;">
+                                    <strong>⚠️ 검증:</strong><br>
+                                    위험도: <span style="color: ${riskColors[result.validation.risk_level] || '#999'}; font-weight: 600;">
+                                        ${result.validation.risk_level.toUpperCase()}
+                                    </span>
+                                    ${result.validation.issues_found ? `<div style="margin-top: 4px; font-size: 12px;">발견된 이슈: ${result.validation.issues.length}</div>` : ''}
+                                </div>
+                            `;
+                        }
+                    } else {
+                        content += `<div class="result-content" style="color: #999;">처리 실패</div>`;
                     }
 
                     resultDiv.innerHTML = content;

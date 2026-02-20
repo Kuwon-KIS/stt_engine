@@ -6,12 +6,14 @@ Phase 3: 분석 시작, 진행률, 결과 조회
 from fastapi import APIRouter, HTTPException, Request, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
 import asyncio
+import threading
 
 from app.services.analysis_service import AnalysisService
 from app.utils.db import get_db
 from app.models.analysis_schemas import (
     AnalysisStartRequest, AnalysisStartResponse, AnalysisProgressResponse, AnalysisResultListResponse
 )
+from app.models.database import FileUpload
 
 
 router = APIRouter(
@@ -46,18 +48,36 @@ async def start_analysis(
         # 분석 시작
         response = AnalysisService.start_analysis(emp_id, request_data, db)
         
-        # 백그라운드에서 분석 실행
-        files = db.query(request_data.__class__).all()  # TODO: 올바르게 파일 목록 가져오기
-        background_tasks.add_task(
-            AnalysisService.process_analysis_async,
-            response.job_id,
-            emp_id,
-            request_data.folder_path,
-            [f.filename for f in files],  # TODO: 파일 목록 가져오기
-            request_data.include_classification,
-            request_data.include_validation,
-            db
-        )
+        # 해당 폴더의 파일 목록 조회
+        files = db.query(FileUpload).filter(
+            FileUpload.emp_id == emp_id,
+            FileUpload.folder_path == request_data.folder_path
+        ).all()
+        
+        file_list = [f.filename for f in files]
+        
+        # 백그라운드에서 분석 실행 (스레드 사용)
+        def run_analysis():
+            # 새로운 세션 생성
+            from app.utils.db import SessionLocal
+            new_db = SessionLocal()
+            try:
+                asyncio.run(
+                    AnalysisService.process_analysis_async(
+                        response.job_id,
+                        emp_id,
+                        request_data.folder_path,
+                        file_list,
+                        request_data.include_classification,
+                        request_data.include_validation,
+                        new_db
+                    )
+                )
+            finally:
+                new_db.close()
+        
+        thread = threading.Thread(target=run_analysis, daemon=True)
+        thread.start()
         
         return response
     

@@ -404,7 +404,7 @@
             <!-- 작업 버튼 -->
             <div class="action-bar">
                 <button class="action-button secondary-button" onclick="showCreateFolderDialog()">📁 새 폴더</button>
-                <button class="action-button primary-button" onclick="startAnalysis()" id="startAnalysisBtn" style="display: none;">🔍 분석 시작</button>
+                <button class="action-button primary-button" onclick="startAnalysis()" id="startAnalysisBtn" disabled style="display: none;">🔍 분석 시작</button>
             </div>
         </div>
     </div>
@@ -511,6 +511,7 @@
                     </tr>
                 `;
                 document.getElementById('startAnalysisBtn').style.display = 'none';
+                document.getElementById('startAnalysisBtn').disabled = true;
                 return;
             }
             
@@ -525,8 +526,9 @@
                 </tr>
             `).join('');
             
-            // 분석 시작 버튼 표시
+            // 분석 시작 버튼 활성화
             document.getElementById('startAnalysisBtn').style.display = 'inline-block';
+            document.getElementById('startAnalysisBtn').disabled = false;
         }
 
         // 드래그 앤 드롭 처리

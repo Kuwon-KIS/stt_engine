@@ -5,6 +5,7 @@ Phase 3: 분석 작업 관리 및 실행
 
 import asyncio
 import uuid
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, List
@@ -322,34 +323,49 @@ class AnalysisService:
                         
                         # STT API 호출
                         try:
-                            async with session.post(
-                                f"{STT_API_URL}/transcribe",
-                                data={"file": open(file_path, "rb")},
-                                timeout=aiohttp.ClientTimeout(total=300)
-                            ) as resp:
-                                if resp.status == 200:
-                                    stt_result = await resp.json()
-                                    
-                                    # 결과 저장
-                                    result = AnalysisResult(
-                                        job_id=job_id,
-                                        emp_id=emp_id,
-                                        filename=filename,
-                                        status="completed",
-                                        transcription_text=stt_result.get("text"),
-                                        transcription_confidence=stt_result.get("confidence", 0.0),
-                                        audio_duration=stt_result.get("duration", 0.0),
-                                        classification_category=None,
-                                        validation_risk_level=None,
-                                        processed_at=datetime.utcnow(),
-                                        processing_duration=stt_result.get("duration", 0.0)
-                                    )
-                                    db.add(result)
-                                    db.commit()
-                                else:
-                                    raise Exception(f"STT API error: {resp.status}")
-                        except Exception as e:
-                            # STT 실패 처리
+                            file_size = file_path.stat().st_size
+                            
+                            with open(file_path, 'rb') as f:
+                                form_data = aiohttp.FormData()
+                                form_data.add_field('audio', f, filename=filename)
+                                
+                                timeout = aiohttp.ClientTimeout(total=600)
+                                async with session.post(
+                                    f"{STT_API_URL}/transcribe",
+                                    data=form_data,
+                                    timeout=timeout
+                                ) as resp:
+                                    if resp.status == 200:
+                                        stt_result = await resp.json()
+                                        
+                                        # 결과 저장
+                                        result = AnalysisResult(
+                                            job_id=job_id,
+                                            emp_id=emp_id,
+                                            filename=filename,
+                                            status="completed",
+                                            transcription_text=stt_result.get("text", ""),
+                                            transcription_confidence=float(stt_result.get("confidence", 0.0)),
+                                            audio_duration=float(stt_result.get("duration", 0.0)),
+                                            processed_at=datetime.utcnow(),
+                                            processing_duration=float(stt_result.get("duration", 0.0))
+                                        )
+                                        db.add(result)
+                                        db.commit()
+                                    else:
+                                        error_text = await resp.text()
+                                        result = AnalysisResult(
+                                            job_id=job_id,
+                                            emp_id=emp_id,
+                                            filename=filename,
+                                            status="failed",
+                                            processed_at=datetime.utcnow(),
+                                            processing_duration=0.0
+                                        )
+                                        db.add(result)
+                                        db.commit()
+                        except asyncio.TimeoutError:
+                            # 타임아웃
                             result = AnalysisResult(
                                 job_id=job_id,
                                 emp_id=emp_id,
