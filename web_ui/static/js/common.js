@@ -72,7 +72,7 @@ async function apiCall(endpoint, method = 'GET', body = null) {
             
             // 401 에러 (미인증)
             if (response.status === 401) {
-                window.location.href = '/static/login.html';
+                window.location.href = '/';
             }
             
             return null;
