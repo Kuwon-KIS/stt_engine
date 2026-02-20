@@ -665,7 +665,7 @@ startBatchBtn?.addEventListener("click", async () => {
         const classification = document.getElementById("classification-checkbox")?.checked || false;
         const aiAgent = document.getElementById("ai-agent-checkbox")?.checked || false;
         
-        console.log("[배치] 처리 옵션:", { privacy_removal: privacyRemoval, classification, ai_agent });
+        console.log("[배치] 처리 옵션:", { privacy_removal: privacyRemoval, classification, ai_agent: aiAgent });
 
         const result = await apiCall("/batch/start/", "POST", {
             extension: batchExtensionInput.value || ".wav",
