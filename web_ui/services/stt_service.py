@@ -81,6 +81,8 @@ class STTService:
                 api_file_path = file_path
                 logger.warning(f"[STT Service] 알 수 없는 경로 형식: {file_path}")
             
+            logger.info(f"[STT Service] API 파일 경로: {api_file_path}")
+            
             async with aiohttp.ClientSession() as session:
                 data = aiohttp.FormData()
                 data.add_field("file_path", api_file_path)
@@ -97,10 +99,13 @@ class STTService:
                     data.add_field("backend", backend)
                 
                 estimated_timeout = max(600, self.timeout)
+                logger.info(f"[STT Service] API URL: {self.api_url}/transcribe")
                 logger.info(f"[STT Service] API 타임아웃: {estimated_timeout}초")
+                logger.info(f"[STT Service] 요청 파라미터: language={language}, is_stream={is_stream}, backend={backend}")
                 
                 try:
                     logger.debug(f"[STT Service] POST 요청: {self.api_url}/transcribe")
+                    logger.info(f"[STT Service] API 호출 대기 중... (타임아웃: {estimated_timeout}초)")
                     async with session.post(
                         f"{self.api_url}/transcribe",
                         data=data,
@@ -124,6 +129,7 @@ class STTService:
                         
                         if response.status == 200:
                             success = result.get("success", False)
+                            logger.info(f"[STT Service] API 성공 여부: {success}")
                             if success:
                                 text_len = len(result.get('text', ''))
                                 logger.info(f"[STT Service] STT 완료: {text_len} 글자")
@@ -140,9 +146,12 @@ class STTService:
                                     class_result = result.get('classification', {})
                                     logger.info(f"[STT Service] Classification: {class_result.get('code')} (신뢰도: {class_result.get('confidence')}%)")
                             else:
-                                logger.error(f"[STT Service] API 처리 실패: {result.get('error', 'Unknown error')}")
+                                error_info = result.get('error', 'Unknown error')
+                                logger.error(f"[STT Service] API 처리 실패: {error_info}")
+                                logger.error(f"[STT Service] 전체 응답: {result}")
                         else:
-                            logger.error(f"[STT Service] HTTP {response.status}: {result}")
+                            logger.error(f"[STT Service] HTTP {response.status} 에러")
+                            logger.error(f"[STT Service] 응답 내용: {result}")
                         
                         return result
                 

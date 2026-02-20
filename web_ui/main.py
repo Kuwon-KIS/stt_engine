@@ -195,20 +195,34 @@ async def transcribe(request: TranscribeRequest) -> TranscribeResponse:
         file_path = UPLOAD_DIR / f"{request.file_id}*"
         files = list(UPLOAD_DIR.glob(f"{request.file_id}*"))
         
+        logger.info(f"[Transcribe] POST /api/transcribe/ 요청 수신")
+        logger.info(f"[Transcribe] file_id: {request.file_id}")
+        logger.info(f"[Transcribe] 업로드 디렉토리 검색: {UPLOAD_DIR}")
+        logger.info(f"[Transcribe] 발견된 파일 수: {len(files)}")
+        
         if not files:
             logger.error(f"[Transcribe] 파일을 찾을 수 없습니다: {request.file_id}")
+            logger.error(f"[Transcribe] 업로드 디렉토리 내용:")
+            try:
+                for item in UPLOAD_DIR.iterdir():
+                    logger.error(f"  - {item}")
+            except:
+                logger.error(f"[Transcribe] 디렉토리 읽기 실패")
             raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다")
         
         file_path = str(files[0])
+        logger.info(f"[Transcribe] 파일 발견: {file_path}")
         
         logger.info(f"[Transcribe] ===== 처리 시작 =====")
         logger.info(f"[Transcribe] 파일: {file_path}")
         logger.info(f"[Transcribe] 언어: {request.language}, 스트리밍: {request.is_stream}, 백엔드: {request.backend}")
         logger.info(f"[Transcribe] 처리 단계: Privacy={request.privacy_removal}, Classification={request.classification}, AI={request.ai_agent}")
+        logger.info(f"[Transcribe] STT API URL: {STT_API_URL}")
         
         start_time = time.time()
         
         try:
+            logger.info(f"[Transcribe] STT 서비스 호출 시작...")
             result = await stt_service.transcribe_local_file(
                 file_path=file_path,
                 language=request.language,
@@ -218,6 +232,8 @@ async def transcribe(request: TranscribeRequest) -> TranscribeResponse:
                 classification=request.classification,
                 ai_agent=request.ai_agent
             )
+            logger.info(f"[Transcribe] STT 서비스 호출 완료")
+            logger.info(f"[Transcribe] 결과 구조: success={result.get('success')}, keys={list(result.keys())}")
         except Exception as api_call_error:
             logger.error(f"[Transcribe] API 호출 중 예외 발생: {type(api_call_error).__name__}: {api_call_error}", exc_info=True)
             raise HTTPException(
@@ -226,11 +242,13 @@ async def transcribe(request: TranscribeRequest) -> TranscribeResponse:
             )
         
         processing_time = time.time() - start_time
+        logger.info(f"[Transcribe] 처리 시간: {processing_time:.2f}초")
         
         if not result.get("success"):
             error_msg = result.get("message", "처리 중 오류 발생")
             error_code = result.get("error_code", result.get("error", "UNKNOWN"))
             logger.error(f"[Transcribe] 처리 실패 (code={error_code}): {error_msg}")
+            logger.error(f"[Transcribe] 전체 결과: {result}")
             raise HTTPException(
                 status_code=500,
                 detail=error_msg

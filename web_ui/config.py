@@ -7,9 +7,20 @@ from pathlib import Path
 # 기본 경로
 BASE_DIR = Path(__file__).parent
 
-# 데이터 디렉토리는 /app/data로 마운트됨
-# Docker: -v /data/aiplatform/stt_engine_volumes/web_ui/data:/app/data
-DATA_DIR = Path("/app/data")
+# 데이터 디렉토리 설정
+# 우선순위:
+# 1. DATA_DIR 환경변수가 설정되어 있으면 사용
+# 2. /app/data가 존재하면 (Docker 환경) 사용
+# 3. 로컬 개발 환경: web_ui/data 폴더 사용
+if os.getenv("DATA_DIR"):
+    DATA_DIR = Path(os.getenv("DATA_DIR"))
+elif Path("/app/data").exists():
+    # Docker 환경 (마운트된 볼륨)
+    DATA_DIR = Path("/app/data")
+else:
+    # 로컬 개발 환경: web_ui/data 폴더 사용
+    DATA_DIR = BASE_DIR / "data"
+
 UPLOAD_DIR = DATA_DIR / "uploads"
 RESULT_DIR = DATA_DIR / "results"
 BATCH_INPUT_DIR = DATA_DIR / "batch_input"
