@@ -344,7 +344,6 @@ async function transcribeFile() {
         // 처리 옵션 (NEW)
         const privacyRemoval = document.getElementById("privacy-removal-checkbox")?.checked || false;
         const classification = document.getElementById("classification-checkbox")?.checked || false;
-        const aiAgent = document.getElementById("ai-agent-checkbox")?.checked || false;
         const incompleteElementsCheck = document.getElementById("incomplete-elements-check-checkbox")?.checked || false;
         const agentUrl = document.getElementById("agent-url-input")?.value || "";
         const agentRequestFormat = document.getElementById("agent-request-format-select")?.value || "text_only";
@@ -352,7 +351,6 @@ async function transcribeFile() {
         console.log("[Transcribe] 처리 옵션:", { 
             privacy_removal: privacyRemoval, 
             classification, 
-            ai_agent: aiAgent,
             incomplete_elements_check: incompleteElementsCheck,
             agent_url: agentUrl,
             agent_request_format: agentRequestFormat
@@ -365,7 +363,6 @@ async function transcribeFile() {
             is_stream: isStream,
             privacy_removal: privacyRemoval,                    // NEW
             classification: classification,                      // NEW
-            ai_agent: aiAgent,                                  // NEW
             incomplete_elements_check: incompleteElementsCheck, // NEW
             agent_url: agentUrl,                                // NEW
             agent_request_format: agentRequestFormat            // NEW
@@ -405,12 +402,6 @@ function displayResult(result) {
     if (result.processing_steps) {
         console.log("[Result] Processing Steps:", result.processing_steps);
         displayProcessingSteps(result.processing_steps);
-    }
-    
-    // Privacy Removal 결과 표시 (NEW)
-    if (result.privacy_removal) {
-        console.log("[Result] Privacy Removal:", result.privacy_removal);
-        displayPrivacyResults(result.privacy_removal);
     }
     
     // Classification 결과 표시 (NEW)
@@ -499,9 +490,6 @@ function displayProcessingSteps(steps) {
         <div style="padding: 8px; background: ${steps.classification ? '#d4edda' : '#f8d7da'}; border-radius: 4px;">
             <span>${steps.classification ? '✅' : '❌'} 통화 분류</span>
         </div>
-        <div style="padding: 8px; background: ${steps.ai_agent ? '#d4edda' : '#f8d7da'}; border-radius: 4px;">
-            <span>${steps.ai_agent ? '✅' : '❌'} AI Agent 처리</span>
-        </div>
         <div style="padding: 8px; background: ${steps.incomplete_elements ? '#d4edda' : '#f8d7da'}; border-radius: 4px;">
             <span>${steps.incomplete_elements ? '✅' : '❌'} 불완전판매요소 검증</span>
         </div>
@@ -509,25 +497,6 @@ function displayProcessingSteps(steps) {
     
     content.innerHTML = stepsHtml;
     section.style.display = "block";
-}
-
-/**
- * Privacy Removal 결과 표시 (NEW)
- */
-function displayPrivacyResults(privacy) {
-    const section = document.getElementById("privacy-result-section");
-    if (!section) return;
-    
-    const hasPrivacy = privacy.exist ? "예 (개인정보 감지됨)" : "아니오";
-    const reason = privacy.reason || "확인되지 않음";
-    const processedText = privacy.processed_text || "-";
-    
-    document.getElementById("privacy-exist").textContent = hasPrivacy;
-    document.getElementById("privacy-reason").textContent = reason;
-    document.getElementById("privacy-text").textContent = processedText;
-    
-    section.style.display = "block";
-    console.log("[Privacy Results] 표시됨");
 }
 
 /**
@@ -679,7 +648,6 @@ startBatchBtn?.addEventListener("click", async () => {
         // 처리 옵션 (NEW)
         const privacyRemoval = document.getElementById("privacy-removal-checkbox")?.checked || false;
         const classification = document.getElementById("classification-checkbox")?.checked || false;
-        const aiAgent = document.getElementById("ai-agent-checkbox")?.checked || false;
         const incompleteElementsCheck = document.getElementById("incomplete-elements-check-checkbox")?.checked || false;
         const agentUrl = document.getElementById("agent-url-input")?.value || "";
         const agentRequestFormat = document.getElementById("agent-request-format-select")?.value || "text_only";
@@ -687,7 +655,6 @@ startBatchBtn?.addEventListener("click", async () => {
         console.log("[배치] 처리 옵션:", { 
             privacy_removal: privacyRemoval, 
             classification, 
-            ai_agent: aiAgent,
             incomplete_elements_check: incompleteElementsCheck,
             agent_url: agentUrl,
             agent_request_format: agentRequestFormat
@@ -699,7 +666,6 @@ startBatchBtn?.addEventListener("click", async () => {
             parallel_count: parseInt(batchParallelInput.value) || 2,
             privacy_removal: privacyRemoval,                    // NEW
             classification: classification,                      // NEW
-            ai_agent: aiAgent,                                  // NEW
             incomplete_elements_check: incompleteElementsCheck, // NEW
             agent_url: agentUrl,                                // NEW
             agent_request_format: agentRequestFormat            // NEW

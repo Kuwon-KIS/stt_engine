@@ -84,10 +84,24 @@
                             <input type="checkbox" id="classification-checkbox">
                             📊 통화 분류
                         </label>
-                        <label style="display: block;">
-                            <input type="checkbox" id="ai-agent-checkbox">
-                            🤖 AI Agent 처리
+                        <label style="display: block; margin-bottom: 8px;">
+                            <input type="checkbox" id="incomplete-elements-check-checkbox">
+                            ⚠️ 불완전판매요소 검증
                         </label>
+                        <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #ddd;">
+                            <label style="display: block; margin-bottom: 4px; font-size: 12px; color: #666;">
+                                불완전판매요소 검증 옵션:
+                            </label>
+                            <label style="display: block; margin-bottom: 4px;">
+                                <input type="text" id="agent-url-input" placeholder="Agent 서버 URL (선택사항)" style="width: 100%; padding: 6px; font-size: 12px; border: 1px solid #ccc; border-radius: 3px;">
+                            </label>
+                            <label style="display: block;">
+                                <select id="agent-request-format-select" style="width: 100%; padding: 6px; font-size: 12px; border: 1px solid #ccc; border-radius: 3px;">
+                                    <option value="text_only">Text Only (기본)</option>
+                                    <option value="prompt_based">Prompt Based</option>
+                                </select>
+                            </label>
+                        </div>
                     </div>
                 </div>
 
@@ -130,17 +144,6 @@
                 <div id="processing-steps-section" class="result-card" style="display: none;">
                     <h3>✅ 처리 단계 현황</h3>
                     <div id="processing-steps-content" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;"></div>
-                </div>
-
-                <!-- Privacy Removal 결과 (NEW) -->
-                <div id="privacy-result-section" class="result-card" style="display: none;">
-                    <h3>🔐 개인정보 제거 결과</h3>
-                    <div>
-                        <p><strong>개인정보 존재:</strong> <span id="privacy-exist">-</span></p>
-                        <p><strong>개인정보 유형:</strong> <span id="privacy-reason">-</span></p>
-                        <p><strong>처리된 텍스트:</strong></p>
-                        <div id="privacy-text" style="background: #f5f5f5; padding: 8px; border-radius: 4px; max-height: 200px; overflow-y: auto;"></div>
-                    </div>
                 </div>
 
                 <!-- Classification 결과 (NEW) -->
