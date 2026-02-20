@@ -72,7 +72,7 @@ def validate_file_path(emp_id: str, folder_path: str, filename: str) -> Path:
     
     Args:
         emp_id: 사번
-        folder_path: 폴더 경로 (예: "2026-02-20")
+        folder_path: 폴더 경로 (예: "2026-02-20", None이면 최상위)
         filename: 파일명
     
     Returns:
@@ -91,8 +91,11 @@ def validate_file_path(emp_id: str, folder_path: str, filename: str) -> Path:
     except ValueError:
         raise ValueError("Invalid emp_id")
     
-    # 전체 파일 경로
-    file_path = (user_dir / folder_path / filename).resolve()
+    # 전체 파일 경로 (folder_path가 None이면 사용자 디렉토리 직하)
+    if folder_path:
+        file_path = (user_dir / folder_path / filename).resolve()
+    else:
+        file_path = (user_dir / filename).resolve()
     
     # 파일 경로가 사용자 디렉토리 내에 있는지 확인
     try:

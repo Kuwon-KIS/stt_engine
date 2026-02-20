@@ -7,11 +7,14 @@ from pathlib import Path
 from datetime import datetime
 from fastapi import UploadFile, HTTPException
 from sqlalchemy.orm import Session
+import logging
 
 from app.models.database import FileUpload, Employee
 from app.models.file_schemas import FileUploadResponse, FileListResponse, FolderListResponse
 from app.utils import file_utils
 from config import UPLOAD_DIR
+
+logger = logging.getLogger(__name__)
 
 
 class FileService:
@@ -270,4 +273,5 @@ class FileService:
         except HTTPException:
             raise
         except Exception as e:
+            logger.error(f"파일 삭제 실패 - emp_id: {emp_id}, filename: {filename}, folder_path: {folder_path}, error: {str(e)}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"삭제 실패: {str(e)}")
