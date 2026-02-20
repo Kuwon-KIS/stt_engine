@@ -345,17 +345,30 @@ async function transcribeFile() {
         const privacyRemoval = document.getElementById("privacy-removal-checkbox")?.checked || false;
         const classification = document.getElementById("classification-checkbox")?.checked || false;
         const aiAgent = document.getElementById("ai-agent-checkbox")?.checked || false;
+        const incompleteElementsCheck = document.getElementById("incomplete-elements-check-checkbox")?.checked || false;
+        const agentUrl = document.getElementById("agent-url-input")?.value || "";
+        const agentRequestFormat = document.getElementById("agent-request-format-select")?.value || "text_only";
         
-        console.log("[Transcribe] 처리 옵션:", { privacy_removal: privacyRemoval, classification, ai_agent: aiAgent });
+        console.log("[Transcribe] 처리 옵션:", { 
+            privacy_removal: privacyRemoval, 
+            classification, 
+            ai_agent: aiAgent,
+            incomplete_elements_check: incompleteElementsCheck,
+            agent_url: agentUrl,
+            agent_request_format: agentRequestFormat
+        });
         
         const result = await apiCall("/transcribe/", "POST", {
             file_id: uploadResult.file_id,
             language: language,
             backend: backend,
             is_stream: isStream,
-            privacy_removal: privacyRemoval,      // NEW
-            classification: classification,        // NEW
-            ai_agent: aiAgent                     // NEW
+            privacy_removal: privacyRemoval,                    // NEW
+            classification: classification,                      // NEW
+            ai_agent: aiAgent,                                  // NEW
+            incomplete_elements_check: incompleteElementsCheck, // NEW
+            agent_url: agentUrl,                                // NEW
+            agent_request_format: agentRequestFormat            // NEW
         });
 
         hideLoading();
@@ -488,6 +501,9 @@ function displayProcessingSteps(steps) {
         </div>
         <div style="padding: 8px; background: ${steps.ai_agent ? '#d4edda' : '#f8d7da'}; border-radius: 4px;">
             <span>${steps.ai_agent ? '✅' : '❌'} AI Agent 처리</span>
+        </div>
+        <div style="padding: 8px; background: ${steps.incomplete_elements ? '#d4edda' : '#f8d7da'}; border-radius: 4px;">
+            <span>${steps.incomplete_elements ? '✅' : '❌'} 불완전판매요소 검증</span>
         </div>
     `;
     
@@ -664,16 +680,29 @@ startBatchBtn?.addEventListener("click", async () => {
         const privacyRemoval = document.getElementById("privacy-removal-checkbox")?.checked || false;
         const classification = document.getElementById("classification-checkbox")?.checked || false;
         const aiAgent = document.getElementById("ai-agent-checkbox")?.checked || false;
+        const incompleteElementsCheck = document.getElementById("incomplete-elements-check-checkbox")?.checked || false;
+        const agentUrl = document.getElementById("agent-url-input")?.value || "";
+        const agentRequestFormat = document.getElementById("agent-request-format-select")?.value || "text_only";
         
-        console.log("[배치] 처리 옵션:", { privacy_removal: privacyRemoval, classification, ai_agent: aiAgent });
+        console.log("[배치] 처리 옵션:", { 
+            privacy_removal: privacyRemoval, 
+            classification, 
+            ai_agent: aiAgent,
+            incomplete_elements_check: incompleteElementsCheck,
+            agent_url: agentUrl,
+            agent_request_format: agentRequestFormat
+        });
 
         const result = await apiCall("/batch/start/", "POST", {
             extension: batchExtensionInput.value || ".wav",
             language: batchLanguageSelect.value,
             parallel_count: parseInt(batchParallelInput.value) || 2,
-            privacy_removal: privacyRemoval,     // NEW
-            classification: classification,       // NEW
-            ai_agent: aiAgent                    // NEW
+            privacy_removal: privacyRemoval,                    // NEW
+            classification: classification,                      // NEW
+            ai_agent: aiAgent,                                  // NEW
+            incomplete_elements_check: incompleteElementsCheck, // NEW
+            agent_url: agentUrl,                                // NEW
+            agent_request_format: agentRequestFormat            // NEW
         });
 
         currentBatchId = result.batch_id;

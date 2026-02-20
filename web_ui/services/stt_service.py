@@ -44,7 +44,10 @@ class STTService:
         backend: str = None,
         privacy_removal: bool = False,
         classification: bool = False,
-        ai_agent: bool = False
+        ai_agent: bool = False,
+        incomplete_elements_check: bool = False,
+        agent_url: str = "",
+        agent_request_format: str = "text_only"
     ) -> dict:
         """
         로컬 파일을 STT API에 전달 (파일 경로 방식)
@@ -61,6 +64,9 @@ class STTService:
             privacy_removal: 개인정보 제거 여부
             classification: 통화 분류 여부
             ai_agent: AI Agent 처리 여부
+            incomplete_elements_check: 불완전판매요소 검증 여부
+            agent_url: Agent 서버 URL
+            agent_request_format: Agent 요청 형식 (text_only 또는 prompt_based)
         
         Returns:
             처리 결과 딕셔너리 (processing_steps 포함)
@@ -68,7 +74,9 @@ class STTService:
         try:
             logger.info(f"[STT Service] 파일 처리 시작: {file_path}")
             logger.info(f"  - 언어: {language}, 스트림: {is_stream}, 백엔드: {backend}")
-            logger.info(f"  - 처리 단계: Privacy={privacy_removal}, Classification={classification}, AI={ai_agent}")
+            logger.info(f"  - 처리 단계: Privacy={privacy_removal}, Classification={classification}, AI={ai_agent}, IncompleteElements={incomplete_elements_check}")
+            if incomplete_elements_check and agent_url:
+                logger.info(f"  - Agent URL: {agent_url}, Format: {agent_request_format}")
             
             # 파일 경로 변환 (Web UI 볼륨 -> API 접근 경로)
             if file_path.startswith("/app/data/"):
@@ -93,6 +101,12 @@ class STTService:
                 data.add_field("privacy_removal", str(privacy_removal).lower())
                 data.add_field("classification", str(classification).lower())
                 data.add_field("ai_agent", str(ai_agent).lower())
+                data.add_field("incomplete_elements_check", str(incomplete_elements_check).lower())
+                
+                # Agent 관련 설정
+                if incomplete_elements_check and agent_url:
+                    data.add_field("agent_url", agent_url)
+                    data.add_field("agent_request_format", agent_request_format)
                 
                 # backend 지정
                 if backend:
@@ -136,18 +150,12 @@ class STTService:
                                 
                                 # processing_steps 로깅
                                 steps = result.get("processing_steps", {})
-                                logger.info(f"[STT Service] 처리 단계: STT={steps.get('stt')}, Privacy={steps.get('privacy_removal')}, Classification={steps.get('classification')}, AI={steps.get('ai_agent')}")
+                                logger.info(f"[STT Service] 처리 단계: STT={steps.get('stt')}, Privacy={steps.get('privacy_removal')}, Classification={steps.get('classification')}, AI={steps.get('ai_agent')}, IncompleteElements={steps.get('incomplete_elements')}")
                                 
-                                if steps.get('privacy_removal'):
-                                    privacy_result = result.get('privacy_removal', {})
-                                    logger.info(f"[STT Service] Privacy Removal: 개인정보 존재={privacy_result.get('privacy_exist')}")
-                                
-                                if steps.get('classification'):
-                                    class_result = result.get('classification', {})
-                                    logger.info(f"[STT Service] Classification: {class_result.get('code')} (신뢰도: {class_result.get('confidence')}%)")
-                            else:
-                                error_info = result.get('error', 'Unknown error')
-                                logger.error(f"[STT Service] API 처리 실패: {error_info}")
+                                # 불완전판매요소 검증 결과 로깅
+                                if incomplete_elements_check and result.get('incomplete_elements'):
+                                    incomplete_result = result.get('incomplete_elements', {})
+                                    logger.info(f"[STT Service] 불완전판매요소 검증 완료: agent_type={incomplete_result.get('agent_type')}")
                                 logger.error(f"[STT Service] 전체 응답: {result}")
                         else:
                             logger.error(f"[STT Service] HTTP {response.status} 에러")
@@ -190,7 +198,7 @@ class STTService:
             logger.error(f"[STT Service] 백엔드 정보 조회 실패: {e}")
             return {}
     
-    async def process_transcribe_job(self, job, privacy_removal: bool = False, classification: bool = False, ai_agent: bool = False) -> dict:
+    async def process_transcribe_job(self, job, privacy_removal: bool = False, classification: bool = False, ai_agent: bool = False, incomplete_elements_check: bool = False, agent_url: str = "", agent_request_format: str = "text_only") -> dict:
         """
         비동기 작업 큐에서 호출되는 메서드
         job 객체의 상태를 업데이트하면서 처리
@@ -200,6 +208,9 @@ class STTService:
             privacy_removal: 개인정보 제거 여부
             classification: 통화 분류 여부
             ai_agent: AI Agent 처리 여부
+            incomplete_elements_check: 불완전판매요소 검증 여부
+            agent_url: Agent 서버 URL
+            agent_request_format: Agent 요청 형식 (text_only 또는 prompt_based)
         
         Returns:
             처리 결과 딕셔너리
@@ -207,7 +218,9 @@ class STTService:
         try:
             logger.info(f"[STT Service] 비동기 처리 시작: {job.job_id}")
             logger.info(f"  - 파일: {job.file_path}")
-            logger.info(f"  - 처리 단계: Privacy={privacy_removal}, Classification={classification}, AI={ai_agent}")
+            logger.info(f"  - 처리 단계: Privacy={privacy_removal}, Classification={classification}, AI={ai_agent}, IncompleteElements={incomplete_elements_check}")
+            if incomplete_elements_check and agent_url:
+                logger.info(f"  - Agent URL: {agent_url}, Format: {agent_request_format}")
             
             # 파일 경로 변환
             file_path = job.file_path
@@ -229,6 +242,12 @@ class STTService:
                 data.add_field("privacy_removal", str(privacy_removal).lower())
                 data.add_field("classification", str(classification).lower())
                 data.add_field("ai_agent", str(ai_agent).lower())
+                data.add_field("incomplete_elements_check", str(incomplete_elements_check).lower())
+                
+                # Agent 관련 설정
+                if incomplete_elements_check and agent_url:
+                    data.add_field("agent_url", agent_url)
+                    data.add_field("agent_request_format", agent_request_format)
                 
                 # 장시간 처리를 고려하여 충분한 타임아웃 설정
                 estimated_timeout = max(600, self.timeout)
@@ -266,7 +285,11 @@ class STTService:
                                 
                                 # processing_steps 로깅
                                 steps = result.get("processing_steps", {})
-                                logger.info(f"[STT Service] 처리 단계 (job: {job.job_id}): STT={steps.get('stt')}, Privacy={steps.get('privacy_removal')}, Classification={steps.get('classification')}")
+                                logger.info(f"[STT Service] 처리 단계 (job: {job.job_id}): STT={steps.get('stt')}, Privacy={steps.get('privacy_removal')}, Classification={steps.get('classification')}, IncompleteElements={steps.get('incomplete_elements')}")
+                                
+                                # 불완전판매요소 검증 결과 로깅
+                                if incomplete_elements_check and result.get('incomplete_elements'):
+                                    logger.info(f"[STT Service] 불완전판매요소 검증 완료 (job: {job.job_id})")
                                 
                                 job.progress = 100
                             else:

@@ -216,7 +216,9 @@ async def transcribe(request: TranscribeRequest) -> TranscribeResponse:
         logger.info(f"[Transcribe] ===== 처리 시작 =====")
         logger.info(f"[Transcribe] 파일: {file_path}")
         logger.info(f"[Transcribe] 언어: {request.language}, 스트리밍: {request.is_stream}, 백엔드: {request.backend}")
-        logger.info(f"[Transcribe] 처리 단계: Privacy={request.privacy_removal}, Classification={request.classification}, AI={request.ai_agent}")
+        logger.info(f"[Transcribe] 처리 단계: Privacy={request.privacy_removal}, Classification={request.classification}, AI={request.ai_agent}, IncompleteElements={request.incomplete_elements_check}")
+        if request.incomplete_elements_check and request.agent_url:
+            logger.info(f"[Transcribe] Agent URL: {request.agent_url}, Format: {request.agent_request_format}")
         logger.info(f"[Transcribe] STT API URL: {STT_API_URL}")
         
         start_time = time.time()
@@ -230,7 +232,10 @@ async def transcribe(request: TranscribeRequest) -> TranscribeResponse:
                 backend=request.backend,
                 privacy_removal=request.privacy_removal,
                 classification=request.classification,
-                ai_agent=request.ai_agent
+                ai_agent=request.ai_agent,
+                incomplete_elements_check=request.incomplete_elements_check,
+                agent_url=request.agent_url,
+                agent_request_format=request.agent_request_format
             )
             logger.info(f"[Transcribe] STT 서비스 호출 완료")
             logger.info(f"[Transcribe] 결과 구조: success={result.get('success')}, keys={list(result.keys())}")
@@ -256,7 +261,12 @@ async def transcribe(request: TranscribeRequest) -> TranscribeResponse:
         
         # 처리 단계 로깅
         processing_steps = result.get("processing_steps", {})
-        logger.info(f"[Transcribe] 처리 단계 완료: STT={processing_steps.get('stt')}, Privacy={processing_steps.get('privacy_removal')}, Classification={processing_steps.get('classification')}, AI={processing_steps.get('ai_agent')}")
+        logger.info(f"[Transcribe] 처리 단계 완료: STT={processing_steps.get('stt')}, Privacy={processing_steps.get('privacy_removal')}, Classification={processing_steps.get('classification')}, AI={processing_steps.get('ai_agent')}, IncompleteElements={processing_steps.get('incomplete_elements')}")
+        
+        # 불완전판매요소 검증 결과 로깅
+        if request.incomplete_elements_check and result.get('incomplete_elements'):
+            incomplete_result = result.get('incomplete_elements', {})
+            logger.info(f"[Transcribe] 불완전판매요소 검증 결과: agent_type={incomplete_result.get('agent_type')}")
         
         # Privacy Removal 결과 로깅
         if request.privacy_removal and result.get("privacy_removal"):
@@ -277,7 +287,8 @@ async def transcribe(request: TranscribeRequest) -> TranscribeResponse:
             "backend": result.get("backend", "unknown"),
             "processing_steps": processing_steps,
             "privacy_removal": result.get("privacy_removal"),
-            "classification": result.get("classification")
+            "classification": result.get("classification"),
+            "incomplete_elements": result.get("incomplete_elements")
         })
         
         # 성능 메트릭 저장
@@ -350,7 +361,9 @@ async def start_batch(
         logger.info(f"[배치] 확장자: {request.extension}")
         logger.info(f"[배치] 언어: {request.language}")
         logger.info(f"[배치] 병렬 처리: {request.parallel_count}")
-        logger.info(f"[배치] 처리 단계: Privacy={getattr(request, 'privacy_removal', False)}, Classification={getattr(request, 'classification', False)}")
+        logger.info(f"[배치] 처리 단계: Privacy={getattr(request, 'privacy_removal', False)}, Classification={getattr(request, 'classification', False)}, AI={getattr(request, 'ai_agent', False)}, IncompleteElements={getattr(request, 'incomplete_elements_check', False)}")
+        if getattr(request, 'incomplete_elements_check', False) and getattr(request, 'agent_url', ''):
+            logger.info(f"[배치] Agent URL: {request.agent_url}, Format: {getattr(request, 'agent_request_format', 'text_only')}")
         
         # BATCH_INPUT_DIR 값 확인
         logger.info(f"[배치] BATCH_INPUT_DIR 설정값 = {BATCH_INPUT_DIR}")
@@ -418,7 +431,10 @@ async def start_batch(
                         is_stream=False,
                         privacy_removal=privacy_removal,
                         classification=classification,
-                        ai_agent=ai_agent
+                        ai_agent=ai_agent,
+                        incomplete_elements_check=getattr(request, 'incomplete_elements_check', False),
+                        agent_url=getattr(request, 'agent_url', ''),
+                        agent_request_format=getattr(request, 'agent_request_format', 'text_only')
                     )
                     logger.info(f"[배치] 파일 처리 완료: {file_path}")
                     return result

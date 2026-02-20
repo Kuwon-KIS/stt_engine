@@ -39,6 +39,9 @@ class TranscribeRequest(BaseModel):
     privacy_removal: bool = Field(default=False, description="개인정보 제거 여부")
     classification: bool = Field(default=False, description="통화 분류 여부")
     ai_agent: bool = Field(default=False, description="AI Agent 처리 여부")
+    incomplete_elements_check: bool = Field(default=False, description="불완전판매요소 검증 여부")
+    agent_url: Optional[str] = Field(default="", description="Agent 서버 URL")
+    agent_request_format: str = Field(default="text_only", description="Agent 요청 형식 (text_only 또는 prompt_based)")
 
 
 class ProcessingStepsStatus(BaseModel):
@@ -90,6 +93,12 @@ class BatchStartRequest(BaseModel):
     extension: str = Field(default=".wav")
     language: str = Field(default="ko")
     parallel_count: int = Field(default=2, ge=1, le=8)
+    privacy_removal: bool = Field(default=False, description="개인정보 제거 여부")
+    classification: bool = Field(default=False, description="통화 분류 여부")
+    ai_agent: bool = Field(default=False, description="AI Agent 처리 여부")
+    incomplete_elements_check: bool = Field(default=False, description="불완전판매요소 검증 여부")
+    agent_url: Optional[str] = Field(default="", description="Agent 서버 URL")
+    agent_request_format: str = Field(default="text_only", description="Agent 요청 형식 (text_only 또는 prompt_based)")
 
 
 class BatchStartResponse(BaseModel):
