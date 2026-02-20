@@ -39,8 +39,8 @@ async def list_folders(
 
 @router.get("/list")
 async def list_files(
+    request: Request,
     folder_path: str = None,
-    request: Request = None,
     db: Session = Depends(get_db)
 ):
     """
@@ -90,8 +90,8 @@ async def upload_file(
 @router.delete("/{filename}")
 async def delete_file(
     filename: str,
+    request: Request,
     folder_path: str = None,
-    request: Request = None,
     db: Session = Depends(get_db)
 ):
     """

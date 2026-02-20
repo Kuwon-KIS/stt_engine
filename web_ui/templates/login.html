@@ -238,6 +238,7 @@
                 const response = await fetch('/api/auth/login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',  // 쿠키 포함
                     body: JSON.stringify({ emp_id: empId })
                 });
 
@@ -268,7 +269,9 @@
         // 페이지 로드 시 자동으로 로그인 상태 확인
         document.addEventListener('DOMContentLoaded', async () => {
             try {
-                const response = await fetch('/api/auth/session');
+                const response = await fetch('/api/auth/session', {
+                    credentials: 'include'  // 쿠키 포함
+                });
                 if (response.ok) {
                     // 이미 로그인 상태 - 업로드 페이지로 이동
                     window.location.href = '/upload';

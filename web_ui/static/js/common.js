@@ -54,7 +54,8 @@ async function apiCall(endpoint, method = 'GET', body = null) {
         method,
         headers: {
             'Content-Type': 'application/json'
-        }
+        },
+        credentials: 'include'  // 쿠키 포함 (세션 유지)
     };
 
     if (body && method !== 'GET') {
