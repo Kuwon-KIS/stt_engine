@@ -242,11 +242,18 @@ class FileService:
             
             # DB에서 삭제
             if db:
-                db.query(FileUpload).filter(
+                query = db.query(FileUpload).filter(
                     FileUpload.emp_id == emp_id,
-                    FileUpload.filename == filename,
-                    FileUpload.folder_path == folder_path
-                ).delete()
+                    FileUpload.filename == filename
+                )
+                
+                # folder_path 필터 (None인 경우 처리)
+                if folder_path:
+                    query = query.filter(FileUpload.folder_path == folder_path)
+                else:
+                    query = query.filter(FileUpload.folder_path.is_(None))
+                
+                query.delete()
                 db.commit()
                 
                 # 폴더가 비어있으면 정리

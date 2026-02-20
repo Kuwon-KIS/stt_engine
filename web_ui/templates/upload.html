@@ -664,13 +664,22 @@
                     ? `/api/files/${encodeURIComponent(filename)}?folder_path=${encodeURIComponent(currentFolder)}`
                     : `/api/files/${encodeURIComponent(filename)}`;
                 
-                const response = await apiCall(url, 'DELETE');
-                if (!response.ok) throw new Error('삭제 실패');
+                const response = await fetch(url, {
+                    method: 'DELETE',
+                    credentials: 'include'
+                });
                 
+                if (!response.ok) {
+                    throw new Error(`삭제 실패 (상태: ${response.status})`);
+                }
+                
+                const result = await response.json();
                 showNotification('파일이 삭제되었습니다', 'success');
+                console.log('파일 삭제 성공:', filename);
                 loadFiles();
                 loadFolders();
             } catch (error) {
+                console.error('파일 삭제 에러:', error);
                 showNotification(error.message, 'error');
             }
         }
