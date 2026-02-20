@@ -287,8 +287,9 @@ async def transcribe_v2(
     is_stream: str = Form("false"),
     privacy_removal: str = Form("false"),
     classification: str = Form("false"),
-    ai_agent: str = Form("false"),
-    ai_agent_type: str = Form("external"),
+    incomplete_elements_check: str = Form("false"),
+    agent_url: str = Form(""),
+    agent_request_format: str = Form("text_only"),
     export: Optional[str] = Query(None, description="Export format: 'txt' or 'json'"),
     privacy_prompt_type: str = Form("privacy_remover_default_v6"),
     classification_prompt_type: str = Form("classification_default_v1"),
@@ -302,14 +303,27 @@ async def transcribe_v2(
     - is_stream: 스트리밍 모드 (기본: "false")
     - privacy_removal: 개인정보 제거 (기본: "false")
     - classification: 통화 분류 (기본: "false")
-    - ai_agent: AI Agent 처리 (기본: "false")
-    - ai_agent_type: AI Agent 타입 (external, vllm, dummy) (기본: "external")
+    - incomplete_elements_check: 불완전판매요소 검증 (기본: "false")
+    - agent_url: Agent 서버 URL (기본: 없음)
+    - agent_request_format: Agent 요청 형식 (text_only 또는 prompt_based) (기본: "text_only")
     - export: 내보내기 형식 ("txt" 또는 "json")
     - privacy_prompt_type: Privacy Removal 프롬프트 타입
     - classification_prompt_type: Classification 프롬프트 타입
     
     Returns:
     - TranscribeResponse: 처리 결과
+    
+    Example:
+    ```bash
+    curl -X POST http://localhost:8003/transcribe \
+      -F 'file_path=/app/audio/test.wav' \
+      -F 'privacy_removal=true' \
+      -F 'classification=true' \
+      -F 'incomplete_elements_check=true' \
+      -F 'agent_url=http://agent-server:8000' \
+      -F 'agent_request_format=text_only'
+    ```
+    """
     
     Example:
     ```bash
@@ -391,30 +405,30 @@ async def transcribe_v2(
                     reason=classification_response.get('reason')
                 )
         
-        # 5. AI Agent 처리 (선택)
-        ai_agent_enabled = ai_agent.lower() in ['true', '1', 'yes', 'on']
-        agent_result = None
+        # 5. 불완전판매요소 검증 (선택)
+        incomplete_elements_check_enabled = incomplete_elements_check.lower() in ['true', '1', 'yes', 'on']
+        incomplete_elements_result = None
         
-        if ai_agent_enabled:
-            logger.info(f"[API] AI Agent 처리 시작 (agent_type={ai_agent_type})")
-            from api_server.transcribe_endpoint import perform_ai_agent
+        if incomplete_elements_check_enabled and agent_url:
+            logger.info(f"[API] 불완전판매요소 검증 시작 (agent_url={agent_url}, format={agent_request_format})")
+            from api_server.transcribe_endpoint import perform_incomplete_elements_check
             
             # 정제된 텍스트 또는 원본 사용
-            agent_text = privacy_result.text if privacy_result else stt_result.get('text', '')
+            check_text = privacy_result.text if privacy_result else stt_result.get('text', '')
             
-            agent_response = await perform_ai_agent(
-                text=agent_text,
-                stt_result=stt_result,
-                agent_type=ai_agent_type,  # 사용자가 선택한 agent_type 전달
+            check_response = await perform_incomplete_elements_check(
+                call_transcript=check_text,
+                agent_url=agent_url,
+                agent_request_format=agent_request_format,
                 classification_result=classification_result,
                 privacy_removal_result=privacy_result
             )
             
-            if agent_response.get('success'):
-                agent_result = agent_response
-                logger.info(f"[API] ✅ AI Agent 처리 완료 (실제_사용: {agent_response.get('agent_type')})")
+            if check_response.get('success'):
+                incomplete_elements_result = check_response
+                logger.info(f"[API] ✅ 불완전판매요소 검증 완료 (agent_type={check_response.get('agent_type')})")
             else:
-                logger.warning(f"[API] ⚠️ AI Agent 처리 실패: {agent_response.get('error')}")
+                logger.warning(f"[API] ⚠️ 불완전판매요소 검증 실패: {check_response.get('error')}")
         
         # 6. 처리 시간 계산
         processing_time = time.time() - start_time
@@ -434,11 +448,11 @@ async def transcribe_v2(
             processing_mode="streaming" if is_streaming else "normal"
         )
         
-        # AI Agent 결과 추가
-        if agent_result:
-            response.agent_response = agent_result.get('agent_response')
-            response.agent_type = agent_result.get('agent_type')
-            response.chat_thread_id = agent_result.get('chat_thread_id')
+        # 불완전판매요소 검증 결과 추가
+        if incomplete_elements_result:
+            response.incomplete_elements = incomplete_elements_result.get('incomplete_elements')
+            response.agent_analysis = incomplete_elements_result.get('analysis')
+            response.agent_type = incomplete_elements_result.get('agent_type')
         
         logger.info(f"[API] ✅ 요청 처리 완료 (처리시간: {processing_time:.2f}초)")
         
@@ -754,11 +768,11 @@ async def transcribe(
         # 백엔드 추천 로직 (파일 크기 기반)
         def get_backend_recommendation(size_mb: float, current_backend: str, available_mb: float) -> dict:
             """
-            동적 메모리 기반 백엔드 추천
-            - faster-whisper: 전체 파일을 메모리에 로드 (필요 메모리: 파일크기 * 2.5)
-            - transformers: 30초 세그먼트 처리 (필요 메모리: ~3GB)
+            BackEnd recommendation logic based on file size
+            faster-whisper: load entire file to memory
+            transformers: process 30-second segments
             """
-            # faster-whisper 필요 메모리: 파일크기의 약 2.5배
+            # faster-whisper memory: ~2.5x file size
             faster_whisper_required_mb = size_mb * 2.5
             
             # transformers 필요 메모리: ~3GB (충분한 마진)
@@ -1753,107 +1767,180 @@ async def list_available_prompts(
 # AI Agent 엔드포인트
 # ============================================================================
 
-@app.post("/ai-agent/process")
-async def process_with_agent(
-    user_query: str = Body(..., description="처리할 쿼리 (정제된 STT 텍스트)"),
-    use_streaming: bool = Body(False, description="스트리밍 모드 사용 여부"),
-    chat_thread_id: Optional[str] = Body(None, description="채팅 스레드 ID"),
-    agent_type: str = Body("external", description="Agent 타입 (external, vllm, dummy)"),
-    timeout: int = Body(30, description="요청 타임아웃 (초)")
-):
+@app.post("/ai-agent/incomplete-elements")
+async def check_incomplete_elements(request: dict):
     """
-    텍스트를 AI Agent로 처리합니다.
+    불완전판매요소 검증
     
-    **Request Body:**
-    ```json
-    {
-        "user_query": "정제된 STT 텍스트",
-        "use_streaming": false,
-        "chat_thread_id": null,
-        "agent_type": "external",
-        "timeout": 30
-    }
-    ```
+    Request:
+        {
+            "call_transcript": "string",
+            "agent_url": "string",
+            "request_format": "text_only|prompt_based" (default: "text_only"),
+            "timeout": int (default: 30)
+        }
     
-    **Response:**
-    ```json
-    {
-        "success": true,
-        "response": "Agent의 응답 텍스트",
-        "chat_thread_id": "thread_id",
-        "agent_type": "external|vllm|dummy",
-        "processing_time_sec": 2.5,
-        "error": null
-    }
-    ```
-    
-    **Agent 타입 선택:**
-    - `external`: 외부 Agent 사용 (기본값, AGENT_URL 필수)
-    - `vllm`: vLLM 백엔드 사용
-    - `dummy`: Dummy Agent 사용 (테스트용)
-    
-    선택된 Agent가 실패하면 자동으로 Dummy Agent로 Fallback됩니다.
+    Response:
+        {
+            "success": true,
+            "incomplete_elements": {
+                "customer_requirements_not_confirmed": bool,
+                "proposal_not_made": bool,
+                "price_negotiation_incomplete": bool,
+                "next_steps_not_defined": bool,
+                "contract_not_completed": bool,
+                "summary": str
+            },
+            "analysis": str,
+            "agent_type": "external|vllm",
+            "processing_time_sec": float
+        }
     """
     try:
-        from api_server.services.ai_agent_service import get_ai_agent_service
+        call_transcript = request.get("call_transcript", "").strip()
+        if not call_transcript:
+            logger.warning("[API] 불완전판매요소: call_transcript 없음")
+            return {
+                "success": False,
+                "error": "call_transcript가 필요합니다"
+            }
         
-        logger.info(f"[AIAgent] 요청 수신 (query 길이: {len(user_query)}, agent_type={agent_type})")
+        agent_url = request.get("agent_url", "").strip()
+        if not agent_url:
+            logger.warning("[API] 불완전판매요소: agent_url 없음")
+            return {
+                "success": False,
+                "error": "agent_url이 필요합니다"
+            }
+        
+        request_format = request.get("request_format", "text_only")
+        timeout = request.get("timeout", 30)
+        
+        logger.info(f"[API] 불완전판매요소 검증 요청: url={agent_url}, format={request_format}")
+        
+        from api_server.services.incomplete_sales_validator import get_incomplete_elements_validator
+        from api_server.services.agent_backend import get_agent_backend
+        
+        agent_backend = get_agent_backend()
+        validator = get_incomplete_elements_validator(agent_backend)
+        
+        agent_config = {
+            "url": agent_url,
+            "request_format": request_format
+        }
+        
+        result = await validator.validate(
+            call_transcript=call_transcript,
+            agent_config=agent_config,
+            timeout=timeout
+        )
+        
+        logger.info(f"[API] 불완전판매요소 검증 완료: success={result['success']}, agent_type={result.get('agent_type')}")
+        return result
+    
+    except Exception as e:
+        logger.error(f"[API] 불완전판매요소 검증 오류: {type(e).__name__}: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+@app.post("/ai-agent/process")
+async def process_with_agent(request: dict):
+    """
+    AI Agent로 텍스트 처리
+    
+    Request:
+        {
+            "user_query": "string",
+            "agent_url": "string",
+            "request_format": "text_only|prompt_based" (default: "text_only"),
+            "use_streaming": bool (default: false),
+            "chat_thread_id": "string" (optional),
+            "timeout": int (default: 30)
+        }
+    
+    Response:
+        {
+            "success": true,
+            "response": "Agent의 응답",
+            "agent_type": "external|vllm",
+            "chat_thread_id": "thread_id",
+            "processing_time_sec": 2.5
+        }
+    """
+    try:
+        user_query = request.get("user_query", "").strip()
+        if not user_query:
+            logger.warning("[API] AI Agent: user_query 없음")
+            return {
+                "success": False,
+                "error": "user_query가 필요합니다"
+            }
+        
+        agent_url = request.get("agent_url", "").strip()
+        if not agent_url:
+            logger.warning("[API] AI Agent: agent_url 없음")
+            return {
+                "success": False,
+                "error": "agent_url이 필요합니다"
+            }
+        
+        request_format = request.get("request_format", "text_only")
+        use_streaming = request.get("use_streaming", False)
+        chat_thread_id = request.get("chat_thread_id")
+        timeout = request.get("timeout", 30)
+        
+        logger.info(f"[API] AI Agent 요청: url={agent_url}, format={request_format}, streaming={use_streaming}")
+        
+        from api_server.services.ai_agent_service import get_ai_agent_service
         
         service = await get_ai_agent_service()
         result = await service.process(
             user_query=user_query,
+            agent_url=agent_url,
+            request_format=request_format,
             use_streaming=use_streaming,
             chat_thread_id=chat_thread_id,
-            agent_type=agent_type,
             timeout=timeout
         )
         
-        logger.info(f"[AIAgent] ✅ 처리 완료 (agent_type: {result.get('agent_type')})")
+        logger.info(f"[API] AI Agent 응답: success={result['success']}, agent_type={result.get('agent_type')}")
         return result
     
     except Exception as e:
-        logger.error(f"[AIAgent] 처리 오류: {type(e).__name__}: {e}", exc_info=True)
+        logger.error(f"[API] AI Agent 처리 오류: {type(e).__name__}: {e}", exc_info=True)
         return {
             "success": False,
-            "error": f"{type(e).__name__}: {str(e)}",
-            "response": None,
-            "agent_type": "error",
-            "processing_time_sec": 0
+            "error": str(e)
         }
 
 
 @app.post("/ai-agent/dummy")
 async def dummy_agent(
-    user_query: str = Body(..., description="처리할 쿼리"),
-    chat_thread_id: Optional[str] = Body(None, description="채팅 스레드 ID")
+    user_query: str = Body(..., description="Query to process"),
+    chat_thread_id: Optional[str] = Body(None, description="Chat thread ID")
 ):
     """
-    Dummy AI Agent 엔드포인트 (테스트용)
+    Dummy AI Agent endpoint for testing
     
-    **Request Body:**
-    ```json
-    {
-        "user_query": "사용자 쿼리",
-        "chat_thread_id": null
-    }
-    ```
+    Request Body:
+    user_query: user query string
+    chat_thread_id: optional chat thread ID
     
-    **Response:**
-    ```json
-    {
-        "success": true,
-        "response": "Dummy 응답",
-        "chat_thread_id": "thread_id",
-        "agent_type": "dummy",
-        "processing_time_sec": 0.1
-    }
-    ```
+    Response:
+    success: boolean
+    response: Dummy response
+    chat_thread_id: thread ID
+    agent_type: dummy
+    processing_time_sec: 0.1
     """
     try:
         import time
         from api_server.services.ai_agent_service import AIAgentService
         
-        logger.info(f"[Dummy Agent] 요청 수신 (query 길이: {len(user_query)})")
+        logger.info(f"[Dummy Agent] Request received (query length: {len(user_query)})")
         
         start_time = time.time()
         service = AIAgentService()
@@ -1880,19 +1967,17 @@ async def dummy_agent(
 @app.get("/ai-agent/health")
 async def agent_health():
     """
-    AI Agent 서비스 상태 확인
+    AI Agent service health check
     
-    **Response:**
-    ```json
+    Response:
     {
-        "status": "ok|warning|error",
-        "agent_url": "설정된 Agent URL",
+        "status": "ok/warning/error",
+        "agent_url": "Agent URL",
         "vllm_url": "vLLM URL",
-        "external_agent_available": true|false,
-        "vllm_available": true|false,
-        "fallback_enabled": true
+        "external_agent_available": boolean,
+        "vllm_available": boolean,
+        "fallback_enabled": boolean
     }
-    ```
     """
     try:
         from api_server.services.ai_agent_service import get_ai_agent_service

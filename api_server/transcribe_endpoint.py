@@ -44,8 +44,9 @@ class TranscribeRequestParams:
         is_stream: str = Form("false"),
         privacy_removal: str = Form("false"),
         classification: str = Form("false"),
-        ai_agent: str = Form("false"),
-        ai_agent_type: str = Form("external"),
+        incomplete_elements_check: str = Form("false"),
+        agent_url: str = Form(""),
+        agent_request_format: str = Form("text_only"),
         export: Optional[str] = None,
         privacy_prompt_type: str = Form("privacy_remover_default_v6"),
         classification_prompt_type: str = Form("classification_default_v1"),
@@ -55,8 +56,9 @@ class TranscribeRequestParams:
         self.is_stream = is_stream.lower() in ['true', '1', 'yes', 'on']
         self.privacy_removal = privacy_removal.lower() in ['true', '1', 'yes', 'on']
         self.classification = classification.lower() in ['true', '1', 'yes', 'on']
-        self.ai_agent = ai_agent.lower() in ['true', '1', 'yes', 'on']
-        self.ai_agent_type = ai_agent_type  # 'external', 'vllm', 'dummy' (기본값: external)
+        self.incomplete_elements_check = incomplete_elements_check.lower() in ['true', '1', 'yes', 'on']
+        self.agent_url = agent_url  # Agent 서버 URL
+        self.agent_request_format = agent_request_format  # 'text_only' 또는 'prompt_based'
         self.export = export
         self.privacy_prompt_type = privacy_prompt_type
         self.classification_prompt_type = classification_prompt_type
@@ -343,75 +345,69 @@ def build_transcribe_response(
     )
 
 
-async def perform_ai_agent(
-    text: str,
-    stt_result: dict,
-    agent_type: str = "external",
+async def perform_incomplete_elements_check(
+    call_transcript: str,
+    agent_url: str,
+    agent_request_format: str = "text_only",
     classification_result: dict = None,
     privacy_removal_result: dict = None,
 ) -> dict:
     """
-    AI Agent 처리
+    불완전판매요소 검증
     
     Args:
-        text: 처리할 텍스트 (정제된 텍스트 또는 원본)
-        stt_result: STT 결과
-        agent_type: Agent 타입 (external, vllm, dummy) - 기본값: external
+        call_transcript: 통화 전사 텍스트
+        agent_url: Agent 서버 URL
+        agent_request_format: "text_only" 또는 "prompt_based"
         classification_result: 분류 결과
         privacy_removal_result: 개인정보 제거 결과
     
     Returns:
         {
             'success': bool,
-            'agent_response': str,           # Agent의 응답
-            'chat_thread_id': str,          # 채팅 스레드 ID
-            'agent_type': str,              # 'external', 'vllm', 'dummy'
+            'incomplete_elements': dict,      # 불완전판매요소 구조
+            'analysis': str,                  # 상세 분석
+            'agent_type': str,                # 'external' 또는 'vllm'
             'processing_time_sec': float,
-            'error': str                    # 에러 메시지 (실패 시)
+            'error': str                      # 에러 메시지 (실패 시)
         }
     """
     try:
-        from api_server.services.ai_agent_service import get_ai_agent_service
+        from api_server.services.incomplete_sales_validator import get_incomplete_elements_validator
+        from api_server.services.agent_backend import get_agent_backend
         
-        logger.info(f"[Transcribe/AIAgent] AI Agent 처리 시작 (텍스트 길이: {len(text)}, agent_type={agent_type})")
+        logger.info(f"[Transcribe/IncompleteElements] 검증 시작 (transcript 길이: {len(call_transcript)})")
         
-        # 정제된 텍스트 우선 사용 (privacy_removal 이미 실행했으면)
-        query_text = privacy_removal_result.get('processed_text', text) if privacy_removal_result else text
+        # 정제된 텍스트 우선 사용
+        check_text = privacy_removal_result.get('processed_text', call_transcript) if privacy_removal_result else call_transcript
         
-        # Classification 정보 추가
-        context = f"[분류: {classification_result.get('category', 'N/A')}] "if classification_result else ""
-        full_query = context + query_text
+        # Agent 설정
+        agent_config = {
+            "url": agent_url,
+            "request_format": agent_request_format
+        }
         
-        service = await get_ai_agent_service()
-        result = await service.process(
-            user_query=full_query,
-            use_streaming=False,
-            chat_thread_id=None,
-            agent_type=agent_type,  # 사용자가 선택한 agent_type 사용
+        # Validator 초기화 (AgentBackend 필요)
+        agent_backend = get_agent_backend()
+        validator = get_incomplete_elements_validator(agent_backend)
+        
+        result = await validator.validate(
+            call_transcript=check_text,
+            agent_config=agent_config,
             timeout=30
         )
         
         if result.get('success'):
-            logger.info(f"[Transcribe/AIAgent] ✅ Agent 처리 완료 (agent_type: {result.get('agent_type')})")
-            return {
-                'success': True,
-                'agent_response': result.get('response'),
-                'chat_thread_id': result.get('chat_thread_id'),
-                'agent_type': result.get('agent_type'),
-                'processing_time_sec': result.get('processing_time_sec', 0)
-            }
+            logger.info(f"[Transcribe/IncompleteElements] ✅ 검증 완료 (agent_type: {result.get('agent_type')})")
+            return result
         else:
-            logger.error(f"[Transcribe/AIAgent] Agent 처리 실패: {result.get('error')}")
-            return {
-                'success': False,
-                'error': result.get('error', 'Unknown error'),
-                'agent_type': result.get('agent_type', 'unknown')
-            }
+            logger.error(f"[Transcribe/IncompleteElements] 검증 실패: {result.get('error')}")
+            return result
     
     except Exception as e:
-        logger.error(f"[Transcribe/AIAgent] 처리 오류: {type(e).__name__}: {e}", exc_info=True)
+        logger.error(f"[Transcribe/IncompleteElements] 검증 오류: {type(e).__name__}: {e}", exc_info=True)
         return {
             'success': False,
-            'error': f"{type(e).__name__}: {str(e)}",
-            'agent_type': 'error'
+            'error': f"{type(e).__name__}: {str(e)}"
+        }
         }

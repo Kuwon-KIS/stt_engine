@@ -1,7 +1,8 @@
 """
-AI Agent Service
+AI Agent Service (Fallback: Dummy Agent)
 
-STT 결과 텍스트를 외부 AI Agent에 전달하여 처리
+STT 결과 텍스트를 외부 AI Agent에 전달하여 처리합니다.
+- 다양한 Agent 백엔드 지원 (URL + 요청 형식으로 자동 판정)
 - Streaming 지원
 - Chat Thread ID 유지
 - Fallback 처리 (Dummy Agent)
@@ -12,6 +13,7 @@ import json
 import asyncio
 from typing import Optional, Dict, Any
 import os
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -74,19 +76,21 @@ class AIAgentService:
     async def process(
         self,
         user_query: str,
+        agent_url: str,
+        request_format: str = "text_only",
         use_streaming: bool = False,
         chat_thread_id: Optional[str] = None,
-        agent_type: str = "external",
         timeout: int = 30
     ) -> Dict[str, Any]:
         """
-        텍스트를 AI Agent로 처리
+        텍스트를 Agent로 처리
         
         Args:
             user_query: 사용자 쿼리 (정제된 STT 텍스트)
+            agent_url: Agent 서버 URL
+            request_format: "text_only" 또는 "prompt_based"
             use_streaming: 스트리밍 모드 사용 여부
             chat_thread_id: 채팅 스레드 ID (대화 연속성 유지)
-            agent_type: Agent 타입 선택 (external, vllm, dummy) - 기본값: external
             timeout: 요청 타임아웃 (초)
         
         Returns:
@@ -100,41 +104,24 @@ class AIAgentService:
                 'error': str                 # 에러 메시지 (실패 시)
             }
         """
-        logger.info(f"[AIAgent] 처리 시작 (query 길이: {len(user_query)}, agent_type={agent_type}, timeout={timeout}초)")
+        logger.info(f"[AIAgent] 처리 시작 (query 길이: {len(user_query)}, url={agent_url}, format={request_format})")
         
-        import time
         start_time = time.time()
         
-        # agent_type 유효성 검증
-        valid_types = ['external', 'vllm', 'dummy']
-        if agent_type not in valid_types:
-            logger.warning(f"[AIAgent] 유효하지 않은 agent_type: {agent_type}, 기본값(external)으로 설정")
-            agent_type = "external"
-        
         try:
-            # 1. 선택된 Agent 타입에 따라 호출
-            if agent_type == "external":
-                if self.agent_url:
-                    logger.info(f"[AIAgent] 외부 Agent 시도: {self.agent_url}")
-                    result = await self._call_external_agent(
-                        user_query=user_query,
-                        use_streaming=use_streaming,
-                        chat_thread_id=chat_thread_id,
-                        timeout=timeout
-                    )
-                    
-                    if result['success']:
-                        result['processing_time_sec'] = time.time() - start_time
-                        return result
-                    else:
-                        logger.warning(f"[AIAgent] 외부 Agent 실패: {result.get('error')} → Dummy로 Fallback")
-                else:
-                    logger.warning(f"[AIAgent] 외부 Agent URL이 설정되지 않음 → Dummy로 Fallback")
+            # AgentBackend을 통한 호출
+            from api_server.services.agent_backend import get_agent_backend
             
-            elif agent_type == "vllm":
-                logger.info(f"[AIAgent] vLLM Agent 시도: {self.vllm_base_url}")
-                result = await self._call_vllm_agent(
-                    user_query=user_query,
+            agent_backend = get_agent_backend()
+            
+            # Agent 호출 시도
+            if agent_url:
+                logger.info(f"[AIAgent] Agent 호출: {agent_url}")
+                result = await agent_backend.call(
+                    request_text=user_query,
+                    url=agent_url,
+                    request_format=request_format,
+                    chat_thread_id=chat_thread_id,
                     timeout=timeout
                 )
                 
@@ -142,18 +129,11 @@ class AIAgentService:
                     result['processing_time_sec'] = time.time() - start_time
                     return result
                 else:
-                    logger.warning(f"[AIAgent] vLLM Agent 실패: {result.get('error')} → Dummy로 Fallback")
+                    logger.warning(f"[AIAgent] Agent 호출 실패: {result.get('error')} → Dummy로 Fallback")
+            else:
+                logger.warning(f"[AIAgent] Agent URL이 설정되지 않음 → Dummy로 Fallback")
             
-            elif agent_type == "dummy":
-                logger.info(f"[AIAgent] Dummy Agent로 처리")
-                result = self._call_dummy_agent(
-                    user_query=user_query,
-                    chat_thread_id=chat_thread_id
-                )
-                result['processing_time_sec'] = time.time() - start_time
-                return result
-            
-            # 2. Fallback: Dummy Agent 사용
+            # Fallback: Dummy Agent
             logger.info(f"[AIAgent] Dummy Agent로 Fallback 처리")
             result = self._call_dummy_agent(
                 user_query=user_query,

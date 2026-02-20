@@ -210,9 +210,19 @@ class TranscribeResponse(BaseModel):
         None,
         description="Classification 결과"
     )
-    ai_agent: Optional[AIAgentResult] = Field(
+    
+    # 불완전판매요소 검증 결과 (새로운 필드)
+    incomplete_elements: Optional[Dict[str, Any]] = Field(
         None,
-        description="AI Agent 결과"
+        description="불완전판매요소 검증 결과"
+    )
+    agent_analysis: Optional[str] = Field(
+        None,
+        description="Agent 분석 결과"
+    )
+    agent_type: Optional[str] = Field(
+        None,
+        description="사용된 Agent 타입 (external, vllm)"
     )
     
     # 처리 단계 메타데이터
