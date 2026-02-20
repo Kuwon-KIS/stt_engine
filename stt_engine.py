@@ -1178,6 +1178,7 @@ class WhisperSTT:
         음성 파일을 텍스트로 변환합니다.
         
         현재 로드된 백엔드를 사용합니다. 다른 백엔드를 사용하려면 reload_backend()를 호출하세요.
+        모든 백엔드 실패 시 Dummy 응답을 반환합니다 (로깅 필수).
         
         Args:
             audio_path: 음성 파일 경로
@@ -1187,6 +1188,11 @@ class WhisperSTT:
         
         Returns:
             변환 결과 딕셔너리
+            - success: True (성공) 또는 False (실패 또는 Dummy)
+            - text: 변환된 텍스트 또는 빈 문자열
+            - backend: 사용된 백엔드 이름 또는 'dummy'
+            - is_dummy: Dummy 응답 여부
+            - error: 에러 메시지 (실패/Dummy 시)
             
         예시:
             stt = WhisperSTT(model_path)  # faster-whisper 로드
@@ -1196,81 +1202,122 @@ class WhisperSTT:
             stt.reload_backend("transformers")
             result = stt.transcribe("audio.wav", language="ko")
         """
+        audio_path_str = str(audio_path)
+        
         try:
-            logger.info(f"📂 음성 파일 로드 시작: {audio_path}")
+            logger.info(f"[STT] 음성 파일 로드 시작: {audio_path_str}")
             
             # 파일 존재 확인
-            if not Path(audio_path).exists():
-                logger.error(f"❌ 파일을 찾을 수 없음: {audio_path}")
-                raise FileNotFoundError(f"파일을 찾을 수 없습니다: {audio_path}")
+            if not Path(audio_path_str).exists():
+                logger.error(f"[STT] 파일을 찾을 수 없음: {audio_path_str}")
+                raise FileNotFoundError(f"파일을 찾을 수 없습니다: {audio_path_str}")
             
-            logger.info(f"✓ 파일 존재 확인: {audio_path}")
+            logger.info(f"[STT] 파일 존재 확인: {audio_path_str}")
             
             # 현재 로드된 백엔드 확인
             backend_type = type(self.backend).__name__
             if hasattr(self.backend, '_backend_type'):
                 backend_name = self.backend._backend_type
-                logger.info(f"🔧 현재 로드된 백엔드: {backend_name}")
+                logger.info(f"[STT] 현재 로드된 백엔드: {backend_name}")
             else:
                 backend_name = backend_type
-                logger.info(f"🔧 현재 로드된 백엔드: {backend_type}")
+                logger.info(f"[STT] 현재 로드된 백엔드: {backend_type}")
             
             # backend 파라미터는 무시 (reload_backend()를 사용해야 함)
             if backend:
-                logger.warning(f"⚠️  backend 파라미터는 무시됩니다. reload_backend()를 사용해주세요.")
+                logger.warning(f"[STT] backend 파라미터는 무시됩니다. reload_backend()를 사용해주세요.")
             
             # 현재 로드된 백엔드로 변환 시작
+            result = None
             if backend_name == "faster-whisper" or backend_type == 'WhisperModel':
-                logger.info(f"→ faster-whisper 백엔드로 변환 시작")
-                return self._transcribe_faster_whisper(audio_path, language, **kwargs)
+                logger.info(f"[STT] faster-whisper 백엔드로 변환 시작")
+                result = self._transcribe_faster_whisper(audio_path_str, language, **kwargs)
             elif backend_name == "transformers" or backend_type == 'TransformersBackend':
-                logger.info(f"→ transformers 백엔드로 변환 시작")
-                return self._transcribe_with_transformers(audio_path, language)
+                logger.info(f"[STT] transformers 백엔드로 변환 시작")
+                result = self._transcribe_with_transformers(audio_path_str, language)
             elif backend_name == "openai-whisper" or backend_type == 'WhisperBackend':
-                logger.info(f"→ openai-whisper 백엔드로 변환 시작")
-                return self._transcribe_with_whisper(audio_path, language)
+                logger.info(f"[STT] openai-whisper 백엔드로 변환 시작")
+                result = self._transcribe_with_whisper(audio_path_str, language)
             else:
-                logger.info(f"→ 제네릭 백엔드 객체로 변환 시도 (타입: {backend_type})")
+                logger.info(f"[STT] 제네릭 백엔드 객체로 변환 시도 (타입: {backend_type})")
                 if hasattr(self.backend, 'transcribe'):
-                    result = self.backend.transcribe(audio_path, language)
-                    logger.info(f"✓ 제네릭 백엔드 변환 완료")
-                    return result
+                    result = self.backend.transcribe(audio_path_str, language)
+                    logger.info(f"[STT] 제네릭 백엔드 변환 완료")
                 else:
-                    logger.error(f"❌ 지원하지 않는 백엔드: {backend_type}")
+                    logger.error(f"[STT] 지원하지 않는 백엔드: {backend_type}")
                     raise RuntimeError(f"지원하지 않는 백엔드: {backend_type}")
+            
+            # 결과 반환
+            if result and result.get('success'):
+                logger.info(f"[STT] 변환 성공: {audio_path_str}")
+                return result
+            else:
+                # 백엔드 실패 - Dummy로 fallback
+                logger.warning(f"[STT] 백엔드 변환 실패, Dummy 응답으로 fallback")
+                return self._create_dummy_response(
+                    audio_path=audio_path_str,
+                    language=language,
+                    reason=result.get('error', '백엔드 변환 실패') if result else '백엔드 변환 실패'
+                )
         
         except FileNotFoundError as e:
-            logger.error(f"❌ 파일 오류: {e}", exc_info=True)
-            return {
-                "success": False,
-                "error": f"파일 오류: {str(e)}",
-                "error_type": "FileNotFoundError",
-                "audio_path": audio_path
-            }
+            logger.error(f"[STT] 파일 오류: {e}")
+            logger.warning(f"[STT] Dummy 응답으로 fallback")
+            return self._create_dummy_response(
+                audio_path=audio_path_str,
+                language=language,
+                reason=str(e)
+            )
         except ValueError as e:
-            logger.error(f"❌ 값 오류: {e}", exc_info=True)
-            return {
-                "success": False,
-                "error": f"값 오류: {str(e)}",
-                "error_type": "ValueError",
-                "audio_path": audio_path
-            }
+            logger.error(f"[STT] 값 오류: {e}")
+            logger.warning(f"[STT] Dummy 응답으로 fallback")
+            return self._create_dummy_response(
+                audio_path=audio_path_str,
+                language=language,
+                reason=str(e)
+            )
         except RuntimeError as e:
-            logger.error(f"❌ 런타임 오류: {e}", exc_info=True)
-            return {
-                "success": False,
-                "error": f"런타임 오류: {str(e)}",
-                "error_type": "RuntimeError",
-                "audio_path": audio_path
-            }
+            logger.error(f"[STT] 런타임 오류: {e}")
+            logger.warning(f"[STT] Dummy 응답으로 fallback")
+            return self._create_dummy_response(
+                audio_path=audio_path_str,
+                language=language,
+                reason=str(e)
+            )
         except Exception as e:
-            logger.error(f"❌ 예상치 못한 오류: {type(e).__name__}: {e}", exc_info=True)
-            return {
-                "success": False,
-                "error": f"{type(e).__name__}: {str(e)}",
-                "error_type": type(e).__name__,
-                "audio_path": audio_path
-            }
+            logger.error(f"[STT] 예상치 못한 오류: {type(e).__name__}: {e}", exc_info=True)
+            logger.warning(f"[STT] Dummy 응답으로 fallback")
+            return self._create_dummy_response(
+                audio_path=audio_path_str,
+                language=language,
+                reason=f"{type(e).__name__}: {str(e)}"
+            )
+    
+    def _create_dummy_response(self, audio_path: str, language: Optional[str] = None, reason: str = "알 수 없는 오류") -> Dict:
+        """
+        Dummy STT 응답 생성
+        
+        Args:
+            audio_path: 오디오 파일 경로
+            language: 언어 코드
+            reason: Dummy 사용 이유
+        
+        Returns:
+            Dummy STT 응답
+        """
+        return {
+            "success": False,
+            "text": "",
+            "text_en": "",
+            "duration": 0,
+            "language": language or "ko",
+            "backend": "dummy",
+            "is_dummy": True,
+            "dummy_reason": reason,
+            "error": reason,
+            "error_type": "DummyFallback",
+            "audio_path": audio_path
+        }
     
     def _transcribe_faster_whisper(self, audio_path: str, language: Optional[str] = None, **kwargs) -> Dict:
         """faster-whisper (WhisperModel)로 변환

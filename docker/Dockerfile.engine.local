@@ -1,0 +1,136 @@
+# ============================================================================
+# STT Engine - Local Development (Mac + Linux)
+#
+# Build Platform: macOS (Apple Silicon/Intel) 또는 Linux
+# Build Environment: Online (requires internet)
+# Target: Local development and testing
+# Base Image: python:3.11-slim (경량)
+# Features: CPU-only, no CUDA (로컬에서 빠른 빌드)
+# Final Size: ~600MB (compressed ~200MB)
+#
+# 빌드 명령어:
+#   docker build -t stt-engine:local -f docker/Dockerfile.engine.local .
+#   (또는 docker-compose.dev.yml 사용)
+# ============================================================================
+
+FROM python:3.11-slim
+
+LABEL maintainer="STT Engine Team"
+LABEL description="STT Engine Local Development"
+LABEL environment="local"
+LABEL target.platform="macOS + Linux"
+
+# ============================================================================
+# Step 1: 시스템 의존성 설치 (최소한의 필수 라이브러리만)
+# ============================================================================
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    openssl \
+    curl \
+    wget \
+    libsndfile1 \
+    sox \
+    ffmpeg \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# ============================================================================
+# Step 2: Non-root 사용자 생성 (stt-user)
+# ============================================================================
+
+RUN useradd -m -u 1000 -s /bin/bash stt-user
+
+# ============================================================================
+# Step 3: 애플리케이션 디렉토리 생성
+# ============================================================================
+
+WORKDIR /app
+
+RUN mkdir -p /app/models /app/logs /app/audio && \
+    chown -R stt-user:stt-user /app && \
+    chmod -R 755 /app
+
+# ============================================================================
+# Step 4: Python 패키지 매니저 업그레이드
+# ============================================================================
+
+RUN python3.11 -m pip install --upgrade \
+    --trusted-host pypi.org \
+    --trusted-host files.pythonhosted.org \
+    pip setuptools wheel
+
+# ============================================================================
+# Step 5: PyTorch (CPU-only, 로컬 개발용)
+#
+# CPU-only 버전으로 빠른 설치
+# 로컬 Mac/Linux에서 GPU가 필요 없으므로 CPU 버전 사용
+# ============================================================================
+
+RUN python3.11 -m pip install \
+    torch==2.8.0 \
+    torchaudio==2.8.0 \
+    --index-url https://download.pytorch.org/whl/cpu
+
+# ============================================================================
+# Step 6: pip + setuptools + wheel 최종 업그레이드
+# ============================================================================
+
+RUN python3.11 -m pip install --no-cache-dir --upgrade pip && \
+    python3.11 -m pip install --no-cache-dir --upgrade --force-reinstall setuptools>=68.0 wheel
+
+# ============================================================================
+# Step 7: 모든 애플리케이션 의존성 설치
+# ============================================================================
+
+COPY requirements.txt /tmp/
+
+RUN python3.11 -m pip install \
+    --no-cache-dir \
+    -r /tmp/requirements.txt
+
+# ============================================================================
+# Step 8: Python 환경 변수 설정
+# ============================================================================
+
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV HF_HOME=/app/models
+ENV STT_DEVICE=cpu
+
+# ============================================================================
+# Step 9: 사용자 전환 (stt-user)
+# ============================================================================
+
+USER stt-user
+
+# ============================================================================
+# Step 10: 애플리케이션 파일 복사
+# ============================================================================
+
+COPY --chown=stt-user:stt-user main.py /app/
+COPY --chown=stt-user:stt-user api_server.py /app/
+COPY --chown=stt-user:stt-user stt_engine.py /app/
+COPY --chown=stt-user:stt-user stt_utils.py /app/
+COPY --chown=stt-user:stt-user requirements.txt /app/
+COPY --chown=stt-user:stt-user api_server/ /app/api_server/
+COPY --chown=stt-user:stt-user utils/ /app/utils/
+
+# ============================================================================
+# Step 11: 헬스 체크
+# ============================================================================
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:8003/health || exit 1
+
+# ============================================================================
+# Step 12: 포트 노출
+# ============================================================================
+
+EXPOSE 8003
+
+# ============================================================================
+# Step 13: 시작 명령어
+# ============================================================================
+
+CMD ["python3.11", "main.py"]

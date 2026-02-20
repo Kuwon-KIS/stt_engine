@@ -120,21 +120,68 @@ class AgentBackend:
         
         except asyncio.TimeoutError:
             logger.error(f"[AgentBackend] 타임아웃: {timeout}초 초과")
-            return {
-                'success': False,
-                'error': f'Timeout after {timeout}s',
-                'agent_type': 'unknown',
-                'processing_time_sec': time.time() - start_time
-            }
+            logger.warning(f"[AgentBackend] Dummy 응답으로 fallback (로깅됨)")
+            return self._create_dummy_response(
+                error=f'Agent 호출 타임아웃 ({timeout}s)',
+                error_type='TimeoutError',
+                request_text=request_text,
+                start_time=start_time
+            )
+        
+        except ConnectionError as e:
+            logger.error(f"[AgentBackend] 연결 실패: {str(e)}")
+            logger.warning(f"[AgentBackend] Dummy 응답으로 fallback (로깅됨)")
+            return self._create_dummy_response(
+                error=f'Agent 서버 연결 실패: {str(e)}',
+                error_type='ConnectionError',
+                request_text=request_text,
+                start_time=start_time
+            )
         
         except Exception as e:
             logger.error(f"[AgentBackend] 호출 오류: {type(e).__name__}: {e}", exc_info=True)
-            return {
-                'success': False,
-                'error': f"{type(e).__name__}: {str(e)}",
-                'agent_type': 'unknown',
-                'processing_time_sec': time.time() - start_time
-            }
+            logger.warning(f"[AgentBackend] Dummy 응답으로 fallback (로깅됨)")
+            return self._create_dummy_response(
+                error=f"{type(e).__name__}: {str(e)}",
+                error_type=type(e).__name__,
+                request_text=request_text,
+                start_time=start_time
+            )
+    
+    def _create_dummy_response(
+        self,
+        error: str,
+        error_type: str,
+        request_text: str,
+        start_time: float,
+        chat_thread_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Dummy Agent 응답 생성
+        
+        Args:
+            error: 에러 메시지
+            error_type: 에러 타입
+            request_text: 원래 요청 텍스트
+            start_time: 호출 시작 시간
+            chat_thread_id: 채팅 스레드 ID
+        
+        Returns:
+            Dummy Agent 응답
+        """
+        processing_time = time.time() - start_time
+        
+        return {
+            'success': False,
+            'response': '[Dummy Agent] 분석을 수행할 수 없습니다.',
+            'agent_type': 'dummy',
+            'is_dummy': True,
+            'dummy_reason': error,
+            'error': error,
+            'error_type': error_type,
+            'processing_time_sec': processing_time,
+            'chat_thread_id': chat_thread_id
+        }
     
     async def _call_text_only(
         self,

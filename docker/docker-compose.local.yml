@@ -1,0 +1,130 @@
+version: '3.8'
+
+services:
+  # vLLM 모델 서빙 (LLM 추론용)
+  # Mac에서는 CPU 모드로 실행 (필요시 Metal acceleration 활용)
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: vllm-local
+    
+    volumes:
+      - ../models:/root/.cache/huggingface
+      - ../logs:/app/logs
+    
+    environment:
+      - HF_HOME=/root/.cache/huggingface
+      - VLLM_ATTENTION_BACKEND=xformers
+      - PYTHONUNBUFFERED=1
+    
+    ports:
+      - "8000:8000"
+    
+    # Mac에서 실행 시 CPU 모드로 제한된 모델 사용
+    # 또는 메모리 제한
+    command: >
+      python -m vllm.entrypoints.openai.api_server
+      --model meta-llama/Llama-2-7b-chat-hf
+      --port 8000
+      --host 0.0.0.0
+      --tensor-parallel-size 1
+      --max-num-batched-tokens 4096
+    
+    # 헬스 체크
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+    
+    # Mac에서 메모리 제한 (필요시)
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+        reservations:
+          memory: 4G
+    
+    restart: on-failure
+
+  # API 서버 (STT + 불완전판매요소 검증)
+  api-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: stt-engine-api-local:latest
+    container_name: api-server-local
+    
+    ports:
+      - "8003:8003"
+    
+    volumes:
+      - ../models:/app/models              # STT 모델 디렉토리
+      - ../audio:/app/audio                # 입력 오디오 파일
+      - ../logs:/app/logs                  # 로그 파일
+      - ../scripts:/app/scripts            # 스크립트
+    
+    environment:
+      - PYTHONUNBUFFERED=1
+      - HF_HOME=/app/models
+      - STT_DEVICE=cpu                     # Mac에서는 CPU 사용
+      - VLLM_API_URL=http://vllm:8000/v1  # vLLM API URL
+      - LOG_LEVEL=DEBUG                    # 상세 로깅
+      - ENVIRONMENT=local                  # 로컬 개발 환경
+    
+    depends_on:
+      vllm:
+        condition: service_healthy
+    
+    # 헬스 체크
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    
+    restart: unless-stopped
+
+  # Web UI (선택사항: 로컬 개발 시에만 사용)
+  # 프로덕션 배포: 별도의 독립 컨테이너로 실행 권장
+  web-ui:
+    build:
+      context: ..
+      dockerfile: web_ui/docker/Dockerfile.web_ui
+    image: stt-web-ui-local:latest
+    container_name: web-ui-local
+    
+    ports:
+      - "8100:8100"
+    
+    volumes:
+      - ../web_ui/data:/app/data
+      - ../web_ui/logs:/app/logs
+    
+    environment:
+      - PYTHONUNBUFFERED=1
+      - WEB_HOST=0.0.0.0
+      - WEB_PORT=8100
+      - STT_API_URL=http://api-server:8003
+      - LOG_LEVEL=DEBUG
+    
+    depends_on:
+      api-server:
+        condition: service_healthy
+    
+    restart: unless-stopped
+    
+    # 헬스 체크
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8100/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+# 네트워크 정의
+networks:
+  default:
+    name: stt-local-network
+    driver: bridge

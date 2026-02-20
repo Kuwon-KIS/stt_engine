@@ -201,6 +201,14 @@ class TranscribeResponse(BaseModel):
     file_path: Optional[str] = Field(None, description="처리한 파일 경로")
     file_size_mb: float = Field(..., description="파일 크기 (MB)")
     
+    # Dummy Fallback 정보
+    is_dummy: bool = Field(False, description="STT Dummy fallback 여부")
+    dummy_reason: Optional[str] = Field(None, description="STT Dummy 사용 이유")
+    is_agent_dummy: bool = Field(False, description="Agent Dummy fallback 여부")
+    agent_dummy_reason: Optional[str] = Field(None, description="Agent Dummy 사용 이유")
+    is_partial_failure: bool = Field(False, description="부분 실패 여부 (STT는 성공하나 Agent 실패)")
+    partial_failure_reason: Optional[str] = Field(None, description="부분 실패 사유")
+    
     # 선택적 처리 결과
     privacy_removal: Optional[PrivacyRemovalResult] = Field(
         None,
@@ -211,7 +219,7 @@ class TranscribeResponse(BaseModel):
         description="Classification 결과"
     )
     
-    # 불완전판매요소 검증 결과 (새로운 필드)
+    # 불완전판매요소 검증 결과
     incomplete_elements: Optional[Dict[str, Any]] = Field(
         None,
         description="불완전판매요소 검증 결과"
@@ -222,8 +230,12 @@ class TranscribeResponse(BaseModel):
     )
     agent_type: Optional[str] = Field(
         None,
-        description="사용된 Agent 타입 (external, vllm)"
+        description="사용된 Agent 타입 (external, vllm, dummy)"
     )
+    
+    # 에러 정보
+    error: Optional[str] = Field(None, description="에러 메시지")
+    error_type: Optional[str] = Field(None, description="에러 타입")
     
     # 처리 단계 메타데이터
     processing_steps: ProcessingStepsStatus = Field(
@@ -249,6 +261,9 @@ class TranscribeResponse(BaseModel):
             "backend": "faster-whisper",
             "file_path": "/app/audio/test.wav",
             "file_size_mb": 1.5,
+            "is_dummy": False,
+            "is_agent_dummy": False,
+            "is_partial_failure": False,
             "privacy_removal": {
                 "privacy_exist": "N",
                 "exist_reason": "",
