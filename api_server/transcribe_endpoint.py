@@ -45,6 +45,7 @@ class TranscribeRequestParams:
         privacy_removal: str = Form("false"),
         classification: str = Form("false"),
         ai_agent: str = Form("false"),
+        ai_agent_type: str = Form("external"),
         export: Optional[str] = None,
         privacy_prompt_type: str = Form("privacy_remover_default_v6"),
         classification_prompt_type: str = Form("classification_default_v1"),
@@ -55,6 +56,7 @@ class TranscribeRequestParams:
         self.privacy_removal = privacy_removal.lower() in ['true', '1', 'yes', 'on']
         self.classification = classification.lower() in ['true', '1', 'yes', 'on']
         self.ai_agent = ai_agent.lower() in ['true', '1', 'yes', 'on']
+        self.ai_agent_type = ai_agent_type  # 'external', 'vllm', 'dummy' (기본값: external)
         self.export = export
         self.privacy_prompt_type = privacy_prompt_type
         self.classification_prompt_type = classification_prompt_type
@@ -344,6 +346,7 @@ def build_transcribe_response(
 async def perform_ai_agent(
     text: str,
     stt_result: dict,
+    agent_type: str = "external",
     classification_result: dict = None,
     privacy_removal_result: dict = None,
 ) -> dict:
@@ -353,6 +356,7 @@ async def perform_ai_agent(
     Args:
         text: 처리할 텍스트 (정제된 텍스트 또는 원본)
         stt_result: STT 결과
+        agent_type: Agent 타입 (external, vllm, dummy) - 기본값: external
         classification_result: 분류 결과
         privacy_removal_result: 개인정보 제거 결과
     
@@ -362,13 +366,14 @@ async def perform_ai_agent(
             'agent_response': str,           # Agent의 응답
             'chat_thread_id': str,          # 채팅 스레드 ID
             'agent_type': str,              # 'external', 'vllm', 'dummy'
+            'processing_time_sec': float,
             'error': str                    # 에러 메시지 (실패 시)
         }
     """
     try:
         from api_server.services.ai_agent_service import get_ai_agent_service
         
-        logger.info(f"[Transcribe/AIAgent] AI Agent 처리 시작 (텍스트 길이: {len(text)})")
+        logger.info(f"[Transcribe/AIAgent] AI Agent 처리 시작 (텍스트 길이: {len(text)}, agent_type={agent_type})")
         
         # 정제된 텍스트 우선 사용 (privacy_removal 이미 실행했으면)
         query_text = privacy_removal_result.get('processed_text', text) if privacy_removal_result else text
@@ -382,6 +387,7 @@ async def perform_ai_agent(
             user_query=full_query,
             use_streaming=False,
             chat_thread_id=None,
+            agent_type=agent_type,  # 사용자가 선택한 agent_type 사용
             timeout=30
         )
         

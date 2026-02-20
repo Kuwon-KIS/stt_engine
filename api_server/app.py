@@ -288,6 +288,7 @@ async def transcribe_v2(
     privacy_removal: str = Form("false"),
     classification: str = Form("false"),
     ai_agent: str = Form("false"),
+    ai_agent_type: str = Form("external"),
     export: Optional[str] = Query(None, description="Export format: 'txt' or 'json'"),
     privacy_prompt_type: str = Form("privacy_remover_default_v6"),
     classification_prompt_type: str = Form("classification_default_v1"),
@@ -302,6 +303,7 @@ async def transcribe_v2(
     - privacy_removal: 개인정보 제거 (기본: "false")
     - classification: 통화 분류 (기본: "false")
     - ai_agent: AI Agent 처리 (기본: "false")
+    - ai_agent_type: AI Agent 타입 (external, vllm, dummy) (기본: "external")
     - export: 내보내기 형식 ("txt" 또는 "json")
     - privacy_prompt_type: Privacy Removal 프롬프트 타입
     - classification_prompt_type: Classification 프롬프트 타입
@@ -394,7 +396,7 @@ async def transcribe_v2(
         agent_result = None
         
         if ai_agent_enabled:
-            logger.info(f"[API] AI Agent 처리 시작")
+            logger.info(f"[API] AI Agent 처리 시작 (agent_type={ai_agent_type})")
             from api_server.transcribe_endpoint import perform_ai_agent
             
             # 정제된 텍스트 또는 원본 사용
@@ -403,13 +405,14 @@ async def transcribe_v2(
             agent_response = await perform_ai_agent(
                 text=agent_text,
                 stt_result=stt_result,
+                agent_type=ai_agent_type,  # 사용자가 선택한 agent_type 전달
                 classification_result=classification_result,
                 privacy_removal_result=privacy_result
             )
             
             if agent_response.get('success'):
                 agent_result = agent_response
-                logger.info(f"[API] ✅ AI Agent 처리 완료")
+                logger.info(f"[API] ✅ AI Agent 처리 완료 (실제_사용: {agent_response.get('agent_type')})")
             else:
                 logger.warning(f"[API] ⚠️ AI Agent 처리 실패: {agent_response.get('error')}")
         
@@ -1755,6 +1758,7 @@ async def process_with_agent(
     user_query: str = Body(..., description="처리할 쿼리 (정제된 STT 텍스트)"),
     use_streaming: bool = Body(False, description="스트리밍 모드 사용 여부"),
     chat_thread_id: Optional[str] = Body(None, description="채팅 스레드 ID"),
+    agent_type: str = Body("external", description="Agent 타입 (external, vllm, dummy)"),
     timeout: int = Body(30, description="요청 타임아웃 (초)")
 ):
     """
@@ -1766,6 +1770,7 @@ async def process_with_agent(
         "user_query": "정제된 STT 텍스트",
         "use_streaming": false,
         "chat_thread_id": null,
+        "agent_type": "external",
         "timeout": 30
     }
     ```
@@ -1782,21 +1787,24 @@ async def process_with_agent(
     }
     ```
     
-    Fallback 순서:
-    1. 외부 Agent (설정된 경우)
-    2. vLLM Fallback
-    3. Dummy Agent (테스트용)
+    **Agent 타입 선택:**
+    - `external`: 외부 Agent 사용 (기본값, AGENT_URL 필수)
+    - `vllm`: vLLM 백엔드 사용
+    - `dummy`: Dummy Agent 사용 (테스트용)
+    
+    선택된 Agent가 실패하면 자동으로 Dummy Agent로 Fallback됩니다.
     """
     try:
         from api_server.services.ai_agent_service import get_ai_agent_service
         
-        logger.info(f"[AIAgent] 요청 수신 (query 길이: {len(user_query)})")
+        logger.info(f"[AIAgent] 요청 수신 (query 길이: {len(user_query)}, agent_type={agent_type})")
         
         service = await get_ai_agent_service()
         result = await service.process(
             user_query=user_query,
             use_streaming=use_streaming,
             chat_thread_id=chat_thread_id,
+            agent_type=agent_type,
             timeout=timeout
         )
         
