@@ -67,6 +67,7 @@ class TranscribeResponse(BaseModel):
     processing_steps: Optional[ProcessingStepsStatus] = None  # 처리 단계 (NEW)
     privacy_removal: Optional[Dict[str, Any]] = None  # Privacy Removal 결과 (NEW)
     classification: Optional[Dict[str, Any]] = None  # Classification 결과 (NEW)
+    incomplete_elements: Optional[Dict[str, Any]] = None  # 불완전판매요소 검증 결과 (NEW)
     error_code: Optional[str] = None
     failure_reason: Optional[dict] = None
 

@@ -41,6 +41,8 @@ class BatchFile:
     word_count: Optional[int] = None  # 글자 수
     performance: Optional[dict] = None  # CPU/RAM/GPU 성능 메트릭
     processing_steps: Optional[dict] = None  # 각 단계별 처리 결과 {stt: done, privacy_removal: done, ...}
+    classification: Optional[dict] = None  # 음성 내용 분류 결과
+    incomplete_elements: Optional[dict] = None  # 불완전판매요소 검증 결과
 
 
 @dataclass

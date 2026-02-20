@@ -315,7 +315,8 @@ async def transcribe(request: TranscribeRequest) -> TranscribeResponse:
             performance=result.get("performance"),
             processing_steps=result.get("processing_steps"),
             privacy_removal=result.get("privacy_removal"),
-            classification=result.get("classification")
+            classification=result.get("classification"),
+            incomplete_elements=result.get("incomplete_elements")
         )
     
     except HTTPException:

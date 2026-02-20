@@ -408,6 +408,12 @@ function displayResult(result) {
         displayClassificationResults(result.classification);
     }
     
+    // 불완전판매요소 검증 결과 표시 (NEW)
+    if (result.incomplete_elements) {
+        console.log("[Result] Incomplete Elements:", result.incomplete_elements);
+        displayIncompleteElementsResults(result.incomplete_elements);
+    }
+    
     // 성능 메트릭 표시
     if (result.performance) {
         const perf = result.performance;
@@ -506,6 +512,24 @@ function displayClassificationResults(classification) {
     
     section.style.display = "block";
     console.log("[Classification Results] 표시됨");
+}
+
+/**
+ * 불완전판매요소 검증 결과 표시 (NEW)
+ */
+function displayIncompleteElementsResults(incompleteElements) {
+    const section = document.getElementById("incomplete-elements-result-section");
+    if (!section) return;
+    
+    // 기본 정보 표시
+    const result = incompleteElements.result || incompleteElements.agent_type || "-";
+    const details = incompleteElements.details || incompleteElements.description || "-";
+    
+    document.getElementById("incomplete-result").textContent = result;
+    document.getElementById("incomplete-details").textContent = details;
+    
+    section.style.display = "block";
+    console.log("[Incomplete Elements Results] 표시됨");
 }
 
 // 결과 액션
