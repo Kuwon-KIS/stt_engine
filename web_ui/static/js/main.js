@@ -342,14 +342,12 @@ async function transcribeFile() {
         const isStream = streamingCheckbox.checked;
         
         // 처리 옵션 (NEW)
-        const privacyRemoval = document.getElementById("privacy-removal-checkbox")?.checked || false;
         const classification = document.getElementById("classification-checkbox")?.checked || false;
         const incompleteElementsCheck = document.getElementById("incomplete-elements-check-checkbox")?.checked || false;
         const agentUrl = document.getElementById("agent-url-input")?.value || "";
         const agentRequestFormat = document.getElementById("agent-request-format-select")?.value || "text_only";
         
         console.log("[Transcribe] 처리 옵션:", { 
-            privacy_removal: privacyRemoval, 
             classification, 
             incomplete_elements_check: incompleteElementsCheck,
             agent_url: agentUrl,
@@ -361,7 +359,7 @@ async function transcribeFile() {
             language: language,
             backend: backend,
             is_stream: isStream,
-            privacy_removal: privacyRemoval,                    // NEW
+            privacy_removal: false,                             // 개인정보 제거 기능 제거
             classification: classification,                      // NEW
             incomplete_elements_check: incompleteElementsCheck, // NEW
             agent_url: agentUrl,                                // NEW
@@ -481,9 +479,6 @@ function displayProcessingSteps(steps) {
         <div style="padding: 8px; background: ${steps.stt ? '#d4edda' : '#f8d7da'}; border-radius: 4px;">
             <span>${steps.stt ? '✅' : '❌'} STT 변환</span>
         </div>
-        <div style="padding: 8px; background: ${steps.privacy_removal ? '#d4edda' : '#f8d7da'}; border-radius: 4px;">
-            <span>${steps.privacy_removal ? '✅' : '❌'} 개인정보 제거</span>
-        </div>
         <div style="padding: 8px; background: ${steps.classification ? '#d4edda' : '#f8d7da'}; border-radius: 4px;">
             <span>${steps.classification ? '✅' : '❌'} 음성 내용 분류</span>
         </div>
@@ -565,7 +560,6 @@ document.getElementById("reset-btn")?.addEventListener("click", () => {
     setGlobalBackendCheckbox.checked = false;
     document.getElementById("result-section").style.display = "none";
     document.getElementById("upload-section").style.display = "block";
-    resetPrivacyRemovalSection();  // Privacy Removal 초기화 ✨
 });
 
 // 버튼 이벤트
@@ -643,14 +637,12 @@ startBatchBtn?.addEventListener("click", async () => {
         startBatchBtn.textContent = "처리 중...";
 
         // 처리 옵션 (NEW)
-        const privacyRemoval = document.getElementById("privacy-removal-checkbox")?.checked || false;
         const classification = document.getElementById("classification-checkbox")?.checked || false;
         const incompleteElementsCheck = document.getElementById("incomplete-elements-check-checkbox")?.checked || false;
         const agentUrl = document.getElementById("agent-url-input")?.value || "";
         const agentRequestFormat = document.getElementById("agent-request-format-select")?.value || "text_only";
         
         console.log("[배치] 처리 옵션:", { 
-            privacy_removal: privacyRemoval, 
             classification, 
             incomplete_elements_check: incompleteElementsCheck,
             agent_url: agentUrl,
@@ -661,7 +653,7 @@ startBatchBtn?.addEventListener("click", async () => {
             extension: batchExtensionInput.value || ".wav",
             language: batchLanguageSelect.value,
             parallel_count: parseInt(batchParallelInput.value) || 2,
-            privacy_removal: privacyRemoval,                    // NEW
+            privacy_removal: false,                             // 개인정보 제거 기능 제거
             classification: classification,                      // NEW
             incomplete_elements_check: incompleteElementsCheck, // NEW
             agent_url: agentUrl,                                // NEW
