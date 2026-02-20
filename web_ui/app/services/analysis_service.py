@@ -154,8 +154,9 @@ class AnalysisService:
             suspicious_count = 0
             for result in results:
                 result_dict = {
-                    "file_id": result.file_id,
+                    "filename": result.file_id,  # 프론트엔드에서는 filename을 기대함
                     "stt_text": result.stt_text,
+                    "status": "completed",  # AnalysisResult에는 status 필드가 없으므로 항상 completed
                     "confidence": result.stt_metadata.get("confidence", 0) if result.stt_metadata else 0,
                     "risk_level": "safe"  # 기본값
                 }
