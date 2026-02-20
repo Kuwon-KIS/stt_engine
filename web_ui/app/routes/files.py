@@ -89,8 +89,8 @@ async def upload_file(
     return result
 
 
-@router.delete("/{filename}")
-async def delete_file(
+@router.api_route("/{filename}", methods=["DELETE"])
+async def delete_file_handler(
     filename: str,
     request: Request,
     folder_path: str = None,
@@ -106,9 +106,12 @@ async def delete_file(
     Returns:
         dict: 삭제 결과
     """
+    logger.info(f"DELETE 라우터 호출 - filename={filename}, folder_path={folder_path}")
+    
     # 세션에서 사번 추출
     emp_id = request.session.get("emp_id")
     if not emp_id:
+        logger.warning("세션 없음 - 미인증")
         raise HTTPException(status_code=401, detail="로그인이 필요합니다")
     
     logger.info(f"파일 삭제 요청: emp_id={emp_id}, filename={filename}, folder_path={folder_path}")
