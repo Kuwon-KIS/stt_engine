@@ -16,6 +16,7 @@ FastAPI를 사용한 STT(Speech-to-Text) 서버
 from fastapi import FastAPI, File, UploadFile, HTTPException, Body, Form, Query, Depends
 from fastapi.responses import JSONResponse, FileResponse
 from pathlib import Path
+from typing import Optional
 import tempfile
 import os
 import sys
@@ -36,6 +37,14 @@ from api_server.services.privacy_removal_service import (
     PrivacyRemovalService,
     get_privacy_removal_service
 )
+from api_server.transcribe_endpoint import (
+    validate_and_prepare_file,
+    perform_stt,
+    perform_privacy_removal,
+    perform_classification,
+    build_transcribe_response,
+)
+
 
 # 로깅 설정
 logging.basicConfig(
@@ -267,7 +276,190 @@ async def reload_backend(request_body: dict = Body(None)):
         )
 
 
+# ============================================================================
+# Improved Transcribe Endpoint
+# ============================================================================
+
 @app.post("/transcribe")
+async def transcribe_v2(
+    file_path: str = Form(...),
+    language: str = Form("ko"),
+    is_stream: str = Form("false"),
+    privacy_removal: str = Form("false"),
+    classification: str = Form("false"),
+    ai_agent: str = Form("false"),
+    export: Optional[str] = Query(None, description="Export format: 'txt' or 'json'"),
+    privacy_prompt_type: str = Form("privacy_remover_default_v6"),
+    classification_prompt_type: str = Form("classification_default_v1"),
+):
+    """
+    개선된 음성인식 엔드포인트 (단건 처리)
+    
+    Parameters:
+    - file_path: 서버 파일 경로
+    - language: 언어 코드 (기본: "ko")
+    - is_stream: 스트리밍 모드 (기본: "false")
+    - privacy_removal: 개인정보 제거 (기본: "false")
+    - classification: 통화 분류 (기본: "false")
+    - ai_agent: AI Agent 처리 (기본: "false")
+    - export: 내보내기 형식 ("txt" 또는 "json")
+    - privacy_prompt_type: Privacy Removal 프롬프트 타입
+    - classification_prompt_type: Classification 프롬프트 타입
+    
+    Returns:
+    - TranscribeResponse: 처리 결과
+    
+    Example:
+    ```bash
+    curl -X POST http://localhost:8003/transcribe \
+      -F 'file_path=/app/audio/test.wav' \
+      -F 'privacy_removal=true' \
+      -F 'classification=true'
+    ```
+    """
+    
+    if stt is None:
+        logger.error("[API] STT 모델이 로드되지 않음")
+        raise HTTPException(status_code=503, detail="STT 모델 로드 실패")
+    
+    # 처리 시간 측정
+    start_time = time.time()
+    perf_monitor = PerformanceMonitor()
+    perf_monitor.start()
+    
+    try:
+        # 1. 파일 검증 및 준비
+        file_path_obj, file_check, memory_info = await validate_and_prepare_file(file_path)
+        file_size_mb = file_path_obj.stat().st_size / (1024**2)
+        
+        # 2. STT 처리
+        is_streaming = is_stream.lower() in ['true', '1', 'yes', 'on']
+        stt_result = await perform_stt(
+            stt_instance=stt,
+            file_path_obj=file_path_obj,
+            language=language,
+            is_streaming=is_streaming
+        )
+        
+        # 에러 확인
+        if not stt_result.get('success', False) or 'error' in stt_result:
+            processing_time = time.time() - start_time
+            perf_monitor.stop()
+            
+            logger.error(f"[API] STT 처리 실패: {stt_result.get('error', 'Unknown')}")
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": ErrorCode.STT_PROCESSING_ERROR.value,
+                    "message": stt_result.get('error', 'STT processing failed'),
+                    "processing_time": processing_time
+                }
+            )
+        
+        # 3. Privacy Removal (선택)
+        privacy_removal_enabled = privacy_removal.lower() in ['true', '1', 'yes', 'on']
+        privacy_result = None
+        
+        if privacy_removal_enabled:
+            privacy_result = await perform_privacy_removal(
+                text=stt_result.get('text', ''),
+                prompt_type=privacy_prompt_type
+            )
+        
+        # 4. Classification (선택)
+        classification_enabled = classification.lower() in ['true', '1', 'yes', 'on']
+        classification_result = None
+        
+        if classification_enabled:
+            # Classification을 위해서는 Privacy Removal이 먼저 수행되어야 함
+            classification_text = privacy_result.text if privacy_result else stt_result.get('text', '')
+            
+            from api_server.services.classification_service import get_classification_service
+            classification_service = await get_classification_service()
+            classification_response = await classification_service.classify_call(
+                text=classification_text,
+                prompt_type=classification_prompt_type
+            )
+            
+            if classification_response.get('success', True):
+                classification_result = ClassificationResult(
+                    code=classification_response['code'],
+                    category=classification_response['category'],
+                    confidence=classification_response['confidence'],
+                    reason=classification_response.get('reason')
+                )
+        
+        # 5. 처리 시간 계산
+        processing_time = time.time() - start_time
+        perf_metrics = perf_monitor.stop()
+        
+        # 6. 응답 구성
+        response = build_transcribe_response(
+            stt_result=stt_result,
+            file_check=file_check,
+            file_size_mb=file_size_mb,
+            memory_info=memory_info,
+            perf_metrics=perf_metrics,
+            processing_time=processing_time,
+            privacy_result=privacy_result,
+            classification_result=classification_result,
+            file_path_obj=file_path_obj,
+            processing_mode="streaming" if is_streaming else "normal"
+        )
+        
+        logger.info(f"[API] ✅ 요청 처리 완료 (처리시간: {processing_time:.2f}초)")
+        
+        # 7. 내보내기 처리
+        if export and export.lower() in ["txt", "json"]:
+            if export.lower() == "txt":
+                # 텍스트 파일 다운로드
+                content = response.text.encode('utf-8')
+                return FileResponse(
+                    content=content,
+                    filename=f"transcription_{int(time.time())}.txt",
+                    media_type="text/plain; charset=utf-8"
+                )
+            elif export.lower() == "json":
+                # JSON 파일 다운로드
+                import json
+                content = json.dumps(response.dict(), ensure_ascii=False, indent=2).encode('utf-8')
+                return FileResponse(
+                    content=content,
+                    filename=f"transcription_{int(time.time())}.json",
+                    media_type="application/json; charset=utf-8"
+                )
+        
+        # 8. JSON 응답
+        return JSONResponse(
+            content=response.dict(),
+            status_code=200,
+            headers={"Content-Type": "application/json; charset=utf-8"}
+        )
+    
+    except HTTPException:
+        perf_monitor.stop()
+        raise
+    
+    except Exception as e:
+        processing_time = time.time() - start_time
+        perf_monitor.stop()
+        
+        logger.error(f"[API] 처리 중 오류: {type(e).__name__}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": ErrorCode.INTERNAL_ERROR.value,
+                "message": str(e)[:200],
+                "processing_time": processing_time
+            }
+        )
+
+
+# ============================================================================
+# Original Transcribe Endpoint (레거시, 호환성 유지용)
+# ============================================================================
+
+@app.post("/transcribe_legacy")
 async def transcribe(
     file_path: str = Form(...), 
     language: str = Form("ko"), 
@@ -710,6 +902,114 @@ async def transcribe(
                 "error_type": type(e).__name__,
                 "message": str(e)[:200],
                 "memory_info": memory_info
+            }
+        )
+
+
+# ============================================================================
+# Batch Transcribe Endpoint
+# ============================================================================
+
+@app.post("/transcribe_batch")
+async def transcribe_batch_endpoint(
+    file_paths: str = Form(...),  # JSON 문자열: ["file1.wav", "file2.wav", ...]
+    language: str = Form("ko"),
+    is_stream: str = Form("false"),
+    privacy_removal: str = Form("false"),
+    classification: str = Form("false"),
+    ai_agent: str = Form("false"),
+    privacy_prompt_type: str = Form("privacy_remover_default_v6"),
+    classification_prompt_type: str = Form("classification_default_v1"),
+):
+    """
+    배치 음성인식 처리
+    
+    Parameters:
+    - file_paths: JSON 리스트 문자열 (예: '[\"/app/audio/test1.wav\", \"/app/audio/test2.wav\"]')
+    - language: 언어 코드 (기본: "ko")
+    - is_stream: 스트리밍 모드 (기본: "false")
+    - privacy_removal: 개인정보 제거 (기본: "false")
+    - classification: 통화 분류 (기본: "false")
+    - ai_agent: AI Agent 처리 (기본: "false")
+    
+    Returns:
+    - BatchResponse: 배치 처리 결과
+    
+    Example:
+    ```bash
+    curl -X POST http://localhost:8003/transcribe_batch \
+      -F 'file_paths=["\\"/app/audio/test1.wav\\", \\"/app/audio/test2.wav\\"]' \
+      -F 'privacy_removal=true' \
+      -F 'classification=true'
+    ```
+    """
+    
+    if stt is None:
+        logger.error("[Batch API] STT 모델이 로드되지 않음")
+        raise HTTPException(status_code=503, detail="STT 모델 로드 실패")
+    
+    try:
+        # file_paths 파싱
+        import json as json_module
+        if isinstance(file_paths, str):
+            parsed_file_paths = json_module.loads(file_paths)
+        else:
+            parsed_file_paths = file_paths
+        
+        if not isinstance(parsed_file_paths, list):
+            raise ValueError("file_paths must be a list")
+        
+        if len(parsed_file_paths) == 0:
+            raise ValueError("file_paths list is empty")
+        
+        logger.info(f"[Batch API] 배치 처리 요청: {len(parsed_file_paths)}개 파일")
+        
+        # 배치 처리 파라미터 변환
+        is_streaming = is_stream.lower() in ['true', '1', 'yes', 'on']
+        privacy_removal_enabled = privacy_removal.lower() in ['true', '1', 'yes', 'on']
+        classification_enabled = classification.lower() in ['true', '1', 'yes', 'on']
+        ai_agent_enabled = ai_agent.lower() in ['true', '1', 'yes', 'on']
+        
+        # 배치 처리 실행
+        from api_server.batch_endpoint import transcribe_batch
+        
+        batch_result = await transcribe_batch(
+            stt_instance=stt,
+            file_paths=parsed_file_paths,
+            language=language,
+            is_stream=is_streaming,
+            privacy_removal=privacy_removal_enabled,
+            classification=classification_enabled,
+            ai_agent=ai_agent_enabled,
+            privacy_prompt_type=privacy_prompt_type,
+            classification_prompt_type=classification_prompt_type
+        )
+        
+        logger.info(f"[Batch API] ✅ 배치 처리 완료")
+        
+        return JSONResponse(
+            content=batch_result.dict(),
+            status_code=200,
+            headers={"Content-Type": "application/json; charset=utf-8"}
+        )
+    
+    except ValueError as e:
+        logger.error(f"[Batch API] 파라미터 오류: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": ErrorCode.BATCH_INVALID_REQUEST.value,
+                "message": str(e)
+            }
+        )
+    
+    except Exception as e:
+        logger.error(f"[Batch API] 처리 중 오류: {type(e).__name__}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": ErrorCode.BATCH_PROCESSING_ERROR.value,
+                "message": str(e)[:200]
             }
         )
 

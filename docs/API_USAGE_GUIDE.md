@@ -2,17 +2,49 @@
 
 ## 개요
 
-**3가지 엔드포인트 제공:**
+**주요 엔드포인트 제공:**
 
 | 엔드포인트 | 방식 | 용도 | 추천 |
 |-----------|------|------|------|
-| `POST /transcribe` | 로컬 파일 경로 | 서버 내부 파일 처리 (일반 + 스트리밍) | ⭐⭐⭐ 권장 |
+| `POST /transcribe` | 로컬 파일 경로 | 서버 내부 파일 처리 (일반 + 스트리밍 + 선택 단계) | ⭐⭐⭐ 권장 |
+| `POST /transcribe_batch` | 배치 처리 | 여러 파일 일괄 처리 (NEW) | ⭐⭐⭐ 권장 |
 | `POST /transcribe_by_upload` | 파일 업로드 | 클라이언트에서 파일 업로드 | 소규모 파일만 |
 | `GET /health` | 헬스 체크 | 서버 상태 확인 | 모니터링 용 |
 
 ---
 
-## 1️⃣ 로컬 파일 경로 기반 (권장) - `/transcribe`
+## 1️⃣ 로컬 파일 경로 기반 (권장) - `/transcribe` ⭐ 개선됨
+
+### 주요 개선 사항 (NEW)
+
+1. **처음 요청 시 처리 단계 선택**: 초기 요청에서 어느 단계까지 진행할지 선택 가능
+   - `privacy_removal=true/false` - 개인정보 제거 처리 여부
+   - `classification=true/false` - 통화 분류 처리 여부
+   - `ai_agent=true/false` - AI Agent 처리 여부
+
+2. **Processing Steps 메타데이터**: 응답에 각 단계의 완료 여부 표시
+   - `processing_steps.stt` - STT 완료
+   - `processing_steps.privacy_removal` - 개인정보 제거 완료
+   - `processing_steps.classification` - 분류 완료
+   - `processing_steps.ai_agent` - AI Agent 완료
+
+### 처리 워크플로우
+
+```
+[사용자 요청]
+    ↓
+[처리 단계 선택] (privacy_removal, classification, ai_agent)
+    ↓
+[필수] STT 처리 → text, language, duration
+    ↓
+[조건] Privacy Removal (privacy_removal=true인 경우)
+    ↓
+[조건] Classification (classification=true인 경우)
+    ↓
+[조건] AI Agent (ai_agent=true인 경우)
+    ↓
+[응답] processing_steps 메타데이터 포함
+```
 
 ### 1-1. 일반 모드 (메모리 로드)
 
@@ -24,9 +56,27 @@
 **명령:**
 
 ```bash
-# 기본 사용 (기본 언어: 한국어)
+# 기본 사용 (STT만 수행)
 curl -X POST http://localhost:8003/transcribe \
   -F 'file_path=/app/audio/samples/test.wav'
+
+# STT + Privacy Removal 수행
+curl -X POST http://localhost:8003/transcribe \
+  -F 'file_path=/app/audio/samples/test.wav' \
+  -F 'privacy_removal=true'
+
+# STT + Privacy Removal + Classification 수행
+curl -X POST http://localhost:8003/transcribe \
+  -F 'file_path=/app/audio/samples/test.wav' \
+  -F 'privacy_removal=true' \
+  -F 'classification=true'
+
+# 모든 단계 수행
+curl -X POST http://localhost:8003/transcribe \
+  -F 'file_path=/app/audio/samples/test.wav' \
+  -F 'privacy_removal=true' \
+  -F 'classification=true' \
+  -F 'ai_agent=true'
 
 # 영어로 처리
 curl -X POST http://localhost:8003/transcribe \
@@ -39,7 +89,51 @@ curl -X POST http://localhost:8003/transcribe \
   -F 'language=ja'
 ```
 
-**응답 예시:**
+**응답 예시 (모든 단계 수행 시):**
+
+```json
+{
+  "success": true,
+  "text": "안녕하세요, 제품 구매 문의입니다.",
+  "language": "ko",
+  "duration": 2.5,
+  "backend": "faster-whisper",
+  "file_path": "/app/audio/samples/test.wav",
+  "file_size_mb": 0.015,
+  
+  "privacy_removal": {
+    "privacy_exist": "N",
+    "exist_reason": "",
+    "text": "안녕하세요, 제품 구매 문의입니다.",
+    "privacy_types": []
+  },
+  
+  "classification": {
+    "code": "CLASS_PRE_SALES",
+    "category": "사전판매",
+    "confidence": 92.3,
+    "reason": "제품 구매 의사 표현"
+  },
+  
+  "processing_steps": {
+    "stt": true,
+    "privacy_removal": true,
+    "classification": true,
+    "ai_agent": false
+  },
+  
+  "processing_time_seconds": 8.5,
+  "processing_mode": "normal",
+  "segments_processed": 1,
+  
+  "memory_info": {
+    "available_mb": 14000,
+    "used_percent": 10.5
+  }
+}
+```
+
+**응답 예시 (STT만 수행 시):**
 
 ```json
 {
@@ -50,6 +144,14 @@ curl -X POST http://localhost:8003/transcribe \
   "backend": "faster-whisper",
   "file_path": "/app/audio/samples/test.wav",
   "file_size_mb": 0.015,
+  
+  "processing_steps": {
+    "stt": true,
+    "privacy_removal": false,
+    "classification": false,
+    "ai_agent": false
+  },
+  
   "processing_time_seconds": 1.23,
   "processing_mode": "normal",
   "segments_processed": 1,
@@ -96,6 +198,14 @@ curl -X POST http://localhost:8003/transcribe \
   "backend": "faster-whisper",
   "file_path": "/app/audio/samples/large_file.wav",
   "file_size_mb": 1500.5,
+  
+  "processing_steps": {
+    "stt": true,
+    "privacy_removal": false,
+    "classification": false,
+    "ai_agent": false
+  },
+  
   "processing_time_seconds": 45.67,
   "processing_mode": "streaming",
   "segments_processed": 150,
@@ -108,7 +218,140 @@ curl -X POST http://localhost:8003/transcribe \
 
 ---
 
-## 2️⃣ 파일 업로드 기반 - `/transcribe_by_upload`
+## 2️⃣ 배치 처리 (다중 파일) - `/transcribe_batch` ⭐ NEW
+
+### 기능
+- 여러 파일을 한 번에 처리
+- 배치 ID로 진행 상황 추적
+- 실시간 진행률 표시
+- 각 파일별 독립적 처리 및 에러 처리
+
+### 2-1. 기본 배치 처리
+
+**명령:**
+
+```bash
+# 여러 파일 처리
+curl -X POST http://localhost:8003/transcribe_batch \
+  -F 'file_paths=/app/audio/test1.wav' \
+  -F 'file_paths=/app/audio/test2.wav' \
+  -F 'file_paths=/app/audio/test3.wav'
+
+# 처리 옵션과 함께
+curl -X POST http://localhost:8003/transcribe_batch \
+  -F 'file_paths=/app/audio/test1.wav' \
+  -F 'file_paths=/app/audio/test2.wav' \
+  -F 'language=ko' \
+  -F 'privacy_removal=true' \
+  -F 'classification=true'
+```
+
+**응답 예시:**
+
+```json
+{
+  "batch_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "completed",
+  
+  "files": [
+    {
+      "filename": "test1.wav",
+      "filepath": "/app/audio/test1.wav",
+      "status": "done",
+      "result": {
+        "success": true,
+        "text": "안녕하세요. 제품 구매 문의입니다.",
+        "language": "ko",
+        "duration": 3.2,
+        "backend": "faster-whisper",
+        "processing_steps": {
+          "stt": true,
+          "privacy_removal": true,
+          "classification": true,
+          "ai_agent": false
+        },
+        "classification": {
+          "code": "CLASS_PRE_SALES",
+          "category": "사전판매",
+          "confidence": 92.3,
+          "reason": "제품 구매 의사 표현"
+        },
+        "privacy_removal": {
+          "privacy_exist": "N",
+          "exist_reason": "",
+          "text": "안녕하세요. 제품 구매 문의입니다."
+        }
+      },
+      "processing_time_seconds": 5.2
+    },
+    {
+      "filename": "test2.wav",
+      "filepath": "/app/audio/test2.wav",
+      "status": "done",
+      "result": { ... },
+      "processing_time_seconds": 4.8
+    }
+  ],
+  
+  "progress": {
+    "total": 2,
+    "completed": 2,
+    "failed": 0,
+    "in_progress": 0,
+    "pending": 0,
+    "progress_percent": 100.0
+  },
+  
+  "created_at": "2024-02-20T10:30:00",
+  "started_at": "2024-02-20T10:31:00",
+  "completed_at": "2024-02-20T10:40:30",
+  "total_processing_time_seconds": 570.5
+}
+```
+
+### 2-2. 배치 처리 요청 파라미터
+
+| 파라미터 | 타입 | 기본값 | 설명 |
+|---------|------|-------|------|
+| `file_paths` | list | 필수 | 처리할 파일 경로 (여러 번 지정) |
+| `language` | str | `ko` | 음성 언어 |
+| `is_stream` | bool | `false` | 스트리밍 모드 여부 |
+| `privacy_removal` | bool | `false` | 개인정보 제거 처리 여부 |
+| `classification` | bool | `false` | 통화 분류 처리 여부 |
+| `ai_agent` | bool | `false` | AI Agent 처리 여부 |
+
+### 2-3. 처리 단계 선택 옵션 (NEW)
+
+각 단계를 독립적으로 선택할 수 있습니다:
+
+```bash
+# STT만 수행
+curl -X POST http://localhost:8003/transcribe_batch \
+  -F 'file_paths=/app/audio/test1.wav'
+
+# STT + Privacy Removal
+curl -X POST http://localhost:8003/transcribe_batch \
+  -F 'file_paths=/app/audio/test1.wav' \
+  -F 'privacy_removal=true'
+
+# STT + Privacy Removal + Classification
+curl -X POST http://localhost:8003/transcribe_batch \
+  -F 'file_paths=/app/audio/test1.wav' \
+  -F 'file_paths=/app/audio/test2.wav' \
+  -F 'privacy_removal=true' \
+  -F 'classification=true'
+
+# 모든 단계 수행
+curl -X POST http://localhost:8003/transcribe_batch \
+  -F 'file_paths=/app/audio/test1.wav' \
+  -F 'privacy_removal=true' \
+  -F 'classification=true' \
+  -F 'ai_agent=true'
+```
+
+---
+
+## 3️⃣ 파일 업로드 기반 - `/transcribe_by_upload`
 
 ### 특징:
 - 로컬 파일을 클라이언트에서 전송
@@ -132,7 +375,7 @@ curl -X POST http://localhost:8003/transcribe_by_upload \
 
 ---
 
-## 3️⃣ 백엔드 관리
+## 4️⃣ 백엔드 관리
 
 ### 현재 백엔드 확인
 

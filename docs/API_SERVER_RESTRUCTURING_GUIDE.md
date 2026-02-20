@@ -7,30 +7,48 @@
   - 간단한 진입점만 포함
   - `api_server.app`에서 FastAPI 앱 import
   
-- **api_server/app.py** (패키지): 실제 구현 파일 (57KB)
+- **api_server/app.py** (패키지): 실제 구현 파일
   - 모든 FastAPI 라우트 포함
+  - 개선된 `/transcribe` 엔드포인트 (NEW)
+  - 새로운 `/transcribe_batch` 엔드포인트 (NEW)
   - 모든 비즈니스 로직 포함
-  - STT + Privacy Removal 통합
+  - STT + Privacy Removal + Classification 통합
 
-### 2. API Client Documentation ✅
+### 2. Workflow 개선 (Phase 1-5) ✅
+- **constants.py**: 처리 단계, 분류 코드, 에러 코드 정의
+- **models.py**: Pydantic 데이터 모델 (ProcessingStepsStatus 포함)
+- **transcribe_endpoint.py**: 개선된 단건 처리 로직
+- **batch_endpoint.py**: 새로운 배치 처리 로직
+- **services/classification_service.py**: vLLM 기반 분류 서비스
+
+### 3. API Client Documentation ✅
 - **api_client.py**: 명확한 구조 주석 추가
   - 클라이언트 라이브러리로 사용 가능
   - 커맨드라인 도구로 실행 가능
   - 테스트 목적으로 독립적 사용 가능
 
-### 3. Documentation Consolidation ✅
+### 4. Documentation Consolidation ✅
 - **루트 문서 정리**:
-  - PRIVACY_REMOVAL_INTEGRATION.md → ARCHIVE/로 이동
-  - IMPLEMENTATION_COMPLETE.md → ARCHIVE/로 이동
+  - 3가지 주요 문서를 docs/ 아래로 이동 (NEW)
+  - `docs/01_WORKFLOW_IMPLEMENTATION_PLAN.md`
+  - `docs/02_WORKFLOW_IMPLEMENTATION_COMPLETE.md`
+  - `docs/03_WORKFLOW_PROJECT_COMPLETION_REPORT.md`
 
 - **docs/ 통합 가이드**:
-  - `docs/PRIVACY_REMOVAL_GUIDE.md` ⭐ (메인 가이드)
+  - `docs/API_USAGE_GUIDE.md` ⭐ (메인 API 가이드)
+    - `/transcribe` 엔드포인트 상세 설명 (개선됨)
+    - `/transcribe_batch` 엔드포인트 설명 (NEW)
+    - 처리 단계 선택 옵션 설명 (NEW)
+    - Processing Steps 메타데이터 설명 (NEW)
+    - 사용 예시 및 테스트 방법
+  
+  - `docs/PRIVACY_REMOVAL_GUIDE.md` (Privacy Removal)
     - Privacy Removal 전체 개요
     - API 엔드포인트 상세 설명
     - 사용 예시 및 테스트 방법
     - 배포 및 문제해결 가이드
   
-  - `docs/PROJECT_STRUCTURE.md` (신규)
+  - `docs/PROJECT_STRUCTURE.md` (프로젝트 구조)
     - 프로젝트 폴더 구조 설명
     - 각 파일의 역할 설명
     - Import 경로 설명
@@ -51,19 +69,29 @@ stt_engine/
 ├── 📁 api_server/                ← 메인 패키지
 │   ├── __init__.py               ← app import
 │   ├── app.py                    ← FastAPI 메인 (실제 구현)
+│   ├── constants.py              ← 상수 및 열거형 (NEW)
+│   ├── models.py                 ← Pydantic 모델 (NEW)
+│   ├── transcribe_endpoint.py    ← /transcribe 로직 (NEW)
+│   ├── batch_endpoint.py         ← /transcribe_batch 로직 (NEW)
 │   ├── services/                 ← 서비스
+│   │   ├── __init__.py
 │   │   ├── privacy_removal_service.py
-│   │   └── privacy_removal/
-│   │       ├── privacy_remover.py
-│   │       ├── vllm_client.py
-│   │       └── prompts/
+│   │   ├── classification_service.py  ← Classification (NEW)
+│   │   ├── privacy_removal/
+│   │   │   ├── privacy_remover.py
+│   │   │   ├── vllm_client.py
+│   │   │   └── prompts/
+│   │   └── ...
 │   └── ...
 │
 ├── 📁 docs/                      ← 📚 문서 (중요!)
-│   ├── PRIVACY_REMOVAL_GUIDE.md  ⭐ (메인 가이드)
-│   ├── PROJECT_STRUCTURE.md      (구조 설명)
-│   ├── API_USAGE_GUIDE.md
-│   └── ... (기타 45개 문서)
+│   ├── 01_WORKFLOW_IMPLEMENTATION_PLAN.md       ⭐ (설계 문서)
+│   ├── 02_WORKFLOW_IMPLEMENTATION_COMPLETE.md   ⭐ (구현 완료)
+│   ├── 03_WORKFLOW_PROJECT_COMPLETION_REPORT.md ⭐ (최종 보고서)
+│   ├── API_USAGE_GUIDE.md                       (API 가이드)
+│   ├── API_SERVER_RESTRUCTURING_GUIDE.md        (구조 설명)
+│   ├── PRIVACY_REMOVAL_GUIDE.md                 (Privacy Removal)
+│   └── ... (기타 30+ 문서)
 │
 ├── 📁 ARCHIVE/                   ← 이전 문서
 │   ├── PRIVACY_REMOVAL_INTEGRATION.md (이동)
@@ -96,7 +124,30 @@ stt_engine/
 
 ---
 
-## 🔍 Key Files Overview
+## � 신규 엔드포인트 및 개선사항
+
+### 1. 개선된 `/transcribe` 엔드포인트
+- **New**: 처음 요청 시 처리 단계 선택 가능
+- **New**: `privacy_removal`, `classification`, `ai_agent` boolean 파라미터
+- **New**: `processing_steps` 메타데이터로 각 단계 완료 여부 표시
+- **Backward Compatible**: 기존 호출도 여전히 작동
+
+### 2. 새로운 `/transcribe_batch` 엔드포인트
+- **Purpose**: 여러 파일 일괄 처리
+- **Features**: 
+  - 배치 ID로 진행 상황 추적
+  - 실시간 진행률 표시
+  - 각 파일별 독립적 오류 처리
+  - 모든 처리 단계 선택 가능
+
+### 3. 표준화된 Classification
+- **ClassificationCode enum**: CLASS_PRE_SALES, CLASS_CUSTOMER_SVC 등 8개 코드
+- **Confidence score**: 0-100 범위의 신뢰도
+- **Reason**: 분류 사유 제공
+
+---
+
+## �🔍 Key Files Overview
 
 ### api_server.py (진입점)
 ```python

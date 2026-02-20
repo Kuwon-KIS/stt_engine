@@ -6,7 +6,17 @@ OpenAI Whisper 기반 실시간 음성-텍스트 변환 엔진
 
 ## � 문서
 
+**STT Engine 워크플로우 개선 (Phase 1-5)**: 
+- **[docs/01_WORKFLOW_IMPLEMENTATION_PLAN.md](docs/01_WORKFLOW_IMPLEMENTATION_PLAN.md)** - 설계 및 계획
+- **[docs/02_WORKFLOW_IMPLEMENTATION_COMPLETE.md](docs/02_WORKFLOW_IMPLEMENTATION_COMPLETE.md)** - 구현 완료
+- **[docs/03_WORKFLOW_PROJECT_COMPLETION_REPORT.md](docs/03_WORKFLOW_PROJECT_COMPLETION_REPORT.md)** - 최종 보고서
+
+**API 가이드**:
 - **[QUICKSTART.md](QUICKSTART.md)** - 5분 안에 시작하기
+- **[docs/API_USAGE_GUIDE.md](docs/API_USAGE_GUIDE.md)** - API 엔드포인트 상세 가이드 ⭐ NEW
+- **[docs/API_SERVER_RESTRUCTURING_GUIDE.md](docs/API_SERVER_RESTRUCTURING_GUIDE.md)** - 서버 구조 설명
+
+**배포 및 아키텍처**:
 - **[docs/README_KO.md](docs/README_KO.md)** - 전체 문서 가이드
 - **[docs/deployment/](docs/deployment/)** - 배포 및 설치 가이드
 - **[docs/architecture/](docs/architecture/)** - 아키텍처 및 모델 정보

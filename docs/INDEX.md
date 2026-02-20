@@ -1,7 +1,12 @@
 ## 📚 STT Engine 문서 색인
 
+## ⭐ 최신: STT Engine Workflow 개선 (Phase 1-5)
+- **[01_WORKFLOW_IMPLEMENTATION_PLAN.md](01_WORKFLOW_IMPLEMENTATION_PLAN.md)** - Workflow 개선 설계 및 계획
+- **[02_WORKFLOW_IMPLEMENTATION_COMPLETE.md](02_WORKFLOW_IMPLEMENTATION_COMPLETE.md)** - 구현 완료 요약
+- **[03_WORKFLOW_PROJECT_COMPLETION_REPORT.md](03_WORKFLOW_PROJECT_COMPLETION_REPORT.md)** - 최종 완료 보고서
+
 ## 🚀 빠른 시작
-- **[../README.md](../README.md)** - 프로젝트 개요
+- **[../README.md](../README.md)** - 프로젝트 개요 (업데이트됨)
 - **[../QUICKSTART.md](../QUICKSTART.md)** - 5분 안에 시작하기
 - **[status/DEPLOYMENT_STATUS_CURRENT.md](status/DEPLOYMENT_STATUS_CURRENT.md)** - 현재 배포 상태
 - **[status/MODEL_READY.md](status/MODEL_READY.md)** - 모델 준비 완료 현황
@@ -18,8 +23,8 @@
 - **[deployment/DEPLOYMENT_CHECKLIST.md](deployment/DEPLOYMENT_CHECKLIST.md)** - 배포 체크리스트
 
 ## 🔧 기술 문서
-- **[API_USAGE_GUIDE.md](API_USAGE_GUIDE.md)** - API 사용 상세 가이드
-- **[API_SERVER_RESTRUCTURING_GUIDE.md](API_SERVER_RESTRUCTURING_GUIDE.md)** - API 서버 재구조화
+- **[API_USAGE_GUIDE.md](API_USAGE_GUIDE.md)** - API 사용 상세 가이드 (NEW: /transcribe_batch 추가)
+- **[API_SERVER_RESTRUCTURING_GUIDE.md](API_SERVER_RESTRUCTURING_GUIDE.md)** - API 서버 재구조화 (업데이트됨)
 - **[architecture/MODEL_STRUCTURE.md](architecture/MODEL_STRUCTURE.md)** - 모델 구조 설명
 - **[architecture/MODEL_COMPRESSION.md](architecture/MODEL_COMPRESSION.md)** - 모델 압축 기법
 - **[architecture/MODEL_MIGRATION_SUMMARY.md](architecture/MODEL_MIGRATION_SUMMARY.md)** - 모델 마이그레이션

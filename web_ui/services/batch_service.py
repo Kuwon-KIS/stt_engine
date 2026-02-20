@@ -40,6 +40,7 @@ class BatchFile:
     duration_sec: Optional[float] = None  # 오디오 길이
     word_count: Optional[int] = None  # 글자 수
     performance: Optional[dict] = None  # CPU/RAM/GPU 성능 메트릭
+    processing_steps: Optional[dict] = None  # 각 단계별 처리 결과 {stt: done, privacy_removal: done, ...}
 
 
 @dataclass
@@ -53,6 +54,7 @@ class BatchJob:
     completed_at: Optional[datetime] = None
     processed_count: int = 0
     failed_count: int = 0
+    processing_steps_options: Optional[dict] = None  # 요청한 처리 단계 옵션 {privacy_removal: True, classification: True, ...}
     
     def __post_init__(self):
         if self.created_at is None:
