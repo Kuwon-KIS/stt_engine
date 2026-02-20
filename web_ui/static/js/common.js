@@ -190,6 +190,27 @@ function formatDate(dateStr) {
 }
 
 /**
+ * 날짜와 시간을 포맷팅 (formatDate의 별칭)
+ * @param {string|Date} dateStr - 날짜 문자열 또는 Date 객체
+ * @returns {string} 포맷된 날짜 (예: "2026. 02. 20. 14:30:45")
+ */
+function formatDateTime(dateStr) {
+    if (!dateStr) return '-';
+    const date = new Date(dateStr);
+    
+    if (isNaN(date.getTime())) return '-';
+    
+    return date.toLocaleDateString('ko-KR', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+    });
+}
+
+/**
  * 시간을 읽기 좋은 형식으로 변환
  * @param {number} seconds - 초 단위 시간
  * @returns {string} 포맷된 시간 (예: "1h 23m 45s")
