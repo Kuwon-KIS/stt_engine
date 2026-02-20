@@ -1,80 +1,72 @@
 version: '3.8'
 
-services:
-  # vLLM 모델 서빙 (LLM 추론용)
-  # Mac에서는 CPU 모드로 실행 (필요시 Metal acceleration 활용)
-  vllm:
-    image: vllm/vllm-openai:latest
-    container_name: vllm-local
-    
-    volumes:
-      - ../models:/root/.cache/huggingface
-      - ../logs:/app/logs
-    
-    environment:
-      - HF_HOME=/root/.cache/huggingface
-      - VLLM_ATTENTION_BACKEND=xformers
-      - PYTHONUNBUFFERED=1
-    
-    ports:
-      - "8000:8000"
-    
-    # Mac에서 실행 시 CPU 모드로 제한된 모델 사용
-    # 또는 메모리 제한
-    command: >
-      python -m vllm.entrypoints.openai.api_server
-      --model meta-llama/Llama-2-7b-chat-hf
-      --port 8000
-      --host 0.0.0.0
-      --tensor-parallel-size 1
-      --max-num-batched-tokens 4096
-    
-    # 헬스 체크
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 120s
-    
-    # Mac에서 메모리 제한 (필요시)
-    deploy:
-      resources:
-        limits:
-          memory: 6G
-        reservations:
-          memory: 4G
-    
-    restart: on-failure
+# ============================================================================
+# ⚠️  참고: 이 파일은 docker-compose 실행 예제입니다.
+#     실제 로컬 개발에서는 'docker run' 명령어 사용을 권장합니다.
+#     각 서비스를 독립적으로 관리하고 테스트하기 위해서입니다.
+# ============================================================================
+#
+# docker-compose 사용 시:
+#   docker-compose -f docker/docker-compose.local.yml up -d
+#   docker-compose -f docker/docker-compose.local.yml logs -f api-server
+#   docker-compose -f docker/docker-compose.local.yml down
+#
+# docker run 사용 시 (권장 - Mac 개발 환경):
+#
+#   1️⃣  네트워크 생성:
+#   docker network create stt-network
+#
+#   2️⃣  STT Engine 실행:
+#   docker run -d --name stt-engine-local -p 8003:8003 \
+#     -e STT_DEVICE=cpu \
+#     -v $(pwd)/models:/app/models \
+#     -v $(pwd)/audio/samples:/app/audio/samples \
+#     stt-engine:local
+#
+#   3️⃣  Web UI 실행:
+#   docker run -d --name stt-web-ui-local -p 8100:8100 \
+#     -e STT_API_URL=http://host.docker.internal:8003 \
+#     -v $(pwd)/web_ui/data:/app/data \
+#     -v $(pwd)/web_ui/logs:/app/logs \
+#     stt-web-ui:local
+#
+#   4️⃣  접속:
+#   - Web UI: http://localhost:8100
+#   - STT API: http://localhost:8003
+#
+#   5️⃣  로그 확인:
+#   docker logs -f stt-engine-local
+#   docker logs -f stt-web-ui-local
+#
+#   6️⃣  종료 및 정리:
+#   docker stop stt-engine-local stt-web-ui-local
+#   docker rm stt-engine-local stt-web-ui-local
+# ============================================================================
 
-  # API 서버 (STT + 불완전판매요소 검증)
+services:
+  # API 서버 (STT Engine)
+  # Mac에서: host.docker.internal로 호스트 포트 접근 가능
   api-server:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-    image: stt-engine-api-local:latest
-    container_name: api-server-local
+    image: stt-engine:local
+    container_name: stt-engine-local
     
     ports:
       - "8003:8003"
     
+    networks:
+      - stt-network
+    
     volumes:
       - ../models:/app/models              # STT 모델 디렉토리
-      - ../audio:/app/audio                # 입력 오디오 파일
+      - ../audio/samples:/app/audio/samples # 입력 오디오 파일
       - ../logs:/app/logs                  # 로그 파일
-      - ../scripts:/app/scripts            # 스크립트
     
     environment:
       - PYTHONUNBUFFERED=1
       - HF_HOME=/app/models
       - STT_DEVICE=cpu                     # Mac에서는 CPU 사용
-      - VLLM_API_URL=http://vllm:8000/v1  # vLLM API URL
-      - LOG_LEVEL=DEBUG                    # 상세 로깅
+      - LOG_LEVEL=INFO
       - ENVIRONMENT=local                  # 로컬 개발 환경
-    
-    depends_on:
-      vllm:
-        condition: service_healthy
     
     # 헬스 체크
     healthcheck:
@@ -86,17 +78,16 @@ services:
     
     restart: unless-stopped
 
-  # Web UI (선택사항: 로컬 개발 시에만 사용)
-  # 프로덕션 배포: 별도의 독립 컨테이너로 실행 권장
+  # Web UI (Flask/FastAPI 기반)
   web-ui:
-    build:
-      context: ..
-      dockerfile: web_ui/docker/Dockerfile.web_ui
-    image: stt-web-ui-local:latest
-    container_name: web-ui-local
+    image: stt-web-ui:local
+    container_name: stt-web-ui-local
     
     ports:
       - "8100:8100"
+    
+    networks:
+      - stt-network
     
     volumes:
       - ../web_ui/data:/app/data
@@ -104,20 +95,34 @@ services:
     
     environment:
       - PYTHONUNBUFFERED=1
+      - STT_API_URL=http://host.docker.internal:8003  # Mac: host.docker.internal 사용
       - WEB_HOST=0.0.0.0
       - WEB_PORT=8100
-      - STT_API_URL=http://api-server:8003
-      - LOG_LEVEL=DEBUG
+      - LOG_LEVEL=INFO
+      - ENVIRONMENT=local
     
     depends_on:
       api-server:
         condition: service_healthy
     
-    restart: unless-stopped
-    
     # 헬스 체크
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8100/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    
+    restart: unless-stopped
+
+# ============================================================================
+# 네트워크 설정
+# ============================================================================
+networks:
+  stt-network:
+    driver: bridge
+    # Mac에서 host.docker.internal을 통해 호스트 머신 포트에 접근 가능
+    # 사용 예: http://host.docker.internal:8003
       interval: 30s
       timeout: 10s
       retries: 3

@@ -8,17 +8,34 @@
 # Features: CPU-only, no CUDA (로컬에서 빠른 빌드)
 # Final Size: ~600MB (compressed ~200MB)
 #
-# 빌드 명령어:
+# 빌드 명령어 (Mac):
+#   bash scripts/build-local-engine-image.sh          # 자동 (권장)
+#   docker build --platform linux/amd64 -t stt-engine:local -f docker/Dockerfile.engine.local .
+#
+# 실행 명령어 (Mac):
+#   docker run -d --name stt-engine-local -p 8003:8003 \
+#     -e STT_DEVICE=cpu \
+#     -v $(pwd)/models:/app/models \
+#     stt-engine:local
+#
+# 빌드 명령어 (Linux):
+#   bash scripts/build-local-engine-image.sh          # 자동 (권장)
 #   docker build -t stt-engine:local -f docker/Dockerfile.engine.local .
-#   (또는 docker-compose.dev.yml 사용)
+#
+# 특징:
+#   - Mac에서 Apple Silicon (M1/M2) + Intel 모두 지원
+#   - host.docker.internal로 호스트 포트 접근 가능
+#   - 빠른 개발 피드백 루프 (CPU 기반, 경량)
+#   - STT 오류 시 자동 Dummy Fallback
 # ============================================================================
 
 FROM python:3.11-slim
 
 LABEL maintainer="STT Engine Team"
-LABEL description="STT Engine Local Development"
+LABEL description="STT Engine Local Development (Mac/Linux)"
 LABEL environment="local"
-LABEL target.platform="macOS + Linux"
+LABEL target.platform="macOS (Apple Silicon/Intel) + Linux"
+LABEL device="cpu"
 
 # ============================================================================
 # Step 1: 시스템 의존성 설치 (최소한의 필수 라이브러리만)
