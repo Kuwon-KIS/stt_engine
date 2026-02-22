@@ -277,6 +277,137 @@
             background-color: #d0d0d0;
         }
 
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+
+        .modal-content {
+            background-color: white;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 800px;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+        }
+
+        .modal-header {
+            padding: 20px;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            font-size: 20px;
+            color: #333;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 28px;
+            cursor: pointer;
+            color: #999;
+            padding: 0;
+            width: 32px;
+            height: 32px;
+        }
+
+        .close-btn:hover {
+            color: #333;
+        }
+
+        .modal-body {
+            padding: 20px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .modal-footer {
+            padding: 15px 20px;
+            border-top: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .history-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .history-item {
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .history-item:hover {
+            background-color: #f5f5f5;
+        }
+
+        .history-item-info {
+            flex: 1;
+        }
+
+        .history-item-title {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 4px;
+        }
+
+        .history-item-meta {
+            font-size: 12px;
+            color: #999;
+        }
+
+        .history-item-badge {
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-right: 8px;
+        }
+
+        .badge-completed {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .badge-processing {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+
+        .badge-pending {
+            background-color: #e2e3e5;
+            color: #383d41;
+        }
+
+        .badge-failed {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+
         .notification {
             position: fixed;
             top: 20px;
@@ -405,6 +536,23 @@
             <div class="action-bar">
                 <button class="action-button secondary-button" onclick="showCreateFolderDialog()">📁 새 폴더</button>
                 <button class="action-button primary-button" onclick="startAnalysis()" id="startAnalysisBtn" disabled style="display: none;">🔍 분석 시작</button>
+                <button class="action-button secondary-button" onclick="showAnalysisHistory()" id="historyBtn" disabled style="display: none;">📊 분석 이력</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 분석 이력 모달 -->
+    <div id="historyModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>분석 이력</h2>
+                <button class="close-btn" onclick="closeAnalysisHistory()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="historyList" class="history-list"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="action-button secondary-button" onclick="closeAnalysisHistory()">닫기</button>
             </div>
         </div>
     </div>
@@ -757,6 +905,98 @@
                 showNotification('로그아웃 중 오류 발생: ' + error.message, 'error');
             }
         }
+
+        // 분석 이력 표시
+        async function showAnalysisHistory() {
+            try {
+                const url = currentFolder 
+                    ? `/api/analysis/history?folder_path=${encodeURIComponent(currentFolder)}`
+                    : '/api/analysis/history';
+                
+                const response = await apiCall(url, 'GET');
+                const history = response.data || [];
+                
+                // 이력 목록 렌더링
+                const historyListHtml = history.length > 0
+                    ? history.map(job => `
+                        <div class="history-item" onclick="viewAnalysisResult('${job.job_id}')">
+                            <div class="history-item-info">
+                                <div class="history-item-title">
+                                    ${job.folder_path}
+                                    <span class="history-item-badge ${getBadgeClass(job.status)}">${getStatusText(job.status)}</span>
+                                </div>
+                                <div class="history-item-meta">
+                                    ${job.completed_files || 0} / ${job.total_files} 파일 완료
+                                    | ${new Date(job.created_at).toLocaleString('ko-KR')}
+                                </div>
+                            </div>
+                            <button class="action-button primary-button" style="margin: 0;" onclick="event.stopPropagation(); viewAnalysisResult('${job.job_id}')">
+                                보기
+                            </button>
+                        </div>
+                    `).join('')
+                    : '<div style="text-align: center; padding: 20px; color: #999;">분석 이력이 없습니다</div>';
+                
+                document.getElementById('historyList').innerHTML = historyListHtml;
+                document.getElementById('historyModal').style.display = 'flex';
+            } catch (error) {
+                console.error('분석 이력 조회 에러:', error);
+                showNotification('분석 이력 조회 실패', 'error');
+            }
+        }
+
+        // 분석 이력 모달 닫기
+        function closeAnalysisHistory() {
+            document.getElementById('historyModal').style.display = 'none';
+        }
+
+        // 분석 결과 보기
+        function viewAnalysisResult(jobId) {
+            window.location.href = `/analysis?job_id=${jobId}`;
+        }
+
+        // 상태 텍스트 변환
+        function getStatusText(status) {
+            const statusMap = {
+                'pending': '대기중',
+                'processing': '분석중',
+                'completed': '완료',
+                'failed': '실패'
+            };
+            return statusMap[status] || status;
+        }
+
+        // 상태별 배지 클래스
+        function getBadgeClass(status) {
+            const classMap = {
+                'pending': 'badge-pending',
+                'processing': 'badge-processing',
+                'completed': 'badge-completed',
+                'failed': 'badge-failed'
+            };
+            return classMap[status] || 'badge-pending';
+        }
+
+        // 폴더 선택 시 분석 이력 버튼 활성화
+        const originalSelectFolder = window.selectFolder;
+        window.selectFolder = function(folderPath) {
+            originalSelectFolder(folderPath);
+            // 이력 조회 버튼 활성화
+            const historyBtn = document.getElementById('historyBtn');
+            if (historyBtn && folderPath) {
+                historyBtn.disabled = false;
+            }
+        };
+
+        // 모달 외부 클릭 시 닫기
+        document.addEventListener('click', function(event) {
+            const modal = document.getElementById('historyModal');
+            if (event.target === modal) {
+                closeAnalysisHistory();
+            }
+        });
     </script>
 </body>
 </html>
+
+```

@@ -151,6 +151,33 @@ async def get_results(
     emp_id = request.session.get("emp_id")
     if not emp_id:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다")
+
+
+@router.get("/history")
+async def get_analysis_history(
+    folder_path: str = None,
+    request: Request = None,
+    db: Session = Depends(get_db)
+):
+    """
+    분석 이력 조회
+    
+    Args:
+        folder_path: 폴더 경로 (선택사항, 미지정 시 모든 이력)
+    
+    Returns:
+        분석 이력 목록
+    """
+    # 세션에서 사번 추출
+    emp_id = request.session.get("emp_id")
+    if not emp_id:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다")
+    
+    try:
+        return AnalysisService.get_analysis_history(emp_id, folder_path, db)
+    except Exception as e:
+        logger.error(f"분석 이력 조회 실패: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
     
     try:
         return AnalysisService.get_results(job_id, emp_id, db)

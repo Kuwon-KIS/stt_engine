@@ -302,6 +302,137 @@
                 opacity: 1;
             }
         }
+
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+
+        .modal-content {
+            background-color: white;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 800px;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+        }
+
+        .modal-header {
+            padding: 20px;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            font-size: 20px;
+            color: #333;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 28px;
+            cursor: pointer;
+            color: #999;
+            padding: 0;
+            width: 32px;
+            height: 32px;
+        }
+
+        .close-btn:hover {
+            color: #333;
+        }
+
+        .modal-body {
+            padding: 20px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .modal-footer {
+            padding: 15px 20px;
+            border-top: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .history-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .history-item {
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .history-item:hover {
+            background-color: #f5f5f5;
+        }
+
+        .history-item-info {
+            flex: 1;
+        }
+
+        .history-item-title {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 4px;
+        }
+
+        .history-item-meta {
+            font-size: 12px;
+            color: #999;
+        }
+
+        .history-item-badge {
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-right: 8px;
+        }
+
+        .badge-completed {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .badge-processing {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+
+        .badge-pending {
+            background-color: #e2e3e5;
+            color: #383d41;
+        }
+
+        .badge-failed {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
     </style>
 </head>
 <body>
@@ -316,6 +447,17 @@
     </div>
 
     <div class="container">
+        <!-- 분석 정보 -->
+        <div class="analysis-header">
+            <div>
+                <h2>분석 결과</h2>
+                <p id="folderInfo" style="color: #666; font-size: 14px; margin-top: 8px;">폴더: 로딩 중...</p>
+            </div>
+            <div class="analysis-actions">
+                <button class="btn btn-back" onclick="showHistoryModal()">📊 이전 분석 보기</button>
+            </div>
+        </div>
+
         <!-- 로딩 상태 -->
         <div id="loadingSection" class="loading" style="display: none;">
             <div class="loading-spinner"></div>
@@ -365,6 +507,28 @@
                     </tr>
                 </tbody>
             </table>
+        </div>
+    </div>
+
+    <!-- 분석 이력 모달 -->
+    <div id="historyModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>분석 이력</h2>
+                <button class="close-btn" onclick="closeHistoryModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="folderSelector">
+                    <label for="folderSelect" style="margin-bottom: 10px; display: block;">폴더 선택 (선택사항)</label>
+                    <select id="folderSelect" style="width: 100%; padding: 8px; margin-bottom: 20px;">
+                        <option value="">전체 폴더</option>
+                    </select>
+                </div>
+                <div id="historyList" class="history-list"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="action-button secondary-button" onclick="closeHistoryModal()">닫기</button>
+            </div>
         </div>
     </div>
 
@@ -536,8 +700,133 @@
             }, 3000);
         }
 
-        // 페이지 로드
-        initPage();
-    </script>
-</body>
-</html>
+        // 분석 이력 모달 표시
+        async function showHistoryModal() {
+            try {
+                // 현재 폴더 정보 가져오기
+                const progressData = await apiCall(`/api/analysis/progress/${currentJobId}`, 'GET');
+                const currentFolder = progressData.folder_path || '';
+                
+                // 폴더 목록 로드
+                const filesData = await apiCall('/api/files/folders', 'GET');
+                const folders = filesData.folders || [];
+                
+                // 폴더 선택지 채우기
+                const folderSelect = document.getElementById('folderSelect');
+                folderSelect.innerHTML = '<option value="">전체 폴더</option>' + 
+                    folders.map(f => `<option value="${f}">${f}</option>`).join('');
+                
+                // 현재 폴더 선택
+                if (currentFolder) {
+                    folderSelect.value = currentFolder;
+                }
+                
+                // 분석 이력 로드
+                await loadAnalysisHistory(currentFolder);
+                
+                // 모달 표시
+                document.getElementById('historyModal').style.display = 'flex';
+                
+                // 폴더 선택 변경 이벤트
+                folderSelect.onchange = function() {
+                    loadAnalysisHistory(this.value);
+                };
+            } catch (error) {
+                console.error('분석 이력 모달 로드 실패:', error);
+                showNotification('분석 이력 로드 실패', 'error');
+            }
+        }
+
+        // 분석 이력 로드
+        async function loadAnalysisHistory(folderPath) {
+            try {
+                const url = folderPath 
+                    ? `/api/analysis/history?folder_path=${encodeURIComponent(folderPath)}`
+                    : '/api/analysis/history';
+                
+                const response = await apiCall(url, 'GET');
+                const history = response.data || [];
+                
+                // 이력 목록 렌더링
+                const historyListHtml = history.length > 0
+                    ? history.map(job => `
+                        <div class="history-item" onclick="viewAnalysis('${job.job_id}')">
+                            <div class="history-item-info">
+                                <div class="history-item-title">
+                                    ${job.folder_path}
+                                    <span class="history-item-badge ${getBadgeClass(job.status)}">${getStatusText(job.status)}</span>
+                                </div>
+                                <div class="history-item-meta">
+                                    ${job.completed_files || 0} / ${job.total_files} 파일 완료
+                                    | ${new Date(job.created_at).toLocaleString('ko-KR')}
+                                </div>
+                            </div>
+                            <button class="btn btn-back" style="margin: 0;" onclick="event.stopPropagation(); viewAnalysis('${job.job_id}')">
+                                보기
+                            </button>
+                        </div>
+                    `).join('')
+                    : '<div style="text-align: center; padding: 20px; color: #999;">분석 이력이 없습니다</div>';
+                
+                document.getElementById('historyList').innerHTML = historyListHtml;
+            } catch (error) {
+                console.error('분석 이력 조회 에러:', error);
+                showNotification('분석 이력 조회 실패', 'error');
+            }
+        }
+
+        // 분석 결과 보기
+        function viewAnalysis(jobId) {
+            window.location.href = `/analysis?job_id=${jobId}`;
+        }
+
+        // 모달 닫기
+        function closeHistoryModal() {
+            document.getElementById('historyModal').style.display = 'none';
+        }
+
+        // 상태 텍스트 변환
+        function getStatusText(status) {
+            const statusMap = {
+                'pending': '대기중',
+                'processing': '분석중',
+                'completed': '완료',
+                'failed': '실패'
+            };
+            return statusMap[status] || status;
+        }
+
+        // 상태별 배지 클래스
+        function getBadgeClass(status) {
+            const classMap = {
+                'pending': 'badge-pending',
+                'processing': 'badge-processing',
+                'completed': 'badge-completed',
+                'failed': 'badge-failed'
+            };
+            return classMap[status] || 'badge-pending';
+        }
+
+        // 페이지 로드 시 folderInfo 업데이트
+        const originalInitPage = initPage;
+        window.initPage = async function() {
+            await originalInitPage();
+            // 폴더 정보 표시
+            try {
+                const data = await apiCall(`/api/analysis/progress/${currentJobId}`, 'GET');
+                if (data && data.folder_path) {
+                    document.getElementById('folderInfo').textContent = `폴더: ${data.folder_path}`;
+                }
+            } catch (error) {
+                console.error('폴더 정보 로드 실패:', error);
+            }
+        };
+
+        // 모달 외부 클릭 시 닫기
+        document.addEventListener('click', function(event) {
+            const modal = document.getElementById('historyModal');
+            if (event.target === modal) {
+                closeHistoryModal();
+            }
+        });
+

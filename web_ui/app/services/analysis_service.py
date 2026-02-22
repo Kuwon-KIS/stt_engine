@@ -368,3 +368,58 @@ class AnalysisService:
                 job.completed_at = datetime.utcnow()
                 db.commit()
                 logger.info(f"[process_analysis_async] job status를 failed로 업데이트 (exception 발생)")
+    
+    @staticmethod
+    def get_analysis_history(
+        emp_id: str,
+        folder_path: Optional[str] = None,
+        db: Session = None
+    ) -> dict:
+        """
+        분석 이력 조회
+        
+        Args:
+            emp_id: 사번
+            folder_path: 폴더 경로 (선택사항)
+            db: DB 세션
+        
+        Returns:
+            분석 이력 목록
+        """
+        try:
+            # 기본 쿼리
+            query = db.query(AnalysisJob).filter(AnalysisJob.emp_id == emp_id)
+            
+            # 폴더 경로로 필터링
+            if folder_path:
+                query = query.filter(AnalysisJob.folder_path == folder_path)
+            
+            # 최신순 정렬
+            jobs = query.order_by(AnalysisJob.created_at.desc()).all()
+            
+            # 결과 구성
+            history_list = []
+            for job in jobs:
+                # 각 job별 결과 개수 조회
+                result_count = db.query(AnalysisResult).filter(
+                    AnalysisResult.job_id == job.job_id
+                ).count()
+                
+                history_list.append({
+                    "job_id": job.job_id,
+                    "folder_path": job.folder_path,
+                    "status": job.status,
+                    "total_files": len(job.file_ids) if job.file_ids else 0,
+                    "completed_files": result_count,
+                    "created_at": job.created_at.isoformat() if job.created_at else None,
+                    "completed_at": job.completed_at.isoformat() if job.completed_at else None
+                })
+            
+            return {
+                "success": True,
+                "data": history_list,
+                "count": len(history_list)
+            }
+        
+        except Exception as e:
+            raise Exception(f"분석 이력 조회 실패: {str(e)}")
