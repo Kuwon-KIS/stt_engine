@@ -61,6 +61,8 @@ class AnalysisJob(Base):
     # 분석할 폴더 경로
     file_ids = Column(JSON)
     # JSON 형식: ["file1.wav", "file2.wav", ...]
+    files_hash = Column(String(64))
+    # 폴더 내 파일 목록의 SHA256 해시 (형상 변경 감지)
     status = Column(String(20), default="pending")
     # "pending", "processing", "completed", "failed"
     options = Column(JSON)

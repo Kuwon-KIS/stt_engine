@@ -682,10 +682,13 @@
 
         async function logout() {
             try {
-                await apiCall('/api/auth/logout', 'POST');
+                const response = await apiCall('/api/auth/logout', 'POST');
+                // API 호출 결과와 관계없이 로그인 페이지로 이동
                 window.location.href = '/';
             } catch (error) {
-                showNotification('로그아웃 실패', 'error');
+                console.error('로그아웃 에러:', error);
+                // 에러가 발생해도 로그인 페이지로 이동
+                window.location.href = '/';
             }
         }
 
@@ -705,10 +708,18 @@
             try {
                 // 현재 폴더 정보 가져오기
                 const progressData = await apiCall(`/api/analysis/progress/${currentJobId}`, 'GET');
+                if (!progressData) {
+                    return;  // apiCall이 이미 에러 알림을 표시함
+                }
+                
                 const currentFolder = progressData.folder_path || '';
                 
                 // 폴더 목록 로드
                 const filesData = await apiCall('/api/files/folders', 'GET');
+                if (!filesData) {
+                    return;  // apiCall이 이미 에러 알림을 표시함
+                }
+                
                 const folders = filesData.folders || [];
                 
                 // 폴더 선택지 채우기
@@ -745,6 +756,10 @@
                     : '/api/analysis/history';
                 
                 const response = await apiCall(url, 'GET');
+                if (!response) {
+                    return;  // apiCall이 이미 에러 알림을 표시함
+                }
+                
                 const history = response.data || [];
                 
                 // 이력 목록 렌더링

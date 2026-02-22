@@ -53,7 +53,12 @@ async def start_analysis(
         
         # 분석 시작
         response = AnalysisService.start_analysis(emp_id, request_data, db)
-        logger.info(f"분석 시작 성공: job_id={response.job_id}")
+        logger.info(f"분석 시작 응답: job_id={response.job_id}, status={response.status}")
+        
+        # 폴더 형상 미변경 시 조기 반환
+        if response.status == "unchanged":
+            logger.info(f"폴더 형상 미변경: job_id={response.job_id}")
+            return response
         
         # 해당 폴더의 파일 목록 조회
         files = db.query(FileUpload).filter(

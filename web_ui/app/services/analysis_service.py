@@ -6,6 +6,7 @@ Phase 3: 분석 작업 관리 및 실행
 import asyncio
 import uuid
 import json
+import hashlib
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, List
@@ -26,6 +27,22 @@ class AnalysisService:
     
     # 진행 중인 작업 추적
     _jobs: Dict[str, Dict] = {}
+    
+    @staticmethod
+    def calculate_files_hash(file_list: List[str]) -> str:
+        """
+        파일 목록의 해시 계산
+        
+        Args:
+            file_list: 파일명 목록
+        
+        Returns:
+            SHA256 해시 (16진수 문자열)
+        """
+        # 정렬하여 일관성 보장
+        sorted_files = sorted(file_list)
+        file_string = '|'.join(sorted_files)
+        return hashlib.sha256(file_string.encode()).hexdigest()
     
     @staticmethod
     def start_analysis(
@@ -61,11 +78,31 @@ class AnalysisService:
             if not files:
                 raise ValueError("분석할 파일이 없습니다")
             
+            # 파일 목록과 해시 계산
+            file_list = [f.filename for f in files]
+            current_hash = AnalysisService.calculate_files_hash(file_list)
+            
+            # 마지막 완료된 분석 찾기
+            last_job = db.query(AnalysisJob).filter(
+                AnalysisJob.emp_id == emp_id,
+                AnalysisJob.folder_path == request.folder_path,
+                AnalysisJob.status == "completed"
+            ).order_by(AnalysisJob.created_at.desc()).first()
+            
+            # 형상 미변경 & 강제 재분석 아님
+            if last_job and last_job.files_hash == current_hash and not request.force_reanalysis:
+                return AnalysisStartResponse(
+                    success=True,
+                    job_id=last_job.job_id,
+                    message="이미 분석이 완료되었습니다. 이력을 확인하시거나 강제 재분석을 요청하세요.",
+                    status="unchanged",
+                    analysis_available=False
+                )
+            
             # 작업 ID 생성
             job_id = f"job_{uuid.uuid4().hex[:12]}"
             
             # 파일 목록과 옵션 준비
-            file_list = [f.filename for f in files]
             options = {
                 "include_classification": request.include_classification,
                 "include_validation": request.include_validation
@@ -77,6 +114,7 @@ class AnalysisService:
                 emp_id=emp_id,
                 folder_path=request.folder_path,
                 file_ids=file_list,
+                files_hash=current_hash,
                 options=options,
                 status="pending",
                 started_at=datetime.utcnow()
@@ -96,7 +134,9 @@ class AnalysisService:
             return AnalysisStartResponse(
                 success=True,
                 job_id=job_id,
-                message="분석이 시작되었습니다"
+                message="분석이 시작되었습니다",
+                status="started",
+                analysis_available=True
             )
         
         except ValueError as e:

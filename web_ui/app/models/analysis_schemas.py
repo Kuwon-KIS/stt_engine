@@ -13,13 +13,15 @@ class AnalysisStartRequest(BaseModel):
     folder_path: str = Field(..., description="분석할 폴더 경로")
     include_classification: bool = Field(True, description="음성 분류 포함")
     include_validation: bool = Field(True, description="불완전판매요소 검증 포함")
+    force_reanalysis: bool = Field(False, description="강제 재분석 여부")
     
     class Config:
         json_schema_extra = {
             "example": {
                 "folder_path": "2026-02-20",
                 "include_classification": True,
-                "include_validation": True
+                "include_validation": True,
+                "force_reanalysis": False
             }
         }
 
@@ -29,13 +31,17 @@ class AnalysisStartResponse(BaseModel):
     success: bool = Field(..., description="성공 여부")
     job_id: str = Field(..., description="분석 작업 ID")
     message: str = Field(..., description="메시지")
+    status: str = Field(default="started", description="상태 (started, unchanged)")
+    analysis_available: bool = Field(default=True, description="분석 가능 여부")
     
     class Config:
         json_schema_extra = {
             "example": {
                 "success": True,
                 "job_id": "job_123456",
-                "message": "분석 시작됨"
+                "message": "분석 시작됨",
+                "status": "started",
+                "analysis_available": True
             }
         }
 
