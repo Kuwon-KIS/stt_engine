@@ -566,23 +566,15 @@
         let currentEmpId = null;
 
         // 페이지 로드 시 초기화
-        document.addEventListener('DOMContentLoaded', () => {
-            checkSession();
-            loadFolders();
-            loadFiles();
-        });
-
-        // 세션 확인
-        async function checkSession() {
-            const response = await fetch('/api/auth/session');
-            if (!response.ok) {
-                window.location.href = '/';
-                return;
+        document.addEventListener('DOMContentLoaded', async () => {
+            const session = await checkSession();
+            if (session) {
+                currentEmpId = session.emp_id;
+                document.getElementById('username').textContent = session.name;
+                loadFolders();
+                loadFiles();
             }
-            const data = await response.json();
-            currentEmpId = data.emp_id;
-            document.getElementById('username').textContent = data.name;
-        }
+        });
 
         // 폴더 목록 로드
         async function loadFolders(showError = true) {
@@ -627,7 +619,9 @@
             document.querySelectorAll('.folder-item').forEach(item => {
                 item.classList.remove('active');
             });
-            event.target.classList.add('active');
+            if (event && event.target) {
+                event.target.classList.add('active');
+            }
             
             // 파일 목록 로드
             loadFiles();
@@ -635,6 +629,19 @@
             // 제목 업데이트
             const title = document.getElementById('fileListTitle');
             title.textContent = folder ? `📄 ${folder} 폴더의 파일` : '📄 모든 파일';
+            
+            // 분석 이력 버튼 활성화/비활성화
+            const historyBtn = document.getElementById('historyBtn');
+            const startBtn = document.getElementById('startAnalysisBtn');
+            if (folder) {
+                historyBtn.disabled = false;
+                historyBtn.style.display = 'inline-block';
+                startBtn.style.display = 'inline-block';
+            } else {
+                historyBtn.disabled = true;
+                historyBtn.style.display = 'none';
+                startBtn.style.display = 'none';
+            }
         }
 
         // 파일 목록 로드
@@ -976,17 +983,6 @@
             };
             return classMap[status] || 'badge-pending';
         }
-
-        // 폴더 선택 시 분석 이력 버튼 활성화
-        const originalSelectFolder = window.selectFolder;
-        window.selectFolder = function(folderPath) {
-            originalSelectFolder(folderPath);
-            // 이력 조회 버튼 활성화
-            const historyBtn = document.getElementById('historyBtn');
-            if (historyBtn && folderPath) {
-                historyBtn.disabled = false;
-            }
-        };
 
         // 모달 외부 클릭 시 닫기
         document.addEventListener('click', function(event) {

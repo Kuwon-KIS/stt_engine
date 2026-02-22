@@ -7,7 +7,7 @@
 
 /**
  * 현재 세션 정보 확인
- * 미인증 시 로그인 페이지로 리다이렉트
+ * 미인증 시 로그인 페이지로 리다이렉트 (로그인 페이지 제외)
  * @returns {Promise<Object|null>} 세션 정보 또는 null
  */
 async function checkSession() {
@@ -16,8 +16,10 @@ async function checkSession() {
         if (response.ok) {
             return await response.json();
         } else if (response.status === 401) {
-            // 로그인 필요
-            window.location.href = '/';
+            // 현재 페이지가 로그인 페이지(/)가 아닐 때만 리디렉션
+            if (window.location.pathname !== '/' && window.location.pathname !== '/login.html') {
+                window.location.href = '/';
+            }
             return null;
         }
     } catch (error) {
@@ -33,10 +35,13 @@ async function checkSession() {
 async function logout() {
     try {
         await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+        // 로그아웃 후 로그인 페이지로 이동
         window.location.href = '/';
     } catch (error) {
         console.error('Logout failed:', error);
         showNotification('로그아웃 실패', 'error');
+        // 에러가 나도 로그인 페이지로 이동
+        window.location.href = '/';
     }
 }
 

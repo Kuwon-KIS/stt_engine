@@ -807,10 +807,10 @@
             return classMap[status] || 'badge-pending';
         }
 
-        // 페이지 로드 시 folderInfo 업데이트
-        const originalInitPage = initPage;
-        window.initPage = async function() {
-            await originalInitPage();
+        // 페이지 로드
+        document.addEventListener('DOMContentLoaded', async () => {
+            await initPage();
+            
             // 폴더 정보 표시
             try {
                 const data = await apiCall(`/api/analysis/progress/${currentJobId}`, 'GET');
@@ -820,7 +820,7 @@
             } catch (error) {
                 console.error('폴더 정보 로드 실패:', error);
             }
-        };
+        });
 
         // 모달 외부 클릭 시 닫기
         document.addEventListener('click', function(event) {
