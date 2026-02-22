@@ -49,6 +49,7 @@ class AnalysisStartResponse(BaseModel):
 class AnalysisProgressResponse(BaseModel):
     """분석 진행률 응답"""
     job_id: str = Field(..., description="분석 작업 ID")
+    folder_path: Optional[str] = Field(None, description="분석 대상 폴더 경로")
     status: str = Field(..., description="상태 (pending, processing, completed, failed)")
     progress: int = Field(..., ge=0, le=100, description="진행률 (0-100)")
     current_file: Optional[str] = Field(None, description="현재 처리 중인 파일")

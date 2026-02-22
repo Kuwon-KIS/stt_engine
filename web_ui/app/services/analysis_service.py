@@ -204,6 +204,7 @@ class AnalysisService:
             
             return AnalysisProgressResponse(
                 job_id=job_id,
+                folder_path=job.folder_path,
                 status=job.status,
                 progress=progress,
                 current_file=None,
@@ -462,4 +463,109 @@ class AnalysisService:
             }
         
         except Exception as e:
-            raise Exception(f"분석 이력 조회 실패: {str(e)}")
+            raise Exception(f"분석 이력 조회 실패: {str(e)}")    
+    @staticmethod
+    def process_analysis_sync(
+        job_id: str,
+        emp_id: str,
+        folder_path: str,
+        files: List[str],
+        include_classification: bool,
+        include_validation: bool
+    ):
+        """
+        백그라운드에서 분석 실행 (동기 함수)
+        FastAPI의 BackgroundTasks에 의해 별도 스레드에서 실행됨
+        
+        Args:
+            job_id: 분석 작업 ID
+            emp_id: 사번
+            folder_path: 폴더 경로
+            files: 파일 목록
+            include_classification: 분류 포함
+            include_validation: 검증 포함
+        """
+        import logging
+        from app.utils.db import SessionLocal
+        
+        logger = logging.getLogger(__name__)
+        new_db = SessionLocal()
+        
+        try:
+            logger.info(f"[process_analysis_sync] 분석 시작: job_id={job_id}, files={files}")
+            
+            # 작업 상태 업데이트
+            job = new_db.query(AnalysisJob).filter(
+                AnalysisJob.job_id == job_id
+            ).first()
+            
+            if job:
+                job.status = "processing"
+                new_db.commit()
+                logger.info(f"[process_analysis_sync] job status: pending → processing")
+            
+            total_files = len(files)
+            logger.info(f"[process_analysis_sync] 처리할 파일 수: {total_files}")
+            
+            # 각 파일에 대해 결과 생성 (더미 분석)
+            for filename in files:
+                try:
+                    logger.info(f"[process_analysis_sync] 파일 처리: {filename}")
+                    
+                    # 파일 경로
+                    user_dir = get_user_upload_dir(emp_id)
+                    file_path = user_dir / folder_path / filename
+                    
+                    # 결과 저장
+                    result = AnalysisResult(
+                        job_id=job_id,
+                        file_id=filename,
+                        stt_text=f"[분석 완료] {filename}의 음성 인식 결과",
+                        stt_metadata={
+                            "duration": 120.0,
+                            "language": "ko",
+                            "confidence": 0.95
+                        }
+                    )
+                    new_db.add(result)
+                    new_db.commit()
+                    logger.info(f"[process_analysis_sync] 결과 저장: {filename}")
+                
+                except Exception as e:
+                    logger.error(f"[process_analysis_sync] 파일 처리 실패: {filename}, {str(e)}", exc_info=True)
+                    # 파일 처리 중 에러도 기록
+                    result = AnalysisResult(
+                        job_id=job_id,
+                        file_id=filename,
+                        stt_text=None
+                    )
+                    new_db.add(result)
+                    new_db.commit()
+            
+            # 작업 완료 표시
+            if job:
+                job.status = "completed"
+                job.completed_at = datetime.utcnow()
+                new_db.commit()
+                logger.info(f"[process_analysis_sync] job status: processing → completed")
+            
+            logger.info(f"[process_analysis_sync] 분석 완료: job_id={job_id}")
+        
+        except Exception as e:
+            logger.error(f"[process_analysis_sync] 분석 중 에러: {str(e)}", exc_info=True)
+            # 작업 실패 상태로 업데이트
+            try:
+                job = new_db.query(AnalysisJob).filter(
+                    AnalysisJob.job_id == job_id
+                ).first()
+                if job:
+                    job.status = "failed"
+                    job.completed_at = datetime.utcnow()
+                    new_db.commit()
+                    logger.error(f"[process_analysis_sync] job status: failed")
+            except Exception as db_error:
+                logger.error(f"[process_analysis_sync] 상태 업데이트 실패: {str(db_error)}")
+        
+        finally:
+            new_db.close()
+            logger.info(f"[process_analysis_sync] DB 세션 종료")

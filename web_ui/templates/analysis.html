@@ -572,6 +572,11 @@
 
                 console.log('분석 진행 상황:', data);
 
+                // 폴더 정보 업데이트
+                if (data.folder_path) {
+                    document.getElementById('folderInfo').textContent = `폴더: ${data.folder_path}`;
+                }
+
                 // 진행률 업데이트
                 const progress = data.progress || 0;
                 document.getElementById('progressFill').style.width = `${progress}%`;
@@ -825,16 +830,6 @@
         // 페이지 로드
         document.addEventListener('DOMContentLoaded', async () => {
             await initPage();
-            
-            // 폴더 정보 표시
-            try {
-                const data = await apiCall(`/api/analysis/progress/${currentJobId}`, 'GET');
-                if (data && data.folder_path) {
-                    document.getElementById('folderInfo').textContent = `폴더: ${data.folder_path}`;
-                }
-            } catch (error) {
-                console.error('폴더 정보 로드 실패:', error);
-            }
         });
 
         // 모달 외부 클릭 시 닫기

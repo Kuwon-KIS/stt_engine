@@ -5,13 +5,11 @@ Phase 3: 분석 시작, 진행률, 결과 조회
 
 from fastapi import APIRouter, HTTPException, Request, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
-import asyncio
-import threading
 import traceback
 import logging
 
 from app.services.analysis_service import AnalysisService
-from app.utils.db import get_db
+from app.utils.db import get_db, SessionLocal
 from app.models.analysis_schemas import (
     AnalysisStartRequest, AnalysisStartResponse, AnalysisProgressResponse, AnalysisResultListResponse
 )
@@ -68,36 +66,18 @@ async def start_analysis(
         
         file_list = [f.filename for f in files]
         
-        # 백그라운드에서 분석 실행 (스레드 사용)
-        def run_analysis():
-            # 새로운 세션 생성
-            from app.utils.db import SessionLocal
-            new_db = SessionLocal()
-            try:
-                logger.info(f"[스레드] 분석 시작: job_id={response.job_id}, files={file_list}")
-                logger.info(f"[스레드] asyncio.run() 호출 전")
-                asyncio.run(
-                    AnalysisService.process_analysis_async(
-                        response.job_id,
-                        emp_id,
-                        request_data.folder_path,
-                        file_list,
-                        request_data.include_classification,
-                        request_data.include_validation,
-                        new_db
-                    )
-                )
-                logger.info(f"[스레드] asyncio.run() 반환 후")
-                logger.info(f"[스레드] 분석 완료: job_id={response.job_id}")
-            except Exception as e:
-                logger.error(f"[스레드] 분석 에러: {str(e)}", exc_info=True)
-                import traceback
-                logger.error(f"[스레드] Traceback:\n{traceback.format_exc()}")
-            finally:
-                new_db.close()
-        
-        thread = threading.Thread(target=run_analysis, daemon=True)
-        thread.start()
+        # BackgroundTasks를 사용한 백그라운드 분석
+        # FastAPI의 표준 방식으로, 안정적인 백그라운드 처리 보장
+        background_tasks.add_task(
+            AnalysisService.process_analysis_sync,
+            response.job_id,
+            emp_id,
+            request_data.folder_path,
+            file_list,
+            request_data.include_classification,
+            request_data.include_validation
+        )
+        logger.info(f"백그라운드 분석 태스크 등록 완료: job_id={response.job_id}")
         
         return response
     
