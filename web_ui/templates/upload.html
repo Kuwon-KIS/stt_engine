@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>파일 업로드 - KIS 불완전판매 예방 분석 시스템</title>
+    <title>파일 업로드 - KIS 불완전판매 탐지 시스템</title>
     <style>
         * {
             margin: 0;
@@ -40,6 +40,7 @@
 
         .user-name {
             font-size: 14px;
+            font-weight: 500;
         }
 
         .logout-btn {
@@ -470,11 +471,9 @@
 <body>
     <!-- 헤더 -->
     <div class="header">
-        <h1>KIS 불완전판매 예방 분석 시스템</h1>
+        <h1>KIS 불완전판매 탐지 시스템</h1>
         <div class="user-info">
-            <div class="user-name">
-                <span id="username"></span> 님
-            </div>
+            <span class="user-name" id="userInfo"></span>
             <button class="logout-btn" onclick="logout()">로그아웃</button>
         </div>
     </div>
@@ -570,7 +569,7 @@
             const session = await checkSession();
             if (session) {
                 currentEmpId = session.emp_id;
-                document.getElementById('username').textContent = session.name;
+                document.getElementById('userInfo').textContent = `${session.name} (${session.emp_id})`;
                 loadFolders();
                 loadFiles();
             }

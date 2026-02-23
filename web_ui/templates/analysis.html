@@ -34,7 +34,13 @@
 
         .user-info {
             display: flex;
+            align-items: center;
             gap: 20px;
+        }
+
+        .user-info #userInfo {
+            font-size: 14px;
+            font-weight: 500;
         }
 
         .btn {
@@ -690,7 +696,7 @@
             const sessionData = await apiCall('/api/auth/session', 'GET');
             if (sessionData && sessionData.emp_id) {
                 currentEmpId = sessionData.emp_id;
-                document.getElementById('userInfo').textContent = `사번: ${sessionData.emp_id}`;
+                document.getElementById('userInfo').textContent = `${sessionData.name} (${sessionData.emp_id})`;
             }
 
             // 초기 진행률 확인
