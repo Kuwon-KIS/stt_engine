@@ -19,6 +19,7 @@ from app.models.analysis_schemas import (
     AnalysisResultListResponse, TranscriptionResult, ClassificationResult, ValidationResult
 )
 from app.utils.file_utils import get_user_upload_dir
+from app.services.stt_service import stt_service
 from config import STT_API_URL
 
 
@@ -507,7 +508,7 @@ class AnalysisService:
             total_files = len(files)
             logger.info(f"[process_analysis_sync] 처리할 파일 수: {total_files}")
             
-            # 각 파일에 대해 결과 생성 (더미 분석)
+            # 각 파일에 대해 STT 처리 및 결과 생성
             for filename in files:
                 try:
                     logger.info(f"[process_analysis_sync] 파일 처리: {filename}")
@@ -516,17 +517,44 @@ class AnalysisService:
                     user_dir = get_user_upload_dir(emp_id)
                     file_path = user_dir / folder_path / filename
                     
+                    # STT API 호출 (asyncio.run으로 비동기 함수 실행)
+                    stt_result = asyncio.run(stt_service.transcribe_local_file(
+                        file_path=str(file_path),
+                        language="ko",
+                        is_stream=False,
+                        classification=include_classification,
+                        ai_agent=include_classification,
+                        incomplete_elements_check=include_validation
+                    ))
+                    
+                    logger.info(f"[process_analysis_sync] STT 결과: {filename}, success={stt_result.get('success')}")
+                    
                     # 결과 저장
-                    result = AnalysisResult(
-                        job_id=job_id,
-                        file_id=filename,
-                        stt_text=f"[분석 완료] {filename}의 음성 인식 결과",
-                        stt_metadata={
-                            "duration": 120.0,
-                            "language": "ko",
-                            "confidence": 0.95
-                        }
-                    )
+                    if stt_result.get('success'):
+                        result = AnalysisResult(
+                            job_id=job_id,
+                            file_id=filename,
+                            stt_text=stt_result.get('text', ''),
+                            stt_metadata={
+                                "duration": stt_result.get('duration_sec', 0),
+                                "language": stt_result.get('language', 'ko'),
+                                "backend": stt_result.get('backend', 'unknown'),
+                                "processing_steps": stt_result.get('processing_steps', {})
+                            }
+                        )
+                    else:
+                        # STT 실패 시에도 에러 정보 저장
+                        result = AnalysisResult(
+                            job_id=job_id,
+                            file_id=filename,
+                            stt_text=None,
+                            stt_metadata={
+                                "error": stt_result.get('error', 'unknown'),
+                                "message": stt_result.get('message', '처리 실패'),
+                                "backend": stt_result.get('backend', 'unknown')
+                            }
+                        )
+                    
                     new_db.add(result)
                     new_db.commit()
                     logger.info(f"[process_analysis_sync] 결과 저장: {filename}")
@@ -537,7 +565,8 @@ class AnalysisService:
                     result = AnalysisResult(
                         job_id=job_id,
                         file_id=filename,
-                        stt_text=None
+                        stt_text=None,
+                        stt_metadata={"error": str(e)}
                     )
                     new_db.add(result)
                     new_db.commit()

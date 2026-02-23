@@ -277,3 +277,6 @@ class FileService:
         except Exception as e:
             logger.error(f"파일 삭제 실패 - emp_id: {emp_id}, filename: {filename}, folder_path: {folder_path}, error: {str(e)}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"삭제 실패: {str(e)}")
+
+# 전역 인스턴스 생성
+file_service = FileService()

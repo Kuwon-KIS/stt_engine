@@ -100,3 +100,6 @@ class AuthService:
             bool: 인증 여부
         """
         return "emp_id" in session and session.get("emp_id") is not None
+
+# 전역 인스턴스 생성
+auth_service = AuthService()
