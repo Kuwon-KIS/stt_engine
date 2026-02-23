@@ -29,6 +29,10 @@ class AnalysisService:
     # 진행 중인 작업 추적
     _jobs: Dict[str, Dict] = {}
     
+    # In-memory tracker for currently processing files
+    # Format: {job_id: "current_filename.wav"}
+    _current_processing: Dict[str, str] = {}
+    
     @staticmethod
     def calculate_files_hash(file_list: List[str]) -> str:
         """
@@ -176,6 +180,9 @@ class AnalysisService:
             file_ids = job.file_ids or []
             total_files = len(file_ids)
             
+            # Get currently processing file from in-memory tracker
+            current_processing_file = AnalysisService._current_processing.get(job_id)
+            
             # 분석 결과 조회
             results = db.query(AnalysisResult).filter(
                 AnalysisResult.job_id == job_id
@@ -190,17 +197,44 @@ class AnalysisService:
             elif job.status == "completed":
                 progress = 100
             
-            # 결과 데이터 준비
+            # Build results dictionary for quick lookup
+            results_dict = {result.file_id: result for result in results}
+            
+            # 결과 데이터 준비 - include ALL files with their statuses
             results_list = []
             suspicious_count = 0
-            for result in results:
-                result_dict = {
-                    "filename": result.file_id,  # 프론트엔드에서는 filename을 기대함
-                    "stt_text": result.stt_text,
-                    "status": "completed",  # AnalysisResult에는 status 필드가 없으므로 항상 completed
-                    "confidence": result.stt_metadata.get("confidence", 0) if result.stt_metadata else 0,
-                    "risk_level": "safe"  # 기본값
-                }
+            
+            # Iterate through all files to show status for each
+            for filename in file_ids:
+                result = results_dict.get(filename)
+                
+                if result:
+                    # File has been processed - status is "completed"
+                    file_status = "completed"
+                    result_dict = {
+                        "filename": result.file_id,
+                        "stt_text": result.stt_text,
+                        "status": file_status,
+                        "confidence": result.stt_metadata.get("confidence", 0) if result.stt_metadata else 0,
+                        "risk_level": "safe"
+                    }
+                else:
+                    # File not processed yet - determine status
+                    if job.status == "processing" and filename == current_processing_file:
+                        file_status = "processing"
+                    elif job.status == "processing":
+                        file_status = "pending"
+                    else:
+                        file_status = "pending"
+                    
+                    result_dict = {
+                        "filename": filename,
+                        "stt_text": None,
+                        "status": file_status,
+                        "confidence": 0,
+                        "risk_level": "safe"
+                    }
+                
                 results_list.append(result_dict)
             
             return AnalysisProgressResponse(
@@ -208,7 +242,7 @@ class AnalysisService:
                 folder_path=job.folder_path,
                 status=job.status,
                 progress=progress,
-                current_file=None,
+                current_file=current_processing_file,
                 total_files=total_files,
                 processed_files=processed_files,
                 error_message=None,
@@ -513,6 +547,10 @@ class AnalysisService:
                 try:
                     logger.info(f"[process_analysis_sync] 파일 처리: {filename}")
                     
+                    # Track current processing file in memory
+                    AnalysisService._current_processing[job_id] = filename
+                    logger.info(f"[process_analysis_sync] {filename} status: → processing (in-memory)")
+                    
                     # 파일 경로
                     user_dir = get_user_upload_dir(emp_id)
                     file_path = user_dir / folder_path / filename
@@ -529,7 +567,7 @@ class AnalysisService:
                     
                     logger.info(f"[process_analysis_sync] STT 결과: {filename}, success={stt_result.get('success')}")
                     
-                    # 결과 저장
+                    # 결과 생성 및 저장
                     if stt_result.get('success'):
                         result = AnalysisResult(
                             job_id=job_id,
@@ -543,7 +581,7 @@ class AnalysisService:
                             }
                         )
                     else:
-                        # STT 실패 시에도 에러 정보 저장
+                        # STT 실패 시에도 결과 기록
                         result = AnalysisResult(
                             job_id=job_id,
                             file_id=filename,
@@ -561,15 +599,6 @@ class AnalysisService:
                 
                 except Exception as e:
                     logger.error(f"[process_analysis_sync] 파일 처리 실패: {filename}, {str(e)}", exc_info=True)
-                    # 파일 처리 중 에러도 기록
-                    result = AnalysisResult(
-                        job_id=job_id,
-                        file_id=filename,
-                        stt_text=None,
-                        stt_metadata={"error": str(e)}
-                    )
-                    new_db.add(result)
-                    new_db.commit()
             
             # 작업 완료 표시
             if job:
@@ -577,6 +606,11 @@ class AnalysisService:
                 job.completed_at = datetime.utcnow()
                 new_db.commit()
                 logger.info(f"[process_analysis_sync] job status: processing → completed")
+            
+            # Clear in-memory tracking
+            if job_id in AnalysisService._current_processing:
+                del AnalysisService._current_processing[job_id]
+                logger.info(f"[process_analysis_sync] Cleared in-memory tracking for {job_id}")
             
             logger.info(f"[process_analysis_sync] 분석 완료: job_id={job_id}")
         
