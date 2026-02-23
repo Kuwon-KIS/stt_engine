@@ -6,8 +6,14 @@ vLLM을 통한 LLM 기반 분류
 """
 
 import logging
+import asyncio
 from typing import Optional, Dict, Any
 import os
+
+try:
+    import aiohttp
+except ImportError:
+    aiohttp = None
 
 logger = logging.getLogger(__name__)
 
@@ -200,8 +206,11 @@ class ClassificationService:
         """vLLM API 호출"""
         
         try:
-            import aiohttp
-            import asyncio
+            if aiohttp is None:
+                return {
+                    'success': False,
+                    'error': 'aiohttp not installed'
+                }
             
             payload = {
                 "model": self.vllm_model,

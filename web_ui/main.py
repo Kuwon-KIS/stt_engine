@@ -34,7 +34,7 @@ from app.routes import auth, files, analysis
 #     BatchFileListResponse, BatchStartRequest, BatchStartResponse,
 #     BatchProgressResponse
 # )
-# from app.services.stt_service import stt_service
+from app.services.stt_service import stt_service
 # from app.services.file_service import file_service
 # from app.services.batch_service import batch_service, FileStatus
 # from app.services.job_queue import transcribe_queue, JobStatus

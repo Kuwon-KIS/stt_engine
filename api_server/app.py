@@ -33,6 +33,7 @@ if str(app_root) not in sys.path:
 from stt_engine import WhisperSTT
 from stt_utils import check_memory_available, check_audio_file
 from utils.performance_monitor import PerformanceMonitor
+from api_server.constants import ErrorCode
 from api_server.services.privacy_removal_service import (
     PrivacyRemovalService,
     get_privacy_removal_service
