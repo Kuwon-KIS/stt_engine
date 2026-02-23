@@ -510,14 +510,16 @@
         .stt-text-area {
             width: 100%;
             min-height: 300px;
+            max-height: 400px;
             padding: 12px;
             border: 1px solid #ddd;
             border-radius: 4px;
             font-size: 14px;
             line-height: 1.6;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            resize: vertical;
+            resize: none;
             background-color: #f8f9fa;
+            overflow-y: auto;
         }
 
         .stt-text-area:focus {
@@ -826,8 +828,8 @@
         function getRiskBadge(riskLevel) {
             const riskMap = {
                 'safe': { text: '정상', class: 'result-safe' },
-                'warning': { text: '주의', class: 'result-warning' },
-                'danger': { text: '위험', class: 'result-danger' }
+                'warning': { text: '의심', class: 'result-warning' },
+                'danger': { text: '부당권유 발견', class: 'result-danger' }
             };
 
             const r = riskMap[riskLevel] || { text: riskLevel || '미분석', class: 'result-safe' };
@@ -900,7 +902,7 @@
 
         function escapeHtml(text) {
             if (!text) return '';
-            return encodeURIComponent(text.substring(0, 100) + (text.length > 100 ? '...' : ''));
+            return encodeURIComponent(text);
         }
 
         function refreshProgress() {
