@@ -228,9 +228,17 @@ class TranscribeResponse(BaseModel):
         None,
         description="Agent 분석 결과"
     )
+    agent_response: Optional[str] = Field(
+        None,
+        description="Agent 응답 텍스트"
+    )
     agent_type: Optional[str] = Field(
         None,
         description="사용된 Agent 타입 (external, vllm, dummy)"
+    )
+    chat_thread_id: Optional[str] = Field(
+        None,
+        description="Agent 채팅 스레드 ID"
     )
     
     # 에러 정보

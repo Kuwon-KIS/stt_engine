@@ -437,7 +437,7 @@ async def transcribe_v2(
         
         # AI Agent 결과 추가
         if agent_result:
-            response.agent_response = agent_result.get('agent_response')
+            response.agent_response = agent_result.get('response')
             response.agent_type = agent_result.get('agent_type')
             response.chat_thread_id = agent_result.get('chat_thread_id')
         
