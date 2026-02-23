@@ -410,4 +410,3 @@ async def perform_incomplete_elements_check(
             'success': False,
             'error': f"{type(e).__name__}: {str(e)}"
         }
-        }

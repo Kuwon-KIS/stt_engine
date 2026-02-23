@@ -38,7 +38,7 @@ class PrivacyRemovalResult(BaseModel):
     privacy_exist: str = Field(
         ..., 
         description="개인정보 존재 여부 (Y/N)",
-        regex="^[YN]$"
+        pattern="^[YN]$"
     )
     exist_reason: str = Field(
         default="",

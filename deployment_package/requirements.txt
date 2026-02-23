@@ -16,6 +16,7 @@ scipy==1.12.0
 numpy==1.24.3
 python-dotenv==1.0.0
 pydantic==2.5.3
+psutil==5.9.8
 
 # 웹 프레임워크
 fastapi==0.109.0
