@@ -328,7 +328,7 @@
         }
 
         .modal-header {
-            padding: 20px;
+            padding: 12px 20px;
             border-bottom: 1px solid #e0e0e0;
             display: flex;
             justify-content: space-between;
@@ -337,7 +337,7 @@
 
         .modal-header h2 {
             margin: 0;
-            font-size: 20px;
+            font-size: 18px;
             color: #333;
         }
 
@@ -433,6 +433,54 @@
             background-color: #f8d7da;
             color: #721c24;
         }
+
+        .stt-text-content {
+            margin-top: 10px;
+        }
+
+        .stt-text-label {
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .stt-text-area {
+            width: 100%;
+            min-height: 300px;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            line-height: 1.6;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            resize: vertical;
+            background-color: #f8f9fa;
+        }
+
+        .stt-text-area:focus {
+            outline: none;
+            border-color: #667eea;
+            background-color: white;
+        }
+
+        .audio-player {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 0;
+        }
+
+        .audio-player audio {
+            width: 100%;
+            height: 32px;
+            max-width: 250px;
+        }
+
+        .audio-player audio::-webkit-media-controls-panel {
+            background-color: #f8f9fa;
+        }
     </style>
 </head>
 <body>
@@ -495,15 +543,16 @@
                 <thead>
                     <tr>
                         <th style="width: 5%">번호</th>
-                        <th style="width: 25%">파일명</th>
-                        <th style="width: 20%">분석 상태</th>
-                        <th style="width: 20%">STT 변환</th>
-                        <th style="width: 30%">판매 탐지</th>
+                        <th style="width: 20%">파일명</th>
+                        <th style="width: 25%">오디오</th>
+                        <th style="width: 15%">분석 상태</th>
+                        <th style="width: 15%">STT 변환</th>
+                        <th style="width: 20%">판매 탐지</th>
                     </tr>
                 </thead>
                 <tbody id="analysisTableBody">
                     <tr>
-                        <td colspan="5" class="empty-state">분석 대기 중...</td>
+                        <td colspan="6" class="empty-state">분석 대기 중...</td>
                     </tr>
                 </tbody>
             </table>
@@ -532,10 +581,30 @@
         </div>
     </div>
 
+    <!-- STT 텍스트 모달 -->
+    <div id="sttTextModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>STT 변환</h2>
+                <button class="close-btn" onclick="closeSttTextModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div>
+                    <label class="stt-text-label">파일명: <span id="sttFileName" style="font-weight: normal; color: #666;"></span></label>
+                </div>
+                <div class="stt-text-content">
+                    <textarea id="sttTextArea" class="stt-text-area" readonly></textarea>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="/static/js/common.js"></script>
     <script>
         let currentJobId = null;
         let progressInterval = null;
+        let currentFolderPath = null;
+        let currentEmpId = null;
 
         async function initPage() {
             // URL에서 job_id 추출
@@ -551,6 +620,7 @@
             // 사용자 정보 표시
             const sessionData = await apiCall('/api/auth/session', 'GET');
             if (sessionData && sessionData.emp_id) {
+                currentEmpId = sessionData.emp_id;
                 document.getElementById('userInfo').textContent = `사번: ${sessionData.emp_id}`;
             }
 
@@ -574,6 +644,7 @@
 
                 // 폴더 정보 업데이트
                 if (data.folder_path) {
+                    currentFolderPath = data.folder_path;
                     document.getElementById('folderInfo').textContent = `폴더: ${data.folder_path}`;
                 }
 
@@ -621,18 +692,32 @@
             const tbody = document.getElementById('analysisTableBody');
             
             if (!results || results.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" class="empty-state">분석 결과가 없습니다</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" class="empty-state">분석 결과가 없습니다</td></tr>';
                 return;
             }
 
             tbody.innerHTML = results.map((result, index) => {
                 const statusBadge = getStatusBadge(result.status);
                 const riskBadge = getRiskBadge(result.risk_level);
+                
+                // 오디오 파일 경로 구성
+                const audioUrl = `/api/files/audio/${currentEmpId}/${currentFolderPath}/${encodeURIComponent(result.filename)}`;
+                const audioPlayer = `
+                    <div class="audio-player">
+                        <audio controls preload="metadata">
+                            <source src="${audioUrl}" type="audio/wav">
+                            <source src="${audioUrl}" type="audio/mp3">
+                            <source src="${audioUrl}" type="audio/mpeg">
+                            지원하지 않는 브라우저입니다.
+                        </audio>
+                    </div>
+                `;
 
                 return `
                 <tr>
                     <td>${index + 1}</td>
                     <td>${result.filename}</td>
+                    <td>${audioPlayer}</td>
                     <td>${statusBadge}</td>
                     <td>
                         ${result.stt_text ? `<button onclick="showSttContent('${result.filename}', '${escapeHtml(result.stt_text)}')" style="background: none; border: none; color: #667eea; cursor: pointer; text-decoration: underline;">보기</button>` : '-'}
@@ -667,7 +752,16 @@
         }
 
         function showSttContent(filename, content) {
-            alert(`${filename}\n\n${decodeURIComponent(content)}`);
+            // 모달에 데이터 설정
+            document.getElementById('sttFileName').textContent = filename;
+            document.getElementById('sttTextArea').value = decodeURIComponent(content);
+            
+            // 모달 표시
+            document.getElementById('sttTextModal').style.display = 'flex';
+        }
+
+        function closeSttTextModal() {
+            document.getElementById('sttTextModal').style.display = 'none';
         }
 
         function escapeHtml(text) {
@@ -834,9 +928,14 @@
 
         // 모달 외부 클릭 시 닫기
         document.addEventListener('click', function(event) {
-            const modal = document.getElementById('historyModal');
-            if (event.target === modal) {
+            const historyModal = document.getElementById('historyModal');
+            const sttTextModal = document.getElementById('sttTextModal');
+            
+            if (event.target === historyModal) {
                 closeHistoryModal();
+            }
+            if (event.target === sttTextModal) {
+                closeSttTextModal();
             }
         });
     </script>
