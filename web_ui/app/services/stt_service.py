@@ -4,6 +4,7 @@ STT API와의 통신을 담당하는 서비스
 import aiohttp
 import asyncio
 import logging
+import random
 from typing import Optional
 from config import STT_API_URL, STT_API_TIMEOUT
 
@@ -157,24 +158,25 @@ class STTService:
                                     incomplete_result = result.get('incomplete_elements', {})
                                     logger.info(f"[STT Service] 불완전판매요소 검증 완료: agent_type={incomplete_result.get('agent_type')}")
                                 logger.error(f"[STT Service] 전체 응답: {result}")
+                            return result
                         else:
                             logger.error(f"[STT Service] HTTP {response.status} 에러")
                             logger.error(f"[STT Service] 응답 내용: {result}")
-                        
-                        return result
+                            logger.info(f"[STT Service] Dummy 응답 반환 (API 에러)")
+                            return await self._get_dummy_response(language, file_path)
                 
                 except asyncio.TimeoutError:
                     logger.error(f"[STT Service] API 타임아웃 ({estimated_timeout}초): {api_file_path}")
                     logger.info(f"[STT Service] Dummy 응답 반환 (타임아웃)")
-                    return self._get_dummy_response(language, file_path)
+                    return await self._get_dummy_response(language, file_path)
                 except aiohttp.ClientError as client_err:
                     logger.error(f"[STT Service] HTTP 클라이언트 오류: {type(client_err).__name__}: {client_err}")
                     logger.info(f"[STT Service] Dummy 응답 반환 (연결 실패)")
-                    return self._get_dummy_response(language, file_path)
+                    return await self._get_dummy_response(language, file_path)
                 except Exception as ae:
                     logger.error(f"[STT Service] API 통신 오류: {type(ae).__name__}: {ae}", exc_info=True)
                     logger.info(f"[STT Service] Dummy 응답 반환 (예외 발생)")
-                    return self._get_dummy_response(language, file_path)
+                    return await self._get_dummy_response(language, file_path)
         
         except Exception as e:
             logger.error(f"[STT Service] 파일 처리 오류: {type(e).__name__}: {e}", exc_info=True)
@@ -421,10 +423,16 @@ class STTService:
                 "privacy_rm_text": text if 'text' in locals() else ""
             }
     
-    def _get_dummy_response(self, language: str = "ko", file_path: str = "") -> dict:
+    async def _get_dummy_response(self, language: str = "ko", file_path: str = "") -> dict:
         """
         STT API 연결 실패 시 Dummy 응답 반환 (개발 및 테스트 용도)
+        랜덤 sleep을 추가하여 실제 STT 처리 시간을 시뮬레이션
         """
+        # 0~30 초 사이의 랜덤 sleep으로 다양한 응답 시간 시뮬레이션
+        sleep_duration = random.uniform(0, 30)
+        logger.info(f"[STT Service] Dummy 응답 대기 중... ({sleep_duration:.1f}초)")
+        await asyncio.sleep(sleep_duration)
+        
         dummy_texts = {
             "ko": "안녕하세요. 저는 금융상품 판매자입니다. 오늘 좋은 펀드 상품을 소개하고 싶습니다. 이 상품은 연 5% 수익률을 기대할 수 있으며 매우 안정적입니다.",
             "en": "Hello. I am a financial product sales representative. Today I want to introduce you to a great fund product. This product is expected to deliver 5% annual returns and is very stable.",
