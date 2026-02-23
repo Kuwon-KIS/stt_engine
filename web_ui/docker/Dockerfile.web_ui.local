@@ -22,12 +22,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Application code
 COPY web_ui/*.py ./
-COPY web_ui/models/ ./models/
-COPY web_ui/routes/ ./routes/
-COPY web_ui/services/ ./services/
+COPY web_ui/app/ ./app/
 COPY web_ui/static/ ./static/
 COPY web_ui/templates/ ./templates/
-COPY web_ui/utils/ ./utils/
 
 # Create directories
 RUN mkdir -p data/uploads data/results data/batch_input logs
