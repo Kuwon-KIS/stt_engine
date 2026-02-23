@@ -23,6 +23,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Application code
 COPY web_ui/*.py ./
 COPY web_ui/app/ ./app/
+COPY web_ui/utils/ ./utils/
 COPY web_ui/static/ ./static/
 COPY web_ui/templates/ ./templates/
 

@@ -16,6 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 빌드 컨텍스트가 워크스페이스 루트이므로 web_ui/ 경로 사용
 COPY web_ui/*.py ./
 COPY web_ui/app/ ./app/
+COPY web_ui/utils/ ./utils/
 COPY web_ui/static/ ./static/
 COPY web_ui/templates/ ./templates/
 
