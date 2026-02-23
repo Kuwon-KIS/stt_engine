@@ -123,39 +123,7 @@
             font-weight: bold;
         }
 
-        .progress-section {
-            background-color: white;
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 30px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        }
 
-        .progress-section h3 {
-            color: #333;
-            margin-bottom: 15px;
-        }
-
-        .progress-bar {
-            width: 100%;
-            height: 30px;
-            background-color: #e0e0e0;
-            border-radius: 15px;
-            overflow: hidden;
-            margin-bottom: 10px;
-        }
-
-        .progress-fill {
-            height: 100%;
-            background-color: #4CAF50;
-            transition: width 0.3s ease;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-size: 12px;
-            font-weight: bold;
-        }
 
         .table-container {
             background-color: white;
@@ -245,21 +213,78 @@
             color: #999;
         }
 
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: #666;
+        .status-banner {
+            background-color: white;
+            padding: 12px 20px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            min-height: 50px;
+            transition: all 0.3s ease;
         }
 
-        .loading-spinner {
+        .status-banner.processing {
+            background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
+            border-left: 4px solid #ff9800;
+        }
+
+        .status-banner.completed {
+            background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+            border-left: 4px solid #4CAF50;
+        }
+
+        .status-icon {
+            font-size: 20px;
+            flex-shrink: 0;
+        }
+
+        .status-content {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .status-text {
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+            white-space: nowrap;
+        }
+
+        .status-progress-bar {
+            flex: 1;
+            height: 8px;
+            background-color: rgba(0, 0, 0, 0.1);
+            border-radius: 4px;
+            overflow: hidden;
+            max-width: 300px;
+        }
+
+        .status-progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.3s ease;
+            border-radius: 4px;
+        }
+
+        .status-details {
+            font-size: 13px;
+            color: #666;
+            white-space: nowrap;
+        }
+
+        .loading-spinner-small {
             display: inline-block;
-            width: 40px;
-            height: 40px;
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #667eea;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #ff9800;
             border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin-bottom: 10px;
+            animation: spin 0.8s linear infinite;
         }
 
         @keyframes spin {
@@ -507,18 +532,26 @@
         </div>
 
         <!-- 로딩 상태 -->
-        <div id="loadingSection" class="loading" style="display: none;">
-            <div class="loading-spinner"></div>
-            <p>분석 중입니다...</p>
+        <div id="loadingSection" class="status-banner processing" style="display: none;">
+            <div class="status-icon">
+                <div class="loading-spinner-small"></div>
+            </div>
+            <div class="status-content">
+                <span class="status-text">분석 중...</span>
+                <div class="status-progress-bar">
+                    <div class="status-progress-fill" id="progressFill" style="width: 0%"></div>
+                </div>
+                <span class="status-details" id="progressText">0%</span>
+            </div>
         </div>
 
-        <!-- 분석 진행률 -->
-        <div id="progressSection" class="progress-section" style="display: none;">
-            <h3>분석 진행 상황</h3>
-            <div class="progress-bar">
-                <div class="progress-fill" id="progressFill" style="width: 0%">0%</div>
+        <!-- 완료 상태 -->
+        <div id="completedSection" class="status-banner completed" style="display: none;">
+            <div class="status-icon">✓</div>
+            <div class="status-content">
+                <span class="status-text">분석 완료!</span>
+                <span class="status-details" id="completedText">모든 파일 처리 완료</span>
             </div>
-            <p id="progressText">대기 중...</p>
         </div>
 
         <!-- 통계 -->
@@ -651,7 +684,7 @@
                 // 진행률 업데이트
                 const progress = data.progress || 0;
                 document.getElementById('progressFill').style.width = `${progress}%`;
-                document.getElementById('progressFill').textContent = `${progress}%`;
+                document.getElementById('progressText').textContent = `${progress}% (${data.processed_files}/${data.total_files})`;
 
                 // 통계 업데이트
                 document.getElementById('totalFiles').textContent = data.total_files || 0;
@@ -663,18 +696,18 @@
 
                 // 상태별 UI 업데이트
                 if (data.status === 'pending' || data.status === 'processing') {
-                    document.getElementById('progressSection').style.display = 'block';
-                    document.getElementById('loadingSection').style.display = 'block';
-                    document.getElementById('progressText').textContent = `${data.processed_files}/${data.total_files} 파일 분석 중`;
+                    document.getElementById('loadingSection').style.display = 'flex';
+                    document.getElementById('completedSection').style.display = 'none';
                 } else if (data.status === 'completed') {
-                    document.getElementById('progressSection').style.display = 'none';
                     document.getElementById('loadingSection').style.display = 'none';
+                    document.getElementById('completedSection').style.display = 'flex';
+                    document.getElementById('completedText').textContent = `${data.total_files}개 파일 처리 완료`;
                     clearInterval(progressInterval);
                     showNotification('분석이 완료되었습니다', 'success');
                     renderResults(data.results || []);
                 } else if (data.status === 'failed') {
-                    document.getElementById('progressSection').style.display = 'none';
                     document.getElementById('loadingSection').style.display = 'none';
+                    document.getElementById('completedSection').style.display = 'none';
                     showNotification('분석 중 오류가 발생했습니다', 'error');
                     clearInterval(progressInterval);
                 }
