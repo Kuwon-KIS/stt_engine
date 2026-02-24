@@ -21,7 +21,7 @@ from app.models.analysis_schemas import (
 )
 from app.utils.file_utils import get_user_upload_dir
 from app.services.stt_service import stt_service
-from config import STT_API_URL
+from config import STT_API_URL, MAX_CONCURRENT_ANALYSIS
 
 
 class AnalysisService:
@@ -555,53 +555,58 @@ class AnalysisService:
             
             total_files = len(files)
             logger.info(f"[process_analysis_sync] 처리할 파일 수: {total_files} (동시 처리)")
+            logger.info(f"[process_analysis_sync] 최대 동시 처리 개수: {MAX_CONCURRENT_ANALYSIS}")
             
             # Cycle through confidence values to ensure all risk levels appear (for testing)
             test_confidence_values = [0.2, 0.45, 0.8]  # danger, warning, safe
             
             # 비동기 함수로 파일 처리
-            async def process_single_file(idx: int, filename: str):
-                """개별 파일 처리"""
-                try:
-                    logger.info(f"[process_analysis_sync] 파일 처리 시작: {filename} (idx={idx})")
+            async def process_single_file(idx: int, filename: str, semaphore: asyncio.Semaphore):
+                """개별 파일 처리 (세마포어로 동시성 제어)"""
+                async with semaphore:  # 세마포어로 동시 실행 개수 제한
+                    try:
+                        logger.info(f"[process_analysis_sync] 파일 처리 시작: {filename} (idx={idx})")
+                        
+                        # 파일 경로
+                        user_dir = get_user_upload_dir(emp_id)
+                        file_path = user_dir / folder_path / filename
+                        
+                        # STT API 호출
+                        stt_result = await stt_service.transcribe_local_file(
+                            file_path=str(file_path),
+                            language="ko",
+                            is_stream=False,
+                            classification=False,
+                            ai_agent=include_classification,
+                            incomplete_elements_check=include_validation
+                        )
+                        
+                        logger.info(f"[process_analysis_sync] STT 완료: {filename}, success={stt_result.get('success')}")
+                        
+                        return {
+                            "idx": idx,
+                            "filename": filename,
+                            "stt_result": stt_result,
+                            "error": None
+                        }
                     
-                    # 파일 경로
-                    user_dir = get_user_upload_dir(emp_id)
-                    file_path = user_dir / folder_path / filename
-                    
-                    # STT API 호출
-                    stt_result = await stt_service.transcribe_local_file(
-                        file_path=str(file_path),
-                        language="ko",
-                        is_stream=False,
-                        classification=False,
-                        ai_agent=include_classification,
-                        incomplete_elements_check=include_validation
-                    )
-                    
-                    logger.info(f"[process_analysis_sync] STT 완료: {filename}, success={stt_result.get('success')}")
-                    
-                    return {
-                        "idx": idx,
-                        "filename": filename,
-                        "stt_result": stt_result,
-                        "error": None
-                    }
-                
-                except Exception as e:
-                    logger.error(f"[process_analysis_sync] 파일 처리 중 에러: {filename}, {str(e)}", exc_info=True)
-                    return {
-                        "idx": idx,
-                        "filename": filename,
-                        "stt_result": None,
-                        "error": str(e)
-                    }
+                    except Exception as e:
+                        logger.error(f"[process_analysis_sync] 파일 처리 중 에러: {filename}, {str(e)}", exc_info=True)
+                        return {
+                            "idx": idx,
+                            "filename": filename,
+                            "stt_result": None,
+                            "error": str(e)
+                        }
             
-            # 모든 파일을 동시에 처리
+            # 모든 파일을 동시에 처리 (동시성 제어)
             async def process_all_files():
-                """모든 파일을 동시에 처리"""
+                """모든 파일을 동시에 처리 (세마포어로 동시 개수 제한)"""
+                # 세마포어 생성: 동시에 MAX_CONCURRENT_ANALYSIS개만 실행
+                semaphore = asyncio.Semaphore(MAX_CONCURRENT_ANALYSIS)
+                
                 tasks = [
-                    process_single_file(idx, filename)
+                    process_single_file(idx, filename, semaphore)
                     for idx, filename in enumerate(files)
                 ]
                 return await asyncio.gather(*tasks)
