@@ -232,65 +232,68 @@ async def perform_privacy_removal(
     Privacy Removal 수행
     
     STT 결과 텍스트에서 개인정보를 마스킹합니다.
+    privacy_remover.py의 PrivacyRemoverService.process_text() 호출
     
     Args:
         text: 원본 텍스트
-        prompt_type: 프롬프트 타입 ('privacy_remover_default_v6' 또는 'privacy_remover_loosed_contact_v6')
-                    (기본값: privacy_remover_default_v6 - scratch/prompt_test_all 최신 버전)
+        prompt_type: 프롬프트 타입
+                    - 'privacy_remover_default' 또는 'privacy_remover_default_v6': 기본 프롬프트
+                    - 'privacy_remover_loosed_contact' 또는 'privacy_remover_loosed_contact_v6': 로우즈드 프롬프트
+                    (기본값: privacy_remover_default_v6)
     
     Returns:
-        PrivacyRemovalResult 또는 None
+        PrivacyRemovalResult 객체
     """
     try:
-        logger.info(f"[API/Transcribe] Privacy Removal 시작 (텍스트 길이: {len(text)})")
+        logger.info(f"[API/Transcribe] Privacy Removal 시작: prompt_type={prompt_type}, text_len={len(text)}")
         
         # PrivacyRemoverService 초기화
         privacy_service = get_privacy_remover_service()
         await privacy_service.initialize()
+        logger.debug(f"[API/Transcribe] PrivacyRemoverService 초기화 완료")
         
-        # 프롬프트 타입 정규화 (v6 버전 기본)
+        # 프롬프트 타입 정규화
         if not prompt_type:
             normalized_prompt_type = 'privacy_remover_default_v6'
+            logger.debug(f"[API/Transcribe] 빈 prompt_type → privacy_remover_default_v6으로 정규화")
         elif 'loosed' in prompt_type.lower():
             normalized_prompt_type = 'privacy_remover_loosed_contact_v6'
+            logger.debug(f"[API/Transcribe] loosed 타입 감지 → privacy_remover_loosed_contact_v6으로 정규화")
         else:
             # default로 시작하면 v6으로 통일
             normalized_prompt_type = 'privacy_remover_default_v6'
+            logger.debug(f"[API/Transcribe] 기본 타입 → privacy_remover_default_v6으로 정규화")
         
-        # 개인정보 제거 처리
-        privacy_result = await privacy_service.remove_privacy_from_text(
-            text=text,
-            prompt_type=normalized_prompt_type
+        logger.info(f"[API/Transcribe] process_text 호출: prompt_type={normalized_prompt_type}")
+        
+        # 개인정보 제거 처리 (process_text 함수 호출)
+        result = await privacy_service.process_text(
+            usertxt=text,
+            prompt_type=normalized_prompt_type,
+            max_tokens=32768,
+            temperature=0.3
         )
         
-        if privacy_result.get('success', True):
-            logger.info(
-                f"[API/Transcribe] ✅ Privacy Removal 완료 "
-                f"(method={privacy_result.get('method')}, removed={privacy_result.get('removed_count')})"
-            )
-            
-            # 개인정보 제거 결과 반환
-            removed_items = privacy_result.get('removed_items', [])
-            privacy_exist = PrivacyExistence.YES.value if removed_items else PrivacyExistence.NO.value
-            
-            return PrivacyRemovalResult(
-                privacy_exist=privacy_exist,
-                exist_reason=(
-                    f"{privacy_result.get('removed_count')}개의 개인정보 항목 마스킹 ({privacy_result.get('method')})"
-                    if removed_items else "개인정보 없음"
-                ),
-                text=privacy_result.get('text', text),
-                privacy_types=removed_items
-            )
-        else:
-            logger.warning(f"[API/Transcribe] Privacy Removal 실패")
-            # 실패 시에도 원본 텍스트와 함께 반환
-            return PrivacyRemovalResult(
-                privacy_exist=PrivacyExistence.NO.value,
-                exist_reason="Privacy removal processing failed",
-                text=text,
-                privacy_types=[]
-            )
+        logger.debug(f"[API/Transcribe] process_text 결과: success={result.get('success')}, privacy_exist={result.get('privacy_exist')}")
+        
+        # 결과 처리
+        privacy_exist_str = result.get('privacy_exist', 'N')
+        privacy_exist_value = PrivacyExistence.YES.value if privacy_exist_str == 'Y' else PrivacyExistence.NO.value
+        
+        logger.info(
+            f"[API/Transcribe] ✅ Privacy Removal 완료: "
+            f"success={result.get('success')}, "
+            f"privacy_exist={privacy_exist_str}, "
+            f"tokens={result.get('input_tokens', 0)}+{result.get('output_tokens', 0)}"
+        )
+        
+        # PrivacyRemovalResult 반환
+        return PrivacyRemovalResult(
+            privacy_exist=privacy_exist_value,
+            exist_reason=result.get('exist_reason', ''),
+            text=result.get('privacy_rm_usertxt', text),
+            privacy_types=result.get('exist_reason', '').split(',') if result.get('exist_reason') else []
+        )
     
     except Exception as e:
         logger.error(

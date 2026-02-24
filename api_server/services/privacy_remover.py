@@ -1,7 +1,11 @@
 """
 Privacy Remover Service
 LLM을 사용하여 STT 텍스트에서 개인정보를 제거합니다.
-Regex fallback이 포함되어 있습니다.
+프롬프트는 외부 파일에서 로드되며, Regex fallback이 포함되어 있습니다.
+
+프롬프트 파일 위치: api_server/services/prompts/
+- privacy_remover_default_v6.prompt: 기본 프롬프트 (전체 개인정보)
+- privacy_remover_loosed_contact_v6.prompt: 로우즈드 버전 (연락처 정보 중심)
 
 scratch/prompt_test_all의 privacy_remover_runner.py 로직을 독립적으로 구현합니다.
 """
@@ -10,9 +14,13 @@ import re
 import os
 import json
 import asyncio
+import logging
 from typing import Optional, Dict, Any, List
 from pathlib import Path
 from dotenv import load_dotenv
+
+# 로깅 설정
+logger = logging.getLogger(__name__)
 
 
 class LLMClientFactory:
@@ -24,23 +32,34 @@ class LLMClientFactory:
         모델명에 따라 적절한 LLM 클라이언트 생성
         
         Args:
-            model_name: 모델명 (예: 'gpt-4o', 'claude-sonnet-4', 'gemini-2.5-flash')
+            model_name: 모델명 (예: 'gpt-4o', 'claude-sonnet-4', 'gemini-2.5-flash', 'Qwen3-30B-A3B-Thinking-2507-FP8')
             
         Returns:
             LLM 클라이언트 인스턴스
+            
+        Raises:
+            ValueError: 지원하지 않는 모델인 경우
         """
         model_lower = model_name.lower()
         
         # OpenAI models
         if 'gpt' in model_lower or 'o1' in model_lower:
+            logger.info(f"OpenAI 클라이언트 생성: {model_name}")
             return OpenAIClient(model_name)
         # Anthropic models
         elif 'claude' in model_lower:
+            logger.info(f"Anthropic 클라이언트 생성: {model_name}")
             return AnthropicClient(model_name)
         # Google models
         elif 'gemini' in model_lower or 'google' in model_lower:
+            logger.info(f"Google Generative AI 클라이언트 생성: {model_name}")
             return GoogleGenerativeAIClient(model_name)
+        # Qwen (Alibaba) models
+        elif 'qwen' in model_lower:
+            logger.info(f"Qwen 클라이언트 생성: {model_name}")
+            return QwenClient(model_name)
         else:
+            logger.error(f"지원하지 않는 모델: {model_name}")
             raise ValueError(f"지원하지 않는 모델: {model_name}")
 
 
@@ -59,7 +78,9 @@ class OpenAIClient:
             import openai
             self.client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
             self.model_name = model_name
+            logger.info(f"OpenAI 클라이언트 초기화 완료: {model_name}")
         except ImportError:
+            logger.error("openai 패키지 미설치")
             raise ImportError("openai 패키지를 설치하세요: pip install openai")
     
     async def generate_response(
@@ -84,17 +105,21 @@ class OpenAIClient:
                 'text': str,           # 응답 텍스트
                 'input_tokens': int,   # 입력 토큰
                 'output_tokens': int,  # 출력 토큰
-                'cached_tokens': int   # 캐시된 토큰 (0)
+                'cached_tokens': int   # 캐시된 토큰
             }
         """
         try:
             model = model_name or self.model_name
+            logger.debug(f"OpenAI API 호출: model={model}, max_tokens={max_tokens}, temperature={temperature}")
+            
             response = self.client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=max_tokens,
                 temperature=temperature
             )
+            
+            logger.debug(f"OpenAI 응답 수신: input_tokens={response.usage.prompt_tokens}, output_tokens={response.usage.completion_tokens}")
             
             return {
                 'text': response.choices[0].message.content,
@@ -103,6 +128,7 @@ class OpenAIClient:
                 'cached_tokens': 0
             }
         except Exception as e:
+            logger.error(f"OpenAI API 오류: {str(e)}", exc_info=True)
             raise RuntimeError(f"OpenAI API 오류: {str(e)}")
 
 
@@ -121,7 +147,9 @@ class AnthropicClient:
             import anthropic
             self.client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
             self.model_name = model_name
+            logger.info(f"Anthropic 클라이언트 초기화 완료: {model_name}")
         except ImportError:
+            logger.error("anthropic 패키지 미설치")
             raise ImportError("anthropic 패키지를 설치하세요: pip install anthropic")
     
     async def generate_response(
@@ -133,7 +161,7 @@ class AnthropicClient:
         **kwargs
     ) -> Dict[str, Any]:
         """
-        Anthropic API를 통해 응답 생성
+        Anthropic Claude API를 통해 응답 생성
         
         Args:
             prompt: 프롬프트
@@ -151,6 +179,8 @@ class AnthropicClient:
         """
         try:
             model = model_name or self.model_name
+            logger.debug(f"Anthropic API 호출: model={model}, max_tokens={max_tokens}, temperature={temperature}")
+            
             response = self.client.messages.create(
                 model=model,
                 max_tokens=max_tokens,
@@ -163,6 +193,8 @@ class AnthropicClient:
             if hasattr(response.usage, 'cache_read_input_tokens'):
                 cached_tokens = response.usage.cache_read_input_tokens
             
+            logger.debug(f"Anthropic 응답 수신: input_tokens={response.usage.input_tokens}, output_tokens={response.usage.output_tokens}, cached_tokens={cached_tokens}")
+            
             return {
                 'text': response.content[0].text,
                 'input_tokens': response.usage.input_tokens,
@@ -170,6 +202,7 @@ class AnthropicClient:
                 'cached_tokens': cached_tokens
             }
         except Exception as e:
+            logger.error(f"Anthropic API 오류: {str(e)}", exc_info=True)
             raise RuntimeError(f"Anthropic API 오류: {str(e)}")
 
 
@@ -190,7 +223,9 @@ class GoogleGenerativeAIClient:
             api_key = os.getenv("GOOGLE_API_KEY")
             genai.configure(api_key=api_key)
             self.model_name = model_name
+            logger.info(f"Google Generative AI 클라이언트 초기화 완료: {model_name}")
         except ImportError:
+            logger.error("google-generativeai 패키지 미설치")
             raise ImportError("google-generativeai 패키지를 설치하세요: pip install google-generativeai")
     
     async def generate_response(
@@ -220,6 +255,8 @@ class GoogleGenerativeAIClient:
         """
         try:
             model = model_name or self.model_name
+            logger.debug(f"Google Generative AI API 호출: model={model}, max_tokens={max_tokens}, temperature={temperature}")
+            
             client = self.genai.GenerativeModel(model)
             response = client.generate_content(
                 prompt,
@@ -236,6 +273,8 @@ class GoogleGenerativeAIClient:
                 input_tokens = response.usage_metadata.prompt_token_count
                 output_tokens = response.usage_metadata.candidates_token_count
             
+            logger.debug(f"Google Generative AI 응답 수신: input_tokens={input_tokens}, output_tokens={output_tokens}")
+            
             return {
                 'text': response.text,
                 'input_tokens': input_tokens,
@@ -243,57 +282,177 @@ class GoogleGenerativeAIClient:
                 'cached_tokens': 0
             }
         except Exception as e:
+            logger.error(f"Google Generative AI 오류: {str(e)}", exc_info=True)
             raise RuntimeError(f"Google Generative AI 오류: {str(e)}")
 
 
-class SimplePromptProcessor:
-    """간단한 프롬프트 처리기 (scratch/prompt_test_all v6 버전 기반)"""
+class QwenClient:
+    """Qwen (Alibaba) LLM 클라이언트"""
     
-    # privacy_remover_default_v6.prompt 기반
-    PRIVACY_REMOVER_DEFAULT_V6 = """당신은 개인정보 보호 전문가입니다. 주어진 텍스트에서 개인정보를 제거하고 익명화하는 작업을 수행합니다.
+    def __init__(self, model_name: str):
+        """
+        Qwen 클라이언트 초기화
+        
+        Args:
+            model_name: 모델명 (예: 'Qwen3-30B-A3B-Thinking-2507-FP8')
+        """
+        load_dotenv()
+        try:
+            import openai
+            # Qwen은 OpenAI 호환 API 사용 (vLLM, Ollama, 또는 Qwen 공식 API)
+            api_key = os.getenv("QWEN_API_KEY") or os.getenv("OPENAI_API_KEY")
+            api_base = os.getenv("QWEN_API_BASE") or os.getenv("OPENAI_API_BASE")
+            
+            if api_base:
+                self.client = openai.OpenAI(api_key=api_key, base_url=api_base)
+            else:
+                # 기본값: 로컬 vLLM 또는 Ollama
+                self.client = openai.OpenAI(api_key=api_key or "dummy", base_url="http://localhost:8000/v1")
+            
+            self.model_name = model_name
+            logger.info(f"Qwen 클라이언트 초기화 완료: {model_name}")
+        except ImportError:
+            logger.error("openai 패키지 미설치")
+            raise ImportError("openai 패키지를 설치하세요: pip install openai")
+    
+    async def generate_response(
+        self, 
+        prompt: str,
+        model_name: Optional[str] = None,
+        max_tokens: int = 32768,
+        temperature: float = 0.3,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Qwen API를 통해 응답 생성
+        
+        Args:
+            prompt: 프롬프트
+            model_name: 사용할 모델명 (None이면 초기화된 모델 사용)
+            max_tokens: 최대 토큰 수
+            temperature: 창의성 정도 (0.0~2.0)
+            
+        Returns:
+            {
+                'text': str,           # 응답 텍스트
+                'input_tokens': int,   # 입력 토큰
+                'output_tokens': int,  # 출력 토큰
+                'cached_tokens': int   # 캐시된 토큰
+            }
+        """
+        try:
+            model = model_name or self.model_name
+            logger.debug(f"Qwen API 호출: model={model}, max_tokens={max_tokens}, temperature={temperature}")
+            
+            response = self.client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=max_tokens,
+                temperature=temperature
+            )
+            
+            logger.debug(f"Qwen 응답 수신: input_tokens={response.usage.prompt_tokens}, output_tokens={response.usage.completion_tokens}")
+            
+            return {
+                'text': response.choices[0].message.content,
+                'input_tokens': response.usage.prompt_tokens,
+                'output_tokens': response.usage.completion_tokens,
+                'cached_tokens': 0
+            }
+        except Exception as e:
+            logger.error(f"Qwen API 오류: {str(e)}", exc_info=True)
+            raise RuntimeError(f"Qwen API 오류: {str(e)}")
 
-다음 텍스트를 분석하여 개인정보(전화번호, 이메일, 계좌번호, 주민등록번호 등)가 포함되어 있는지 확인하세요.
 
-개인정보가 있으면 제거하고, 없으면 원본 텍스트를 그대로 반환하세요.
+class PromptLoader:
+    """프롬프트 파일 로더"""
+    
+    def __init__(self, prompts_dir: Optional[str] = None):
+        """
+        프롬프트 로더 초기화
+        
+        Args:
+            prompts_dir: 프롬프트 파일 디렉토리 경로 (기본: api_server/services/prompts)
+        """
+        if prompts_dir is None:
+            # 현재 파일 기준으로 prompts 디렉토리 찾기
+            current_dir = Path(__file__).parent
+            prompts_dir = current_dir / "prompts"
+        else:
+            prompts_dir = Path(prompts_dir)
+        
+        self.prompts_dir = prompts_dir
+        self._prompts_cache = {}
+        
+        logger.info(f"PromptLoader 초기화: {prompts_dir}")
+        
+        if not self.prompts_dir.exists():
+            logger.warning(f"프롬프트 디렉토리가 없습니다: {self.prompts_dir}")
+    
+    def load_prompt(self, prompt_name: str) -> str:
+        """
+        프롬프트 파일 로드
+        
+        Args:
+            prompt_name: 프롬프트 파일명 (확장자 제외, 예: 'privacy_remover_default_v6')
+            
+        Returns:
+            프롬프트 내용
+            
+        Raises:
+            FileNotFoundError: 프롬프트 파일이 없는 경우
+        """
+        # 캐시 확인
+        if prompt_name in self._prompts_cache:
+            logger.debug(f"캐시에서 프롬프트 로드: {prompt_name}")
+            return self._prompts_cache[prompt_name]
+        
+        # 파일 경로 구성
+        prompt_file = self.prompts_dir / f"{prompt_name}.prompt"
+        
+        logger.debug(f"프롬프트 파일 로드 시도: {prompt_file}")
+        
+        if not prompt_file.exists():
+            logger.error(f"프롬프트 파일 없음: {prompt_file}")
+            raise FileNotFoundError(f"프롬프트 파일을 찾을 수 없습니다: {prompt_file}")
+        
+        try:
+            with open(prompt_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # 캐시에 저장
+            self._prompts_cache[prompt_name] = content
+            
+            logger.debug(f"프롬프트 파일 로드 완료: {prompt_name} ({len(content)} chars)")
+            
+            return content
+        except Exception as e:
+            logger.error(f"프롬프트 파일 읽기 오류: {prompt_file}, {str(e)}", exc_info=True)
+            raise
 
-응답은 반드시 다음 JSON 형식으로 반환하세요:
-{
-    "privacy_exist": "Y 또는 N",
-    "exist_reason": "개인정보 존재 사유 (없으면 빈 문자열)",
-    "privacy_rm_usertxt": "개인정보가 제거된 텍스트 또는 원본 텍스트"
-}
 
-분석할 텍스트:
-{usertxt}"""
-
-    PRIVACY_REMOVER_LOOSED_CONTACT = """당신은 고객 상담 기록에서 개인정보를 제거하는 전문가입니다.
-
-다음 연락처 정보 텍스트를 분석하여 개인정보(전화번호, 이메일, 계좌번호, 주민등록번호 등)가 포함되어 있는지 확인하세요.
-
-개인정보가 있으면 제거하고, 없으면 원본 텍스트를 그대로 반환하세요.
-
-응답은 반드시 다음 JSON 형식으로 반환하세요:
-{
-    "privacy_exist": "Y 또는 N",
-    "exist_reason": "개인정보 존재 사유 (없으면 빈 문자열)",
-    "privacy_rm_usertxt": "개인정보가 제거된 텍스트 또는 원본 텍스트"
-}
-
-분석할 텍스트:
-{usertxt}"""
-
-    def __init__(self):
-        """프롬프트 처리기 초기화 (v6 기본)"""
-        self.prompts = {
-            'privacy_remover_default': self.PRIVACY_REMOVER_DEFAULT_V6,
-            'privacy_remover_default_v6': self.PRIVACY_REMOVER_DEFAULT_V6,
-            'privacy_remover_loosed_contact': self.PRIVACY_REMOVER_LOOSED_CONTACT_V6,
-            'privacy_remover_loosed_contact_v6': self.PRIVACY_REMOVER_LOOSED_CONTACT_V6
+class SimplePromptProcessor:
+    """프롬프트 처리기 - 파일 기반 로드"""
+    
+    def __init__(self, prompts_dir: Optional[str] = None):
+        """
+        프롬프트 처리기 초기화
+        
+        Args:
+            prompts_dir: 프롬프트 파일 디렉토리 경로 (기본: api_server/services/prompts)
+        """
+        self.prompt_loader = PromptLoader(prompts_dir)
+        self.prompt_mapping = {
+            'privacy_remover_default': 'privacy_remover_default_v6',
+            'privacy_remover_default_v6': 'privacy_remover_default_v6',
+            'privacy_remover_loosed_contact': 'privacy_remover_loosed_contact_v6',
+            'privacy_remover_loosed_contact_v6': 'privacy_remover_loosed_contact_v6'
         }
+        logger.info("SimplePromptProcessor 초기화 완료")
     
     def get_prompt(self, prompt_type: str, text: str) -> str:
         """
-        프롬프트 템플릿에서 텍스트로 프롬프트 생성
+        프롬프트 로드 및 템플릿 처리
         
         Args:
             prompt_type: 프롬프트 타입
@@ -302,246 +461,279 @@ class SimplePromptProcessor:
         Returns:
             완성된 프롬프트
         """
-        template = self.prompts.get(
-            prompt_type, 
-            self.PRIVACY_REMOVER_DEFAULT_V6
-        )
-        return template.replace("{usertxt}", text)
+        logger.debug(f"프롬프트 생성: type={prompt_type}")
+        
+        # 프롬프트 타입 정규화
+        normalized_type = self.prompt_mapping.get(prompt_type, 'privacy_remover_default_v6')
+        
+        if normalized_type != prompt_type:
+            logger.debug(f"프롬프트 타입 정규화: {prompt_type} → {normalized_type}")
+        
+        # 프롬프트 파일 로드
+        template = self.prompt_loader.load_prompt(normalized_type)
+        
+        # 텍스트 치환
+        prompt = template.replace("{usertxt}", text)
+        
+        logger.debug(f"프롬프트 생성 완료: {len(prompt)} chars")
+        
+        return prompt
 
 
 class PrivacyRemoverService:
     """개인정보 제거 서비스"""
     
-    def __init__(self):
-        """서비스 초기화"""
+    def __init__(self, prompts_dir: Optional[str] = None):
+        """
+        서비스 초기화
+        
+        Args:
+            prompts_dir: 프롬프트 파일 디렉토리 경로 (기본: api_server/services/prompts)
+        """
         load_dotenv()
+        
         # LLM 모델: Qwen3-30B-A3B-Thinking-2507-FP8 (기본)
-        # 또는 환경변수로 override 가능
+        # 또는 환경변수 LLM_MODEL_NAME으로 override 가능
         self.model_name = os.getenv("LLM_MODEL_NAME", "Qwen3-30B-A3B-Thinking-2507-FP8")
         self.llm_client = None
-        self.prompt_processor = SimplePromptProcessor()
+        self.prompt_processor = SimplePromptProcessor(prompts_dir)
         self._initialized = False
+        
+        logger.info(f"PrivacyRemoverService 초기화: model={self.model_name}")
     
     async def initialize(self):
         """LLM 클라이언트 초기화"""
         if self._initialized:
+            logger.debug("LLM 클라이언트 이미 초기화됨")
             return
         
         try:
-            # LLMClientFactory를 통해 클라이언트 생성
+            logger.info(f"LLM 클라이언트 초기화 시작: {self.model_name}")
             self.llm_client = LLMClientFactory.create_client(self.model_name)
             self._initialized = True
-            print(f"✅ LLM 클라이언트 초기화: {self.model_name}")
+            logger.info(f"LLM 클라이언트 초기화 완료")
         except Exception as e:
-            print(f"⚠️ LLM 클라이언트 초기화 실패: {e}")
-            self._initialized = False
+            logger.error(f"LLM 클라이언트 초기화 실패: {str(e)}", exc_info=True)
+            raise
     
-    async def remove_privacy_from_text(
+    async def process_text(
         self, 
-        text: str, 
-        prompt_type: str = "privacy_remover_default"
+        usertxt: str,
+        prompt_type: str = "privacy_remover_default_v6",
+        max_tokens: int = 32768,
+        temperature: float = 0.3
     ) -> Dict[str, Any]:
         """
-        STT 텍스트에서 개인정보 제거
+        텍스트의 개인정보 제거 - privacy_remover_runner.py의 process_text 로직 구현
         
         Args:
-            text: 원본 텍스트
+            usertxt: 원본 텍스트
             prompt_type: 프롬프트 타입
+            max_tokens: 최대 토큰 수
+            temperature: 온도 값
             
         Returns:
             {
                 'success': bool,
-                'text': str,              # 처리된 텍스트
-                'removed_count': int,     # 제거된 개인정보 개수
-                'removed_items': List,    # 제거된 항목 리스트
-                'method': str             # 'llm' 또는 'regex'
+                'privacy_exist': str,           # 'Y' 또는 'N'
+                'exist_reason': str,            # 개인정보 사유
+                'privacy_rm_usertxt': str,      # 처리된 텍스트
+                'input_tokens': int,            # 입력 토큰
+                'output_tokens': int,           # 출력 토큰
+                'cached_tokens': int            # 캐시된 토큰
             }
-        """
-        if not text or not text.strip():
-            return {
-                'success': True,
-                'text': text,
-                'removed_count': 0,
-                'removed_items': [],
-                'method': 'none'
-            }
-        
-        # LLM 기반 처리 시도
-        if not self._initialized:
-            await self.initialize()
-        
-        if self._initialized and self.llm_client:
-            try:
-                result = await self._remove_privacy_with_llm(text, prompt_type)
-                if result['success']:
-                    return result
-            except Exception as e:
-                print(f"⚠️ LLM 처리 실패: {e}, Regex fallback 사용")
-        
-        # Regex fallback
-        return await self._remove_privacy_with_regex(text)
-    
-    async def _remove_privacy_with_llm(
-        self, 
-        text: str, 
-        prompt_type: str
-    ) -> Dict[str, Any]:
-        """
-        LLM을 사용한 개인정보 제거
-        
-        Privacy Remover Runner의 process_text 로직을 따릅니다.
         """
         try:
-            # 프롬프트 생성
-            prompt = self.prompt_processor.get_prompt(prompt_type, text)
+            # LLM 클라이언트 초기화 확인
+            if not self._initialized:
+                await self.initialize()
             
-            # LLM 호출
-            response = await self.llm_client.generate_response(
+            logger.info(f"텍스트 처리 시작: prompt_type={prompt_type}, text_len={len(usertxt)}")
+            
+            # 프롬프트 생성
+            prompt = self.prompt_processor.get_prompt(prompt_type, usertxt)
+            
+            # LLM API 호출
+            logger.debug(f"LLM API 호출: model={self.model_name}")
+            llm_response = await self.llm_client.generate_response(
                 prompt=prompt,
-                max_tokens=32768,
-                temperature=0.3
+                max_tokens=max_tokens,
+                temperature=temperature
             )
             
-            # 응답 파싱
-            result = self._extract_data_from_response(response, text)
+            logger.debug(f"LLM 응답 수신: {llm_response['input_tokens']} input tokens, {llm_response['output_tokens']} output tokens")
             
-            return result
-        except Exception as e:
-            print(f"LLM 처리 중 오류: {e}")
-            raise
-    
-    def _extract_data_from_response(
-        self, 
-        response: Dict[str, Any],
-        original_text: str
-    ) -> Dict[str, Any]:
-        """
-        LLM 응답에서 데이터 추출
-        
-        LLMProcessor의 _extract_data_from_response 로직을 따릅니다.
-        """
-        try:
-            response_text = response.get('text', '')
+            # 응답 파싱
+            response_text = llm_response['text'].strip()
             
             # JSON 파싱 시도
             try:
-                # JSON 코드 블록 제거 (```json ... ``` 형식)
-                cleaned_text = response_text.strip()
-                if cleaned_text.startswith('```json'):
-                    cleaned_text = cleaned_text.split('```json')[1]
-                if cleaned_text.startswith('```'):
-                    cleaned_text = cleaned_text.split('```')[1]
-                if cleaned_text.endswith('```'):
-                    cleaned_text = cleaned_text.rsplit('```', 1)[0]
+                # JSON 형식 추출 (마크다운 코드 블록 제거)
+                if response_text.startswith('```'):
+                    # ```json ... ``` 형식 처리
+                    response_text = response_text.split('```')[1]
+                    if response_text.startswith('json'):
+                        response_text = response_text[4:]
+                    response_text = response_text.strip()
                 
-                cleaned_text = cleaned_text.strip()
+                result = json.loads(response_text)
                 
-                # JSON 파싱
-                parsed = json.loads(cleaned_text)
-                
-                privacy_exist = parsed.get('privacy_exist', 'N').upper()
-                exist_reason = parsed.get('exist_reason', '')
-                
-                # privacy_exist가 "Y"이면 처리된 텍스트 사용
-                if privacy_exist == 'Y':
-                    privacy_rm_usertxt = parsed.get('privacy_rm_usertxt', response_text)
-                else:
-                    # privacy_exist가 "N"이면 원본 텍스트 유지
-                    privacy_rm_usertxt = original_text
-                
-                removed_items = []
-                if privacy_exist == 'Y' and exist_reason:
-                    removed_items.append(exist_reason)
+                logger.info(f"텍스트 처리 완료: privacy_exist={result.get('privacy_exist', 'N')}")
                 
                 return {
                     'success': True,
-                    'text': privacy_rm_usertxt,
-                    'removed_count': len(removed_items),
-                    'removed_items': removed_items,
-                    'method': 'llm'
+                    'privacy_exist': result.get('privacy_exist', 'N'),
+                    'exist_reason': result.get('exist_reason', ''),
+                    'privacy_rm_usertxt': result.get('privacy_rm_usertxt', usertxt),
+                    'input_tokens': llm_response['input_tokens'],
+                    'output_tokens': llm_response['output_tokens'],
+                    'cached_tokens': llm_response['cached_tokens']
                 }
+            
+            except json.JSONDecodeError as e:
+                logger.warning(f"JSON 파싱 실패, regex fallback 사용: {str(e)}")
                 
-            except (json.JSONDecodeError, KeyError, AttributeError) as e:
-                # JSON 파싱 실패 시 regex fallback
-                print(f"JSON 파싱 실패: {str(e)}")
+                # Regex fallback: 기본 패턴으로 개인정보 제거
+                fallback_result = self._regex_fallback(usertxt)
+                
+                return {
+                    'success': True,
+                    'privacy_exist': fallback_result['privacy_exist'],
+                    'exist_reason': fallback_result['exist_reason'],
+                    'privacy_rm_usertxt': fallback_result['privacy_rm_usertxt'],
+                    'input_tokens': llm_response['input_tokens'],
+                    'output_tokens': llm_response['output_tokens'],
+                    'cached_tokens': llm_response['cached_tokens']
+                }
+        
+        except Exception as e:
+            logger.error(f"텍스트 처리 오류: {str(e)}", exc_info=True)
+            
+            # 실패 시 regex fallback
+            try:
+                fallback_result = self._regex_fallback(usertxt)
                 return {
                     'success': False,
-                    'text': original_text,
-                    'removed_count': 0,
-                    'removed_items': [],
-                    'method': 'llm'
+                    'privacy_exist': fallback_result['privacy_exist'],
+                    'exist_reason': f"LLM 오류, regex fallback 사용: {str(e)}",
+                    'privacy_rm_usertxt': fallback_result['privacy_rm_usertxt']
                 }
-                
-        except Exception as e:
-            print(f"응답 데이터 추출 중 오류: {str(e)}")
-            return {
-                'success': False,
-                'text': original_text,
-                'removed_count': 0,
-                'removed_items': [],
-                'method': 'llm'
-            }
+            except Exception as fallback_error:
+                logger.error(f"Regex fallback도 실패: {str(fallback_error)}", exc_info=True)
+                return {
+                    'success': False,
+                    'privacy_exist': 'N',
+                    'exist_reason': f"처리 실패: {str(e)}",
+                    'privacy_rm_usertxt': usertxt  # 원본 반환
+                }
     
-    async def _remove_privacy_with_regex(
-        self, 
-        text: str
-    ) -> Dict[str, Any]:
-        """Regex를 사용한 개인정보 제거 (fallback)"""
-        if not text:
-            return {
-                'success': True,
-                'text': text,
-                'removed_count': 0,
-                'removed_items': [],
-                'method': 'regex'
+    def _regex_fallback(self, text: str) -> Dict[str, str]:
+        """
+        정규표현식을 사용한 기본 개인정보 제거 (LLM 실패 시 fallback)
+        
+        Args:
+            text: 원본 텍스트
+            
+        Returns:
+            {
+                'privacy_exist': str,       # 'Y' 또는 'N'
+                'exist_reason': str,        # 개인정보 타입
+                'privacy_rm_usertxt': str   # 처리된 텍스트
             }
+        """
+        logger.debug(f"Regex fallback 시작")
         
         processed_text = text
-        removed_items = []
+        privacy_types = []
         
-        # 전화번호 패턴 (010-1234-5678, 02-123-4567 등)
-        phone_pattern = r'\b\d{2,4}[-.]?\d{3,4}[-.]?\d{4}\b'
-        phone_matches = re.findall(phone_pattern, processed_text)
-        if phone_matches:
-            processed_text = re.sub(phone_pattern, '[전화번호]', processed_text)
-            removed_items.append(f"전화번호: {len(phone_matches)}개")
+        # 전화번호 (010-xxxx-xxxx 형식 또는 연속된 10자리 숫자)
+        phone_pattern = r'01[0-9]-\d{3,4}-\d{4}|\b01[0-9]\d{8}\b|\+\d{1,3}\s?\d{6,}'
+        matches = re.findall(phone_pattern, processed_text)
+        if matches:
+            privacy_types.append("전화번호")
+            for match in matches:
+                masked = match[0] + '*' * (len(match) - 1)
+                processed_text = processed_text.replace(match, masked)
         
-        # 이메일 패턴
-        email_pattern = r'\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b'
-        email_matches = re.findall(email_pattern, processed_text)
-        if email_matches:
-            processed_text = re.sub(email_pattern, '[이메일]', processed_text)
-            removed_items.append(f"이메일: {len(email_matches)}개")
+        # 이메일
+        email_pattern = r'[\w\.-]+@[\w\.-]+\.\w+'
+        matches = re.findall(email_pattern, processed_text)
+        if matches:
+            privacy_types.append("이메일")
+            for match in matches:
+                masked = match[0] + '*' * (len(match) - 1)
+                processed_text = processed_text.replace(match, masked)
         
-        # 계좌번호 패턴 (10~20자리 숫자)
-        account_pattern = r'\b\d{10,20}\b'
-        account_matches = re.findall(account_pattern, processed_text)
-        if account_matches:
-            processed_text = re.sub(account_pattern, '[계좌번호]', processed_text)
-            removed_items.append(f"계좌번호: {len(account_matches)}개")
+        # 계좌번호 (최소 6자리 연속 숫자)
+        account_pattern = r'\b\d{6,}\b'
+        matches = re.findall(account_pattern, processed_text)
+        if matches:
+            # 날짜나 다른 패턴과 구분 (가능한 계좌 범위: 8-16자리)
+            account_matches = [m for m in matches if 8 <= len(m) <= 16]
+            if account_matches:
+                privacy_types.append("계좌번호")
+                for match in account_matches:
+                    masked = match[0] + '*' * (len(match) - 1)
+                    processed_text = processed_text.replace(match, masked)
         
-        # 주민등록번호 패턴 (XXXXXX-XXXXXXX)
+        # 주민등록번호 (XXXXXX-XXXXXXX)
         ssn_pattern = r'\d{6}-\d{7}'
-        ssn_matches = re.findall(ssn_pattern, processed_text)
-        if ssn_matches:
-            processed_text = re.sub(ssn_pattern, '[주민등록번호]', processed_text)
-            removed_items.append(f"주민등록번호: {len(ssn_matches)}개")
+        matches = re.findall(ssn_pattern, processed_text)
+        if matches:
+            privacy_types.append("주민등록번호")
+            for match in matches:
+                masked = match[0] + '*' * (len(match) - 1)
+                processed_text = processed_text.replace(match, masked)
+        
+        privacy_exist = 'Y' if privacy_types else 'N'
+        exist_reason = ', '.join(privacy_types)[:20] if privacy_types else ''
+        
+        logger.debug(f"Regex fallback 완료: privacy_exist={privacy_exist}, types={exist_reason}")
         
         return {
-            'success': True,
-            'text': processed_text,
-            'removed_count': len(removed_items),
-            'removed_items': removed_items,
-            'method': 'regex'
+            'privacy_exist': privacy_exist,
+            'exist_reason': exist_reason,
+            'privacy_rm_usertxt': processed_text
         }
 
 
-# Singleton pattern for dependency injection
-_privacy_remover_service = None
+# ============================================================================
+# Singleton 패턴: 전역 서비스 인스턴스
+# ============================================================================
 
-def get_privacy_remover_service() -> PrivacyRemoverService:
-    """PrivacyRemoverService 싱글톤 인스턴스 반환"""
+_privacy_remover_service: Optional[PrivacyRemoverService] = None
+
+
+def get_privacy_remover_service(prompts_dir: Optional[str] = None) -> PrivacyRemoverService:
+    """
+    PrivacyRemoverService의 싱글톤 인스턴스 반환
+    
+    Args:
+        prompts_dir: 프롬프트 파일 디렉토리 경로 (첫 호출 시만 사용)
+        
+    Returns:
+        PrivacyRemoverService 인스턴스
+    """
     global _privacy_remover_service
+    
     if _privacy_remover_service is None:
-        _privacy_remover_service = PrivacyRemoverService()
+        logger.info("PrivacyRemoverService 싱글톤 생성")
+        _privacy_remover_service = PrivacyRemoverService(prompts_dir)
+    
     return _privacy_remover_service
+
+
+if __name__ == "__main__":
+    # 기본 로깅 설정
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    
+    # 테스트 코드
+    async def test():
+        service = get_privacy_remover_service()
+        result = await service.process_text("홍길동님께서 010-1234-5678로 연락주셨습니다.")
+        print("Result:", result)
+    
+    asyncio.run(test())
