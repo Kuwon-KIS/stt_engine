@@ -34,6 +34,7 @@ COPY web_ui/utils/ ./utils/
 COPY web_ui/static/ ./static/
 COPY web_ui/templates/ ./templates/
 COPY web_ui/migrations/ ./migrations/
+COPY web_ui/scripts/ ./scripts/
 COPY web_ui/docker/entrypoint.sh ./
 
 # Create directories
