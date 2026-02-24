@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>분석 결과 - KIS 불완전판매 탐지 시스템</title>
+    <title>분석 결과 - STT 불완전판매 탐지 시스템</title>
     <style>
         * {
             margin: 0;
@@ -700,7 +700,7 @@
 </head>
 <body>
     <div class="header">
-        <h1>KIS 불완전판매 탐지 시스템</h1>
+        <h1>STT 불완전판매 탐지 시스템</h1>
         <div class="user-info">
             <span id="userInfo"></span>
             <button class="btn btn-refresh" onclick="refreshProgress()">🔄 새로고침</button>
@@ -712,9 +712,10 @@
     <div class="container">
         <!-- 분석 정보 -->
         <div class="analysis-header">
-            <div>
-                <h2>분석 결과</h2>
-                <p id="folderInfo" style="color: #666; font-size: 14px; margin-top: 8px;">폴더: 로딩 중...</p>
+            <div style="display: flex; align-items: center; gap: 20px;">
+                <h2 style="margin: 0;">분석 결과</h2>
+                <span style="color: #999; font-size: 20px; font-weight: 300;">|</span>
+                <p id="folderInfo" style="color: #666; font-size: 14px; margin: 0;">폴더: 로딩 중...</p>
             </div>
             <div class="analysis-actions">
                 <button class="btn btn-back" onclick="showHistoryModal()">이전 분석 보기</button>
@@ -749,7 +750,7 @@
         <!-- 통계 -->
         <div class="stats-panel">
             <div class="stat-card">
-                <div class="stat-label">총 파일 수</div>
+                <div class="stat-label">총 파일</div>
                 <div class="stat-value" id="totalFiles">0</div>
             </div>
             <div class="stat-card">
@@ -757,7 +758,7 @@
                 <div class="stat-value" id="completedFiles">0</div>
             </div>
             <div class="stat-card" id="suspiciousCard">
-                <div class="stat-label">부당권유 발견</div>
+                <div class="stat-label">불완전판매 탐지</div>
                 <div class="stat-value" id="suspiciousCount">0</div>
             </div>
         </div>
@@ -767,7 +768,7 @@
             <div style="display: flex; align-items: center; gap: 20px; flex-wrap: wrap;">
                 <!-- 분석상태 필터 -->
                 <div style="display: flex; align-items: center; gap: 8px;">
-                    <label style="font-weight: 600; color: #555; font-size: 14px; white-space: nowrap;">분석상태</label>
+                    <label style="font-weight: 600; color: #555; font-size: 14px; white-space: nowrap;">분석 상태</label>
                     <label class="filter-radio">
                         <input type="radio" name="statusFilter" value="all" checked>
                         <span>전체</span>
@@ -794,7 +795,7 @@
                 
                 <!-- 판매탐지 필터 -->
                 <div style="display: flex; align-items: center; gap: 8px;">
-                    <label style="font-weight: 600; color: #555; font-size: 14px; white-space: nowrap;">판매탐지</label>
+                    <label style="font-weight: 600; color: #555; font-size: 14px; white-space: nowrap;">불완전판매 탐지</label>
                     <label class="filter-radio">
                         <input type="radio" name="riskFilter" value="all" checked>
                         <span>전체</span>
@@ -847,7 +848,7 @@
                         <th style="width: 22%">오디오</th>
                         <th style="width: 15%">STT 변환</th>
                         <th style="width: 15%">분석 상태</th>
-                        <th style="width: 21%">판매 탐지</th>
+                        <th style="width: 21%">불완전판매 탐지</th>
                     </tr>
                 </thead>
                 <tbody id="analysisTableBody">
@@ -987,7 +988,7 @@
                 const suspiciousCount = (data.results || []).filter(r => r.risk_level === 'danger').length;
                 document.getElementById('suspiciousCount').textContent = suspiciousCount || 0;
                 
-                // 부당권유 발견 카드 스타일 업데이트
+                // 불완전판매 발견 카드 스타일 업데이트
                 const suspiciousCard = document.getElementById('suspiciousCard');
                 if (suspiciousCount > 0) {
                     suspiciousCard.classList.add('warning');
@@ -1162,7 +1163,7 @@
             const riskMap = {
                 'safe': { text: '정상', class: 'result-safe' },
                 'warning': { text: '의심', class: 'result-warning' },
-                'danger': { text: '부당권유 발견', class: 'result-danger' }
+                'danger': { text: '불완전판매 발견', class: 'result-danger' }
             };
 
             // Only show mapped values, otherwise show "-"
@@ -1200,7 +1201,7 @@
                 const rows = tbody.querySelectorAll('tr');
                 
                 // 헤더 추가
-                data.push(['번호', '파일명', 'STT 변환 텍스트', '분석 상태', '판매 탐지'].join(','));
+                data.push(['번호', '파일명', 'STT 변환 텍스트', '분석 상태', '불완전판매 탐지'].join(','));
                 
                 // 데이터 행 추가
                 rows.forEach((row, index) => {
