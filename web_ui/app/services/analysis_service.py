@@ -189,14 +189,21 @@ class AnalysisService:
                 AnalysisResult.job_id == job_id
             ).all()
             
-            processed_files = len(results)
-            progress = int((processed_files / total_files * 100)) if total_files > 0 else 0
+            # Count completed and processing files from DB status field
+            completed_files = sum(1 for r in results if r.status == 'completed')
+            processing_files = sum(1 for r in results if r.status == 'processing')
+            processed_files = completed_files + processing_files
             
-            # 현재 상태에 따라 조정
+            # 현재 상태에 따라 진행률 계산
             if job.status == "pending":
                 progress = 0
+            elif job.status == "processing":
+                # For processing jobs: calculate progress based on actual file statuses
+                progress = int(((completed_files + processing_files * 0.5) / total_files * 100)) if total_files > 0 else 0
             elif job.status == "completed":
                 progress = 100
+            else:
+                progress = int((processed_files / total_files * 100)) if total_files > 0 else 0
             
             # Build results dictionary for quick lookup
             results_dict = {result.file_id: result for result in results}
@@ -253,7 +260,7 @@ class AnalysisService:
                 progress=progress,
                 current_file=list(current_processing_files) if current_processing_files else [],
                 total_files=total_files,
-                processed_files=processed_files,
+                processed_files=completed_files,
                 error_message=None,
                 started_at=job.started_at,
                 updated_at=job.completed_at or datetime.utcnow(),

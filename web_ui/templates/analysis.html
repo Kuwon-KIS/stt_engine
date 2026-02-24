@@ -844,7 +844,7 @@
                 'danger': { text: '부당권유 발견', class: 'result-danger' }
             };
 
-            const r = riskMap[riskLevel] || { text: riskLevel || '미분석', class: 'result-safe' };
+            const r = riskMap[riskLevel] || { text: riskLevel || '-', class: 'result-safe' };
             return `<span class="result-badge ${r.class}">${r.text}</span>`;
         }
 
