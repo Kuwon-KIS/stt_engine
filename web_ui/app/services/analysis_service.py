@@ -21,7 +21,7 @@ from app.models.analysis_schemas import (
 )
 from app.utils.file_utils import get_user_upload_dir
 from app.services.stt_service import stt_service
-from config import STT_API_URL
+from config import STT_API_URL, MAX_CONCURRENT_ANALYSIS
 
 
 class AnalysisService:
@@ -251,7 +251,7 @@ class AnalysisService:
                 folder_path=job.folder_path,
                 status=job.status,
                 progress=progress,
-                current_file=current_processing_file,
+                current_file=list(current_processing_files) if current_processing_files else [],
                 total_files=total_files,
                 processed_files=processed_files,
                 error_message=None,
@@ -520,6 +520,7 @@ class AnalysisService:
         """
         백그라운드에서 분석 실행 (동기 함수)
         FastAPI의 BackgroundTasks에 의해 별도 스레드에서 실행됨
+        동시(concurrent) 처리를 위해 asyncio.gather 사용
         
         Args:
             job_id: 분석 작업 ID
@@ -536,7 +537,7 @@ class AnalysisService:
         new_db = SessionLocal()
         
         try:
-            logger.info(f"[process_analysis_sync] 분석 시작: job_id={job_id}, files={files}")
+            logger.info(f"[process_analysis_sync] 분석 시작 (동시 처리): job_id={job_id}, files={files}")
             
             # 작업 상태 업데이트
             job = new_db.query(AnalysisJob).filter(
@@ -550,7 +551,8 @@ class AnalysisService:
                 logger.info(f"[process_analysis_sync] job status: pending → processing")
             
             total_files = len(files)
-            logger.info(f"[process_analysis_sync] 처리할 파일 수: {total_files}")
+            logger.info(f"[process_analysis_sync] 처리할 파일 수: {total_files} (동시 처리)")
+            logger.info(f"[process_analysis_sync] 최대 동시 처리 개수: {MAX_CONCURRENT_ANALYSIS}")
             
             # === Recommendation 2: Create pending result rows upfront ===
             logger.info(f"[process_analysis_sync] Creating pending result rows...")
@@ -620,7 +622,10 @@ class AnalysisService:
                         incomplete_elements_check=include_validation
                     ))
                     
-                    logger.info(f"[process_analysis_sync] STT 결과: {filename}, success={stt_result.get('success')}")
+                    # in-memory tracking 업데이트 (set에 파일 추가)
+                    if job_id not in AnalysisService._current_processing:
+                        AnalysisService._current_processing[job_id] = set()
+                    AnalysisService._current_processing[job_id].add(filename)
                     
                     # === Recommendation 4: Update progress table (STT complete) ===
                     progress_record.step = 'stt'
@@ -665,8 +670,27 @@ class AnalysisService:
                     new_db.commit()
                     logger.info(f"[process_analysis_sync] 결과 저장: {filename}, status={result.status if result else 'N/A'}")
                 
-                except Exception as e:
-                    logger.error(f"[process_analysis_sync] 파일 처리 실패: {filename}, {str(e)}", exc_info=True)
+                # 모든 파일을 처리할 task 생성
+                tasks = [
+                    process_single_file(idx, filename, semaphore)
+                    for idx, filename in enumerate(files)
+                ]
+                
+                # 모든 task를 동시에 실행 (세마포어로 동시 개수 제한)
+                return await asyncio.gather(*tasks)
+            
+            # asyncio.run으로 동시 처리 실행
+            import time as time_module
+            batch_start = time_module.time()
+            results = asyncio.run(process_all_files())
+            batch_elapsed = time_module.time() - batch_start
+            logger.info(f"[process_analysis_sync] 모든 파일 처리 완료: {len(results)}개 결과 (총소요시간={batch_elapsed:.2f}s)")
+            
+            # 결과는 이미 process_single_file에서 즉시 DB에 저장되었으므로 
+            # 여기서는 최종 상태만 확인하고 로깅
+            saved_count = sum(1 for r in results if r.get("saved", False))
+            failed_count = len(results) - saved_count
+            logger.info(f"[process_analysis_sync] 저장 완료: {saved_count}개, 실패: {failed_count}개")
             
             # 작업 완료 표시
             if job:

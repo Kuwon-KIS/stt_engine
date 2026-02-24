@@ -132,6 +132,7 @@ COPY --chown=stt-user:stt-user stt_utils.py /app/
 COPY --chown=stt-user:stt-user requirements.txt /app/
 COPY --chown=stt-user:stt-user api_server/ /app/api_server/
 COPY --chown=stt-user:stt-user utils/ /app/utils/
+COPY --chown=stt-user:stt-user scripts/ /app/scripts/
 
 # ============================================================================
 # Step 11: 헬스 체크

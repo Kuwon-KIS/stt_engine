@@ -72,15 +72,17 @@ class CSPMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         response = await call_next(request)
         # CSP 헤더 설정 - 보안 프로그램(Menlo Security 등)과의 호환성 개선
+        # script-src에 blob: 추가 (Source Map 요청 허용)
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' http://* https://*; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' http://* https://* blob:; "
             "style-src 'self' 'unsafe-inline' http://* https://* https://fonts.googleapis.com; "
             "font-src 'self' http://* https://* https://fonts.gstatic.com data:; "
             "img-src 'self' http://* https://* data:; "
-            "connect-src 'self' http://* https://* wss://*; "
+            "connect-src 'self' http://* https://* wss://* ws://*; "
             "frame-src 'self'; "
-            "object-src 'none';"
+            "object-src 'none'; "
+            "base-uri 'self';"
         )
         return response
 

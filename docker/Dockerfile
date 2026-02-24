@@ -23,6 +23,9 @@ COPY main.py api_server.py stt_engine.py stt_utils.py ./
 COPY api_server/ ./api_server/
 COPY utils/ ./utils/
 
+# Privacy Remover 모듈 복사 (LLM 기반 개인정보 제거)
+COPY scratch/prompt_test_all/ ./prompt_test_all/
+
 # 모델, 오디오, 로그 디렉토리 생성
 RUN mkdir -p audio models logs
 

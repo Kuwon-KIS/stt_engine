@@ -52,7 +52,7 @@ class AnalysisProgressResponse(BaseModel):
     folder_path: Optional[str] = Field(None, description="분석 대상 폴더 경로")
     status: str = Field(..., description="상태 (pending, processing, completed, failed)")
     progress: int = Field(..., ge=0, le=100, description="진행률 (0-100)")
-    current_file: Optional[str] = Field(None, description="현재 처리 중인 파일")
+    current_file: Optional[List[str]] = Field(default_factory=list, description="현재 처리 중인 파일 목록 (동시 처리)")
     total_files: int = Field(..., description="전체 파일 수")
     processed_files: int = Field(..., description="처리 완료된 파일 수")
     error_message: Optional[str] = Field(None, description="에러 메시지")
