@@ -74,11 +74,11 @@
         }
 
         .btn-export {
-            background-color: #10b981;
+            background-color: #667eea;
         }
 
         .btn-export:hover {
-            background-color: #059669;
+            background-color: #5568d3;
         }
 
         .btn-view {
@@ -680,7 +680,7 @@
                 <p id="folderInfo" style="color: #666; font-size: 14px; margin: 0;">폴더: 로딩 중...</p>
             </div>
             <div class="analysis-actions">
-                <button class="btn btn-refresh" onclick="refreshProgress()">🔄 새로고침</button>
+                <button class="btn btn-refresh" onclick="refreshProgress()">새로고침</button>
                 <button class="btn btn-back" onclick="showHistoryModal()">이전 분석 보기</button>
                 <button class="btn btn-export" onclick="exportResults()">결과 내보내기</button>
             </div>
@@ -779,15 +779,15 @@
             <table>
                 <thead>
                     <tr>
-                        <th style="width: 4%">
+                        <th style="width: 4%; text-align: center;">
                             <input type="checkbox" id="selectAllCheckbox" class="file-checkbox" onchange="toggleSelectAll()">
                         </th>
-                        <th style="width: 5%">번호</th>
-                        <th style="width: 18%">파일명</th>
-                        <th style="width: 22%">오디오</th>
-                        <th style="width: 15%">STT 변환</th>
-                        <th style="width: 15%">분석 상태</th>
-                        <th style="width: 21%">불완전판매 탐지</th>
+                        <th style="width: 5%; text-align: center;">번호</th>
+                        <th style="width: 18%; text-align: left;">파일명</th>
+                        <th style="width: 22%; text-align: left;">오디오</th>
+                        <th style="width: 15%; text-align: center;">STT 변환</th>
+                        <th style="width: 15%; text-align: center;">분석 상태</th>
+                        <th style="width: 21%; text-align: center;">불완전판매 탐지</th>
                     </tr>
                 </thead>
                 <tbody id="analysisTableBody">
@@ -1015,15 +1015,15 @@
 
                 return `
                 <tr>
-                    <td class="checkbox-cell">${checkbox}</td>
-                    <td>${index + 1}</td>
-                    <td>${result.filename}</td>
-                    <td>${audioPlayer}</td>
-                    <td>
+                    <td class="checkbox-cell" style="text-align: center;">${checkbox}</td>
+                    <td style="text-align: center;">${index + 1}</td>
+                    <td style="text-align: left;">${result.filename}</td>
+                    <td style="text-align: center;">${audioPlayer}</td>
+                    <td style="text-align: center;">
                         ${result.stt_text ? `<button onclick="showSttContent('${result.filename}', '${escapeHtml(result.stt_text)}')" class="btn-view">내용 보기</button>` : '-'}
                     </td>
-                    <td>${statusBadge}</td>
-                    <td>${riskBadge}</td>
+                    <td style="text-align: center;">${statusBadge}</td>
+                    <td style="text-align: center;">${riskBadge}</td>
                 </tr>
                 `;
             }).join('');
