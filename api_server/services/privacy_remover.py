@@ -365,7 +365,7 @@ class QwenClient:
 
 
 class PromptLoader:
-    """프롬프트 파일 로더"""
+    """프롬프트 파일 로더 - 다중 경로 지원"""
     
     def __init__(self, prompts_dir: Optional[str] = None):
         """
@@ -373,11 +373,19 @@ class PromptLoader:
         
         Args:
             prompts_dir: 프롬프트 파일 디렉토리 경로 (기본: api_server/services/prompts)
+                        또는 privacy_removal/prompts (legacy)
         """
         if prompts_dir is None:
             # 현재 파일 기준으로 prompts 디렉토리 찾기
             current_dir = Path(__file__).parent
             prompts_dir = current_dir / "prompts"
+            
+            # 폴백: legacy 경로도 확인
+            legacy_dir = current_dir / "privacy_removal" / "prompts"
+            
+            if not prompts_dir.exists() and legacy_dir.exists():
+                logger.info(f"Legacy 프롬프트 경로 사용: {legacy_dir}")
+                prompts_dir = legacy_dir
         else:
             prompts_dir = Path(prompts_dir)
         
@@ -391,7 +399,7 @@ class PromptLoader:
     
     def load_prompt(self, prompt_name: str) -> str:
         """
-        프롬프트 파일 로드
+        프롬프트 파일 로드 (캐싱 지원)
         
         Args:
             prompt_name: 프롬프트 파일명 (확장자 제외, 예: 'privacy_remover_default_v6')
@@ -413,8 +421,16 @@ class PromptLoader:
         logger.debug(f"프롬프트 파일 로드 시도: {prompt_file}")
         
         if not prompt_file.exists():
-            logger.error(f"프롬프트 파일 없음: {prompt_file}")
-            raise FileNotFoundError(f"프롬프트 파일을 찾을 수 없습니다: {prompt_file}")
+            # 사용 가능한 프롬프트 목록 수집
+            available = []
+            if self.prompts_dir.exists():
+                available = [f.stem for f in sorted(self.prompts_dir.glob("*.prompt"))]
+            
+            logger.error(f"프롬프트 파일 없음: {prompt_file}, 사용 가능: {available}")
+            raise FileNotFoundError(
+                f"프롬프트 파일을 찾을 수 없습니다: {prompt_file}\n"
+                f"사용 가능한 프롬프트: {available}"
+            )
         
         try:
             with open(prompt_file, 'r', encoding='utf-8') as f:
@@ -428,6 +444,7 @@ class PromptLoader:
             return content
         except Exception as e:
             logger.error(f"프롬프트 파일 읽기 오류: {prompt_file}, {str(e)}", exc_info=True)
+            raise
             raise
 
 
@@ -721,6 +738,20 @@ def get_privacy_remover_service(prompts_dir: Optional[str] = None) -> PrivacyRem
         _privacy_remover_service = PrivacyRemoverService(prompts_dir)
     
     return _privacy_remover_service
+
+
+async def _async_get_privacy_remover_service(prompts_dir: Optional[str] = None) -> PrivacyRemoverService:
+    """
+    FastAPI Depends()와 호환되는 async 래퍼
+    PrivacyRemoverService의 싱글톤 인스턴스 반환
+    
+    Args:
+        prompts_dir: 프롬프트 파일 디렉토리 경로
+        
+    Returns:
+        PrivacyRemoverService 인스턴스
+    """
+    return get_privacy_remover_service(prompts_dir)
 
 
 if __name__ == "__main__":
