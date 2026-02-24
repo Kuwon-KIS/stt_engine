@@ -76,7 +76,7 @@ cursor.execute('''CREATE TABLE file_uploads (
 conn.commit()
 
 # 테스트 직원 추가
-cursor.execute("INSERT INTO employees (emp_id, name, dept) VALUES (?, ?, ?)", ("10001", "김철수", "영업팀"))
+cursor.execute("INSERT INTO employees (emp_id, name, dept) VALUES (?, ?, ?)", ("100001", "김철수", "영업팀"))
 conn.commit()
 
 print("✅ 모든 테이블 생성 완료")

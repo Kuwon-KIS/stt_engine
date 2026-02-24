@@ -24,7 +24,7 @@ from app.services.stt_service import stt_service
 from config import STT_API_URL, MAX_CONCURRENT_ANALYSIS
 
 # Test configuration - set to 0 to disable, or value between 0.0-1.0 for failure rate
-TEST_FAILURE_RATE = 0.40 # 0.25 = 25% failure rate for testing
+TEST_FAILURE_RATE = 0.25 # 0.25 = 25% failure rate for testing
 
 
 class AnalysisService:

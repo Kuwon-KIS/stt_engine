@@ -30,24 +30,26 @@ class AuthService:
                 "error": str (실패 시만)
             }
         """
-        # 1. ALLOWED_EMPLOYEES에서 사번 검증
-        if emp_id not in ALLOWED_EMPLOYEES:
+        # 1. 사번 형식 검증: 6자리 숫자만 허용
+        if not emp_id or not emp_id.isdigit() or len(emp_id) != 6:
             return {
                 "success": False,
-                "error": f"Invalid emp_id: {emp_id}"
+                "error": "사번은 6자리 숫자여야 합니다."
             }
-        
-        emp_info = ALLOWED_EMPLOYEES[emp_id]
         
         # 2. DB에서 직원 정보 조회
         employee = db.query(Employee).filter(Employee.emp_id == emp_id).first()
         
-        # 3. 없으면 생성, 있으면 업데이트
+        # 3. 없으면 새로 생성 (첫 로그인), 있으면 기존 정보 사용
         if not employee:
+            # ALLOWED_EMPLOYEES에서 기본 정보 확인 (선택적)
+            emp_info = ALLOWED_EMPLOYEES.get(emp_id, {})
+            
+            # 새 직원 레코드 생성
             employee = Employee(
                 emp_id=emp_id,
-                name=emp_info["name"],
-                dept=emp_info.get("dept", "미분류")
+                name=emp_info.get("name", f"사용자{emp_id}"),  # 기본 이름
+                dept=emp_info.get("dept", "미분류")  # 기본 부서
             )
             db.add(employee)
         

@@ -23,9 +23,9 @@ print("✅ 새로운 데이터베이스 생성됨")
 db = SessionLocal()
 
 # 직원 정보 추가 (이미 있으면 무시)
-existing = db.query(Employee).filter_by(emp_id="10001").first()
+existing = db.query(Employee).filter_by(emp_id="100001").first()
 if not existing:
-    test_emp = Employee(emp_id="10001", name="김철수", dept="영업팀")
+    test_emp = Employee(emp_id="100001", name="김철수", dept="영업팀")
     db.add(test_emp)
     db.commit()
     print("✅ 테스트 직원 정보 추가됨")
