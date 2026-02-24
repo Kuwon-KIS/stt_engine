@@ -544,6 +544,57 @@
         .audio-player audio::-webkit-media-controls-panel {
             background-color: #f8f9fa;
         }
+
+        /* Filter Section Styles */
+        .filter-radio {
+            display: inline-flex;
+            align-items: center;
+            padding: 6px 12px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 13px;
+            background-color: white;
+        }
+
+        .filter-radio:hover {
+            border-color: #667eea;
+            background-color: #f8f9ff;
+        }
+
+        .filter-radio input[type="radio"] {
+            display: none;
+        }
+
+        .filter-radio input[type="radio"]:checked + span {
+            font-weight: bold;
+        }
+
+        .filter-radio:has(input[type="radio"]:checked) {
+            background-color: #667eea;
+            border-color: #667eea;
+            color: white;
+        }
+
+        .filter-radio.risk-safe:has(input[type="radio"]:checked) {
+            background-color: #4CAF50;
+            border-color: #4CAF50;
+        }
+
+        .filter-radio.risk-warning:has(input[type="radio"]:checked) {
+            background-color: #ff9800;
+            border-color: #ff9800;
+        }
+
+        .filter-radio.risk-danger:has(input[type="radio"]:checked) {
+            background-color: #f44336;
+            border-color: #f44336;
+        }
+
+        #filterSection {
+            border-left: 4px solid #667eea;
+        }
     </style>
 </head>
 <body>
@@ -606,6 +657,66 @@
             <div class="stat-card" id="suspiciousCard">
                 <div class="stat-label">부당권유 발견</div>
                 <div class="stat-value" id="suspiciousCount">0</div>
+            </div>
+        </div>
+
+        <!-- 필터 섹션 -->
+        <div id="filterSection" class="card" style="display: none; background-color: white; padding: 15px 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);">
+            <div style="display: flex; align-items: center; gap: 20px; flex-wrap: wrap;">
+                <!-- 분석상태 필터 -->
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <label style="font-weight: 600; color: #555; font-size: 14px; white-space: nowrap;">분석상태</label>
+                    <label class="filter-radio">
+                        <input type="radio" name="statusFilter" value="all" checked>
+                        <span>전체</span>
+                    </label>
+                    <label class="filter-radio">
+                        <input type="radio" name="statusFilter" value="pending">
+                        <span>대기중</span>
+                    </label>
+                    <label class="filter-radio">
+                        <input type="radio" name="statusFilter" value="processing">
+                        <span>분석중</span>
+                    </label>
+                    <label class="filter-radio">
+                        <input type="radio" name="statusFilter" value="completed">
+                        <span>완료</span>
+                    </label>
+                    <label class="filter-radio">
+                        <input type="radio" name="statusFilter" value="error">
+                        <span>오류</span>
+                    </label>
+                </div>
+                
+                <div style="height: 20px; width: 1px; background-color: #ddd;"></div>
+                
+                <!-- 판매탐지 필터 -->
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <label style="font-weight: 600; color: #555; font-size: 14px; white-space: nowrap;">판매탐지</label>
+                    <label class="filter-radio">
+                        <input type="radio" name="riskFilter" value="all" checked>
+                        <span>전체</span>
+                    </label>
+                    <label class="filter-radio risk-safe">
+                        <input type="radio" name="riskFilter" value="safe">
+                        <span>정상</span>
+                    </label>
+                    <label class="filter-radio risk-warning">
+                        <input type="radio" name="riskFilter" value="warning">
+                        <span>의심</span>
+                    </label>
+                    <label class="filter-radio risk-danger">
+                        <input type="radio" name="riskFilter" value="danger">
+                        <span>부당권유</span>
+                    </label>
+                </div>
+                
+                <div style="margin-left: auto; display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 13px; color: #666; white-space: nowrap;">표시: <strong id="filteredCount">0</strong> / <strong id="totalCount">0</strong>건</span>
+                    <button onclick="resetFilters()" class="btn" style="background-color: #6c757d; color: white; padding: 6px 12px; font-size: 13px; white-space: nowrap;">
+                        필터 초기화
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -682,6 +793,11 @@
         let progressInterval = null;
         let currentFolderPath = null;
         let currentEmpId = null;
+        let allResults = []; // Store all results for filtering
+        let currentFilters = {
+            status: 'all',
+            risk: 'all'
+        };
 
         async function initPage() {
             // URL에서 job_id 추출
@@ -774,16 +890,34 @@
         }
 
         function renderResults(results) {
+            // Store all results globally
+            allResults = results || [];
+            
+            // Apply filters
+            const filteredResults = applyFilters(allResults);
+            
+            // Update filter stats
+            updateFilterStats(filteredResults.length, allResults.length);
+            
+            // Show filter section if we have results
+            if (allResults.length > 0) {
+                document.getElementById('filterSection').style.display = 'block';
+            }
+            
             const tbody = document.getElementById('analysisTableBody');
             
-            if (!results || results.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="empty-state">분석 결과가 없습니다</td></tr>';
+            if (filteredResults.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="empty-state">필터 조건에 맞는 결과가 없습니다</td></tr>';
                 return;
             }
 
-            tbody.innerHTML = results.map((result, index) => {
+            tbody.innerHTML = filteredResults.map((result, index) => {
                 const statusBadge = getStatusBadge(result.status);
-                const riskBadge = getRiskBadge(result.risk_level);
+                
+                // Only show risk badge if status is 'completed'
+                const riskBadge = result.status === 'completed' 
+                    ? getRiskBadge(result.risk_level) 
+                    : '<span class="result-badge" style="background-color: #f5f5f5; color: #999;">분석중</span>';
                 
                 // 오디오 파일 경로 구성
                 const audioUrl = `/api/files/audio/${currentEmpId}/${currentFolderPath}/${encodeURIComponent(result.filename)}`;
@@ -812,6 +946,62 @@
                 `;
             }).join('');
         }
+
+        function applyFilters(results) {
+            if (!results) return [];
+            
+            return results.filter(result => {
+                // Status filter
+                if (currentFilters.status !== 'all' && result.status !== currentFilters.status) {
+                    return false;
+                }
+                
+                // Risk filter - only apply if status is completed
+                if (currentFilters.risk !== 'all') {
+                    if (result.status !== 'completed') {
+                        return false; // Hide non-completed files when filtering by risk
+                    }
+                    if (result.risk_level !== currentFilters.risk) {
+                        return false;
+                    }
+                }
+                
+                return true;
+            });
+        }
+
+        function updateFilterStats(filteredCount, totalCount) {
+            document.getElementById('filteredCount').textContent = filteredCount;
+            document.getElementById('totalCount').textContent = totalCount;
+        }
+
+        function resetFilters() {
+            currentFilters = { status: 'all', risk: 'all' };
+            document.querySelectorAll('input[name="statusFilter"]').forEach(radio => {
+                radio.checked = radio.value === 'all';
+            });
+            document.querySelectorAll('input[name="riskFilter"]').forEach(radio => {
+                radio.checked = radio.value === 'all';
+            });
+            renderResults(allResults);
+        }
+
+        // Setup filter event listeners
+        document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('input[name="statusFilter"]').forEach(radio => {
+                radio.addEventListener('change', (e) => {
+                    currentFilters.status = e.target.value;
+                    renderResults(allResults);
+                });
+            });
+            
+            document.querySelectorAll('input[name="riskFilter"]').forEach(radio => {
+                radio.addEventListener('change', (e) => {
+                    currentFilters.risk = e.target.value;
+                    renderResults(allResults);
+                });
+            });
+        });
 
         function getStatusBadge(status) {
             const statusMap = {
