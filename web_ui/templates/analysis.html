@@ -577,6 +577,7 @@
             </div>
             <div class="status-content">
                 <span class="status-text">분석 중...</span>
+                <span class="status-details" id="currentFile" style="display: none; color: #666; font-size: 12px; margin-top: 5px;"></span>
                 <div class="status-progress-bar">
                     <div class="status-progress-fill" id="progressFill" style="width: 0%"></div>
                 </div>
@@ -729,6 +730,15 @@
                 const progress = data.progress || 0;
                 document.getElementById('progressFill').style.width = `${progress}%`;
                 document.getElementById('progressText').textContent = `${progress}% (${data.processed_files}/${data.total_files})`;
+                
+                // 현재 처리 중인 파일 표시
+                if (data.current_file) {
+                    const currentFileEl = document.getElementById('currentFile');
+                    if (currentFileEl) {
+                        currentFileEl.textContent = `현재 처리: ${data.current_file}`;
+                        currentFileEl.style.display = 'block';
+                    }
+                }
 
                 // 통계 업데이트
                 document.getElementById('totalFiles').textContent = data.total_files || 0;

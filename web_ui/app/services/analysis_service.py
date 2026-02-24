@@ -563,11 +563,17 @@ class AnalysisService:
             # 비동기 함수로 파일 처리 (결과는 즉시 DB에 저장)
             async def process_single_file(idx: int, filename: str, semaphore: asyncio.Semaphore):
                 """개별 파일 처리 (세마포어로 동시성 제어, 결과 즉시 저장)"""
+                import time
+                start_wait = time.time()
+                logger.info(f"[process_analysis_sync] 파일 대기 시작: {filename} (idx={idx}, semaphore_value={semaphore._value})")
+                
                 async with semaphore:  # 세마포어로 동시 실행 개수 제한
+                    wait_time = time.time() - start_wait
+                    logger.info(f"[process_analysis_sync] 파일 처리 시작: {filename} (idx={idx}, 대기시간={wait_time:.2f}s, semaphore_value={semaphore._value})")
+                    
                     db_session = None
+                    start_time = time.time()
                     try:
-                        logger.info(f"[process_analysis_sync] 파일 처리 시작: {filename} (idx={idx})")
-                        
                         # in-memory tracking 업데이트
                         AnalysisService._current_processing[job_id] = filename
                         
@@ -621,7 +627,8 @@ class AnalysisService:
                             
                             db_session.add(result)
                             db_session.commit()
-                            logger.info(f"[process_analysis_sync] 결과 즉시 저장: {filename}")
+                            elapsed = time.time() - start_time
+                            logger.info(f"[process_analysis_sync] 결과 즉시 저장 완료: {filename} (총처리시간={elapsed:.2f}s)")
                         
                         except Exception as db_error:
                             db_session.rollback()
@@ -640,6 +647,8 @@ class AnalysisService:
                     
                     except Exception as e:
                         logger.error(f"[process_analysis_sync] 파일 처리 중 에러: {filename}, {str(e)}", exc_info=True)
+                        elapsed = time.time() - start_time
+                        logger.error(f"[process_analysis_sync] 파일 처리 실패 시간: {filename} (처리시간={elapsed:.2f}s)")
                         
                         # 에러 결과도 DB에 저장
                         if db_session is None:
@@ -687,8 +696,11 @@ class AnalysisService:
                 return await asyncio.gather(*tasks)
             
             # asyncio.run으로 동시 처리 실행
+            import time as time_module
+            batch_start = time_module.time()
             results = asyncio.run(process_all_files())
-            logger.info(f"[process_analysis_sync] 모든 파일 처리 완료: {len(results)}개 결과")
+            batch_elapsed = time_module.time() - batch_start
+            logger.info(f"[process_analysis_sync] 모든 파일 처리 완료: {len(results)}개 결과 (총소요시간={batch_elapsed:.2f}s)")
             
             # 결과는 이미 process_single_file에서 즉시 DB에 저장되었으므로 
             # 여기서는 최종 상태만 확인하고 로깅
