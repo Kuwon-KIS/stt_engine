@@ -677,6 +677,14 @@ class AnalysisService:
                 # 세마포어 생성: 동시에 MAX_CONCURRENT_ANALYSIS개만 실행
                 semaphore = asyncio.Semaphore(MAX_CONCURRENT_ANALYSIS)
                 
+                # 모든 파일을 처리할 task 생성
+                tasks = [
+                    process_single_file(idx, filename, semaphore)
+                    for idx, filename in enumerate(files)
+                ]
+                
+                # 모든 task를 동시에 실행 (세마포어로 동시 개수 제한)
+                return await asyncio.gather(*tasks)
             
             # asyncio.run으로 동시 처리 실행
             results = asyncio.run(process_all_files())
