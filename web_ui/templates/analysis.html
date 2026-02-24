@@ -838,13 +838,18 @@
         }
 
         function getRiskBadge(riskLevel) {
+            // null이나 undefined인 경우 "-" 표시 (분석 전)
+            if (!riskLevel) {
+                return '<span class="result-badge result-safe">-</span>';
+            }
+            
             const riskMap = {
                 'safe': { text: '정상', class: 'result-safe' },
                 'warning': { text: '의심', class: 'result-warning' },
                 'danger': { text: '부당권유 발견', class: 'result-danger' }
             };
 
-            const r = riskMap[riskLevel] || { text: riskLevel || '-', class: 'result-safe' };
+            const r = riskMap[riskLevel] || { text: riskLevel, class: 'result-safe' };
             return `<span class="result-badge ${r.class}">${r.text}</span>`;
         }
 

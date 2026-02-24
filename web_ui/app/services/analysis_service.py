@@ -239,16 +239,15 @@ class AnalysisService:
                         "risk_level": risk_level
                     }
                 else:
-                    # File has no result row yet - shouldn't happen with new flow
-                    # but handle gracefully
+                    # File has no result row yet - show pending status without risk assessment
                     file_status = "pending"
                     
                     result_dict = {
                         "filename": filename,
                         "stt_text": None,
                         "status": file_status,
-                        "confidence": 0,
-                        "risk_level": "safe"
+                        "confidence": None,
+                        "risk_level": None
                     }
                 
                 results_list.append(result_dict)
