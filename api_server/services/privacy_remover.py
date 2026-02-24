@@ -247,10 +247,10 @@ class GoogleGenerativeAIClient:
 
 
 class SimplePromptProcessor:
-    """간단한 프롬프트 처리기"""
+    """간단한 프롬프트 처리기 (scratch/prompt_test_all v6 버전 기반)"""
     
-    # 기본 프롬프트 템플릿 (scratch/prompt_test_all의 privacy_remover 프롬프트 로직 적용)
-    PRIVACY_REMOVER_DEFAULT = """당신은 고객 상담 기록에서 개인정보를 제거하는 전문가입니다.
+    # privacy_remover_default_v6.prompt 기반
+    PRIVACY_REMOVER_DEFAULT_V6 = """당신은 개인정보 보호 전문가입니다. 주어진 텍스트에서 개인정보를 제거하고 익명화하는 작업을 수행합니다.
 
 다음 텍스트를 분석하여 개인정보(전화번호, 이메일, 계좌번호, 주민등록번호 등)가 포함되어 있는지 확인하세요.
 
@@ -283,10 +283,12 @@ class SimplePromptProcessor:
 {usertxt}"""
 
     def __init__(self):
-        """프롬프트 처리기 초기화"""
+        """프롬프트 처리기 초기화 (v6 기본)"""
         self.prompts = {
-            'privacy_remover_default': self.PRIVACY_REMOVER_DEFAULT,
-            'privacy_remover_loosed_contact': self.PRIVACY_REMOVER_LOOSED_CONTACT
+            'privacy_remover_default': self.PRIVACY_REMOVER_DEFAULT_V6,
+            'privacy_remover_default_v6': self.PRIVACY_REMOVER_DEFAULT_V6,
+            'privacy_remover_loosed_contact': self.PRIVACY_REMOVER_LOOSED_CONTACT_V6,
+            'privacy_remover_loosed_contact_v6': self.PRIVACY_REMOVER_LOOSED_CONTACT_V6
         }
     
     def get_prompt(self, prompt_type: str, text: str) -> str:
@@ -302,7 +304,7 @@ class SimplePromptProcessor:
         """
         template = self.prompts.get(
             prompt_type, 
-            self.PRIVACY_REMOVER_DEFAULT
+            self.PRIVACY_REMOVER_DEFAULT_V6
         )
         return template.replace("{usertxt}", text)
 
@@ -313,7 +315,9 @@ class PrivacyRemoverService:
     def __init__(self):
         """서비스 초기화"""
         load_dotenv()
-        self.model_name = os.getenv("LLM_MODEL_NAME", "gpt-4o")
+        # LLM 모델: Qwen3-30B-A3B-Thinking-2507-FP8 (기본)
+        # 또는 환경변수로 override 가능
+        self.model_name = os.getenv("LLM_MODEL_NAME", "Qwen3-30B-A3B-Thinking-2507-FP8")
         self.llm_client = None
         self.prompt_processor = SimplePromptProcessor()
         self._initialized = False

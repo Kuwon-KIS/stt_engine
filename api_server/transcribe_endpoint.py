@@ -226,7 +226,7 @@ async def perform_stt(stt_instance, file_path_obj: Path, language: str, is_strea
 
 async def perform_privacy_removal(
     text: str,
-    prompt_type: str = "privacy_remover_default"
+    prompt_type: str = "privacy_remover_default_v6"
 ) -> Optional[PrivacyRemovalResult]:
     """
     Privacy Removal 수행
@@ -235,7 +235,8 @@ async def perform_privacy_removal(
     
     Args:
         text: 원본 텍스트
-        prompt_type: 프롬프트 타입 ('privacy_remover_default' 또는 'privacy_remover_loosed_contact')
+        prompt_type: 프롬프트 타입 ('privacy_remover_default_v6' 또는 'privacy_remover_loosed_contact_v6')
+                    (기본값: privacy_remover_default_v6 - scratch/prompt_test_all 최신 버전)
     
     Returns:
         PrivacyRemovalResult 또는 None
@@ -247,14 +248,14 @@ async def perform_privacy_removal(
         privacy_service = get_privacy_remover_service()
         await privacy_service.initialize()
         
-        # 프롬프트 타입 정규화
-        # 기본값: privacy_remover_default
-        if not prompt_type or prompt_type.startswith('privacy_remover_default'):
-            normalized_prompt_type = 'privacy_remover_default'
-        elif prompt_type.startswith('privacy_remover_loosed'):
-            normalized_prompt_type = 'privacy_remover_loosed_contact'
+        # 프롬프트 타입 정규화 (v6 버전 기본)
+        if not prompt_type:
+            normalized_prompt_type = 'privacy_remover_default_v6'
+        elif 'loosed' in prompt_type.lower():
+            normalized_prompt_type = 'privacy_remover_loosed_contact_v6'
         else:
-            normalized_prompt_type = 'privacy_remover_default'
+            # default로 시작하면 v6으로 통일
+            normalized_prompt_type = 'privacy_remover_default_v6'
         
         # 개인정보 제거 처리
         privacy_result = await privacy_service.remove_privacy_from_text(
