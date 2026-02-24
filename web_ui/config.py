@@ -86,6 +86,11 @@ ALLOWED_EXTENSIONS = {".wav", ".mp3", ".m4a", ".flac", ".ogg"}
 BATCH_PARALLEL_COUNT = int(os.getenv("BATCH_PARALLEL_COUNT", 2))
 BATCH_CHECK_INTERVAL = int(os.getenv("BATCH_CHECK_INTERVAL", 5))  # 초
 
+# 분석 작업 동시 처리 설정
+# 분석 중 동시에 처리할 최대 파일 개수 (기본값: 2)
+# 환경변수: MAX_CONCURRENT_ANALYSIS (예: 1, 2, 3, 4)
+MAX_CONCURRENT_ANALYSIS = int(os.getenv("MAX_CONCURRENT_ANALYSIS", 2))
+
 # 로깅 설정
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 LOG_FORMAT = "[%(asctime)s] %(levelname)s - %(name)s - %(message)s"

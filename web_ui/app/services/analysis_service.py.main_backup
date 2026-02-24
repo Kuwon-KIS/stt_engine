@@ -189,21 +189,14 @@ class AnalysisService:
                 AnalysisResult.job_id == job_id
             ).all()
             
-            # Count completed and processing files from DB status field
-            completed_files = sum(1 for r in results if r.status == 'completed')
-            processing_files = sum(1 for r in results if r.status == 'processing')
-            processed_files = completed_files + processing_files
+            processed_files = len(results)
+            progress = int((processed_files / total_files * 100)) if total_files > 0 else 0
             
-            # 현재 상태에 따라 진행률 계산
+            # 현재 상태에 따라 조정
             if job.status == "pending":
                 progress = 0
-            elif job.status == "processing":
-                # For processing jobs: calculate progress based on actual file statuses
-                progress = int(((completed_files + processing_files * 0.5) / total_files * 100)) if total_files > 0 else 0
             elif job.status == "completed":
                 progress = 100
-            else:
-                progress = int((processed_files / total_files * 100)) if total_files > 0 else 0
             
             # Build results dictionary for quick lookup
             results_dict = {result.file_id: result for result in results}
@@ -216,28 +209,19 @@ class AnalysisService:
             for filename in file_ids:
                 result = results_dict.get(filename)
                 
-                if result and result.status == 'completed':
-                    # File has completed analysis results
-                    file_status = result.status  # 'completed'
+                if result:
+                    # File has been processed - status is "completed"
+                    file_status = "completed"
                     
                     # Get confidence from metadata
                     confidence = result.stt_metadata.get("confidence", 0.5) if result.stt_metadata else 0.5
                     
-                    # Determine risk level based on detection results, NOT confidence
-                    # Check improper_detection_results and incomplete_detection_results
-                    risk_level = None
-                    if result.improper_detection_results:
-                        improper_detected = result.improper_detection_results.get("detected", False)
-                        if improper_detected:
-                            risk_level = "danger"  # 부당권유 발견
-                    
-                    if result.incomplete_detection_results and not risk_level:
-                        incomplete_detected = result.incomplete_detection_results.get("detected", False)
-                        if incomplete_detected:
-                            risk_level = "warning"  # 불완전판매 발견
-                    
-                    # Default to safe if no issues detected
-                    if not risk_level:
+                    # Determine risk level based on confidence value (lower confidence = higher risk)
+                    if confidence < 0.3:
+                        risk_level = "danger"
+                    elif confidence < 0.6:
+                        risk_level = "warning"
+                    else:
                         risk_level = "safe"
                     
                     result_dict = {
@@ -248,15 +232,20 @@ class AnalysisService:
                         "risk_level": risk_level
                     }
                 else:
-                    # File is pending, processing, or failed - no risk assessment yet
-                    file_status = result.status if result else "pending"
+                    # File not processed yet - determine status
+                    if job.status == "processing" and filename in current_processing_files:
+                        file_status = "processing"
+                    elif job.status == "processing":
+                        file_status = "pending"
+                    else:
+                        file_status = "pending"
                     
                     result_dict = {
                         "filename": filename,
                         "stt_text": None,
                         "status": file_status,
-                        "confidence": None,
-                        "risk_level": None
+                        "confidence": 0,
+                        "risk_level": "safe"
                     }
                 
                 results_list.append(result_dict)
@@ -268,7 +257,7 @@ class AnalysisService:
                 progress=progress,
                 current_file=list(current_processing_files) if current_processing_files else [],
                 total_files=total_files,
-                processed_files=completed_files,
+                processed_files=processed_files,
                 error_message=None,
                 started_at=job.started_at,
                 updated_at=job.completed_at or datetime.utcnow(),
@@ -568,28 +557,6 @@ class AnalysisService:
             logger.info(f"[process_analysis_sync] 처리할 파일 수: {total_files} (동시 처리)")
             logger.info(f"[process_analysis_sync] 최대 동시 처리 개수: {MAX_CONCURRENT_ANALYSIS}")
             
-            # === Create pending result rows upfront ===
-            # 각 파일에 대해 pending 상태의 result row 미리 생성
-            logger.info(f"[process_analysis_sync] pending result rows 생성 중...")
-            for filename in files:
-                existing = new_db.query(AnalysisResult).filter(
-                    AnalysisResult.job_id == job_id,
-                    AnalysisResult.file_id == filename
-                ).first()
-                
-                if not existing:
-                    pending_result = AnalysisResult(
-                        job_id=job_id,
-                        file_id=filename,
-                        status='pending',
-                        stt_text=None,
-                        stt_metadata=None
-                    )
-                    new_db.add(pending_result)
-            
-            new_db.commit()
-            logger.info(f"[process_analysis_sync] Created {total_files} pending result rows")
-            
             # Cycle through confidence values to ensure all risk levels appear (for testing)
             test_confidence_values = [0.2, 0.45, 0.8]  # danger, warning, safe
             
@@ -603,22 +570,6 @@ class AnalysisService:
                 async with semaphore:  # 세마포어로 동시 실행 개수 제한
                     wait_time = time.time() - start_wait
                     logger.info(f"[process_analysis_sync] 파일 처리 시작: {filename} (idx={idx}, 대기시간={wait_time:.2f}s, semaphore_value={semaphore._value})")
-                    
-                    # === Update status to 'processing' in DB ===
-                    from app.utils.db import SessionLocal as TempSessionLocal
-                    temp_db = TempSessionLocal()
-                    try:
-                        result = temp_db.query(AnalysisResult).filter(
-                            AnalysisResult.job_id == job_id,
-                            AnalysisResult.file_id == filename
-                        ).first()
-                        
-                        if result:
-                            result.status = 'processing'
-                            temp_db.commit()
-                            logger.info(f"[process_analysis_sync] {filename} status: pending → processing")
-                    finally:
-                        temp_db.close()
                     
                     # in-memory tracking 업데이트 (set에 파일 추가)
                     if job_id not in AnalysisService._current_processing:
@@ -651,70 +602,37 @@ class AnalysisService:
                         db_session = SessionLocal()
                         
                         try:
-                            # DB에서 기존 result를 조회 (pending 상태로 미리 생성되어 있어야 함)
-                            existing_result = db_session.query(AnalysisResult).filter(
-                                AnalysisResult.job_id == job_id,
-                                AnalysisResult.file_id == filename
-                            ).first()
-                            
                             if stt_result.get('success'):
                                 # STT 성공
                                 confidence = test_confidence_values[idx % len(test_confidence_values)]
-                                
-                                if existing_result:
-                                    # 기존 result 업데이트
-                                    existing_result.status = 'completed'
-                                    existing_result.stt_text = stt_result.get('text', '')
-                                    existing_result.stt_metadata = {
+                                result = AnalysisResult(
+                                    job_id=job_id,
+                                    file_id=filename,
+                                    stt_text=stt_result.get('text', ''),
+                                    stt_metadata={
                                         "duration": stt_result.get('duration_sec', 0),
                                         "language": stt_result.get('language', 'ko'),
                                         "backend": stt_result.get('backend', 'unknown'),
                                         "processing_steps": stt_result.get('processing_steps', {}),
                                         "confidence": confidence
                                     }
-                                    result = existing_result
-                                else:
-                                    # 없으면 새로 생성
-                                    result = AnalysisResult(
-                                        job_id=job_id,
-                                        file_id=filename,
-                                        status='completed',
-                                        stt_text=stt_result.get('text', ''),
-                                        stt_metadata={
-                                            "duration": stt_result.get('duration_sec', 0),
-                                            "language": stt_result.get('language', 'ko'),
-                                            "backend": stt_result.get('backend', 'unknown'),
-                                            "processing_steps": stt_result.get('processing_steps', {}),
-                                            "confidence": confidence
-                                        }
-                                    )
-                                    db_session.add(result)
+                                )
                             else:
                                 # STT 실패
-                                if existing_result:
-                                    existing_result.status = 'failed'
-                                    existing_result.stt_text = None
-                                    existing_result.stt_metadata = {
+                                result = AnalysisResult(
+                                    job_id=job_id,
+                                    file_id=filename,
+                                    stt_text=None,
+                                    stt_metadata={
                                         "error": stt_result.get('error', 'unknown'),
                                         "message": stt_result.get('message', '처리 실패')
                                     }
-                                    result = existing_result
-                                else:
-                                    result = AnalysisResult(
-                                        job_id=job_id,
-                                        file_id=filename,
-                                        status='failed',
-                                        stt_text=None,
-                                        stt_metadata={
-                                            "error": stt_result.get('error', 'unknown'),
-                                            "message": stt_result.get('message', '처리 실패')
-                                        }
-                                    )
-                                    db_session.add(result)
+                                )
                             
+                            db_session.add(result)
                             db_session.commit()
                             elapsed = time.time() - start_time
-                            logger.info(f"[process_analysis_sync] 결과 즉시 저장 완료: {filename}, status={result.status} (총처리시간={elapsed:.2f}s)")
+                            logger.info(f"[process_analysis_sync] 결과 즉시 저장 완료: {filename} (총처리시간={elapsed:.2f}s)")
                         
                         except Exception as db_error:
                             db_session.rollback()
