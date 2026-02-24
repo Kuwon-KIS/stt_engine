@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse
 
 from stt_utils import check_memory_available, check_audio_file
 from utils.performance_monitor import PerformanceMonitor
-from api_server.services.privacy_removal_service import get_privacy_removal_service
+from api_server.services.privacy_remover import get_privacy_remover_service
 from api_server.constants import (
     ProcessingStep,
     ClassificationCode,
@@ -226,10 +226,16 @@ async def perform_stt(stt_instance, file_path_obj: Path, language: str, is_strea
 
 async def perform_privacy_removal(
     text: str,
-    prompt_type: str
+    prompt_type: str = "privacy_remover_default"
 ) -> Optional[PrivacyRemovalResult]:
     """
     Privacy Removal 수행
+    
+    STT 결과 텍스트에서 개인정보를 마스킹합니다.
+    
+    Args:
+        text: 원본 텍스트
+        prompt_type: 프롬프트 타입 ('privacy_remover_default' 또는 'privacy_remover_loosed_contact')
     
     Returns:
         PrivacyRemovalResult 또는 None
@@ -237,27 +243,66 @@ async def perform_privacy_removal(
     try:
         logger.info(f"[API/Transcribe] Privacy Removal 시작 (텍스트 길이: {len(text)})")
         
-        privacy_service = await get_privacy_removal_service()
-        privacy_result = await privacy_service.remove_privacy_from_stt(
-            stt_text=text,
-            prompt_type=prompt_type
+        # PrivacyRemoverService 초기화
+        privacy_service = get_privacy_remover_service()
+        await privacy_service.initialize()
+        
+        # 프롬프트 타입 정규화
+        # 기본값: privacy_remover_default
+        if not prompt_type or prompt_type.startswith('privacy_remover_default'):
+            normalized_prompt_type = 'privacy_remover_default'
+        elif prompt_type.startswith('privacy_remover_loosed'):
+            normalized_prompt_type = 'privacy_remover_loosed_contact'
+        else:
+            normalized_prompt_type = 'privacy_remover_default'
+        
+        # 개인정보 제거 처리
+        privacy_result = await privacy_service.remove_privacy_from_text(
+            text=text,
+            prompt_type=normalized_prompt_type
         )
         
         if privacy_result.get('success', True):
-            logger.info(f"[API/Transcribe] ✅ Privacy Removal 완료")
+            logger.info(
+                f"[API/Transcribe] ✅ Privacy Removal 완료 "
+                f"(method={privacy_result.get('method')}, removed={privacy_result.get('removed_count')})"
+            )
+            
+            # 개인정보 제거 결과 반환
+            removed_items = privacy_result.get('removed_items', [])
+            privacy_exist = PrivacyExistence.YES.value if removed_items else PrivacyExistence.NO.value
+            
             return PrivacyRemovalResult(
-                privacy_exist=privacy_result.get('privacy_exist', PrivacyExistence.NO.value),
-                exist_reason=privacy_result.get('exist_reason', ''),
-                text=privacy_result.get('privacy_rm_text', text),
-                privacy_types=privacy_result.get('privacy_types', [])
+                privacy_exist=privacy_exist,
+                exist_reason=(
+                    f"{privacy_result.get('removed_count')}개의 개인정보 항목 마스킹 ({privacy_result.get('method')})"
+                    if removed_items else "개인정보 없음"
+                ),
+                text=privacy_result.get('text', text),
+                privacy_types=removed_items
             )
         else:
-            logger.warning(f"[API/Transcribe] Privacy Removal 실패: {privacy_result.get('exist_reason', '')}")
-            return None
+            logger.warning(f"[API/Transcribe] Privacy Removal 실패")
+            # 실패 시에도 원본 텍스트와 함께 반환
+            return PrivacyRemovalResult(
+                privacy_exist=PrivacyExistence.NO.value,
+                exist_reason="Privacy removal processing failed",
+                text=text,
+                privacy_types=[]
+            )
     
     except Exception as e:
-        logger.error(f"[API/Transcribe] Privacy Removal 오류: {type(e).__name__}: {e}", exc_info=True)
-        return None
+        logger.error(
+            f"[API/Transcribe] Privacy Removal 오류: {type(e).__name__}: {e}",
+            exc_info=True
+        )
+        # 에러 발생 시에도 원본 텍스트 반환
+        return PrivacyRemovalResult(
+            privacy_exist=PrivacyExistence.NO.value,
+            exist_reason=f"Error: {str(e)}",
+            text=text,
+            privacy_types=[]
+        )
 
 
 async def perform_classification(text: str, prompt_type: str) -> Optional[ClassificationResult]:
