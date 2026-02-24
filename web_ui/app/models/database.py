@@ -116,6 +116,12 @@ class AnalysisResult(Base):
     incomplete_detection_results = Column(JSON)
     # 불완전판매 탐지 결과 (위와 동일한 구조)
     
+    # === 상태 관리 ===
+    status = Column(String(20), default='pending')
+    # 결과 상태: 'pending' (대기), 'processing' (처리중), 'completed' (완료), 'failed' (실패)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # 마지막 업데이트 시간
+    
     created_at = Column(DateTime, default=datetime.utcnow)
     
     # 관계 설정
