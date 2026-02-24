@@ -1,8 +1,15 @@
 # Web UI - Local Development (Mac + Linux)
 #
 # Build: docker build -t stt-web-ui:local -f web_ui/docker/Dockerfile.web_ui.local .
-# Run: docker run -d --name stt-web-ui-local -p 8100:8100 \
+# Run (일반): docker run -d --name stt-web-ui-local -p 8100:8100 \
 #   -e STT_API_URL=http://host.docker.internal:8003 \
+#   -v $(pwd)/web_ui/data:/app/data \
+#   -v $(pwd)/web_ui/logs:/app/logs \
+#   stt-web-ui:local
+#
+# Run (마이그레이션 포함): docker run -d --name stt-web-ui-local -p 8100:8100 \
+#   -e STT_API_URL=http://host.docker.internal:8003 \
+#   -e RUN_MIGRATIONS=true \
 #   -v $(pwd)/web_ui/data:/app/data \
 #   -v $(pwd)/web_ui/logs:/app/logs \
 #   stt-web-ui:local
@@ -26,9 +33,14 @@ COPY web_ui/app/ ./app/
 COPY web_ui/utils/ ./utils/
 COPY web_ui/static/ ./static/
 COPY web_ui/templates/ ./templates/
+COPY web_ui/migrations/ ./migrations/
+COPY web_ui/docker/entrypoint.sh ./
 
 # Create directories
 RUN mkdir -p data/uploads data/results data/batch_input logs
+
+# Entrypoint script permissions
+RUN chmod +x entrypoint.sh
 
 # Environment
 ENV PYTHONUNBUFFERED=1
@@ -41,5 +53,5 @@ HEALTHCHECK --interval=60s --timeout=5s --retries=3 \
 # Port
 EXPOSE 8100
 
-# Run
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8100", "--reload"]
+# Run with entrypoint
+ENTRYPOINT ["./entrypoint.sh"]
