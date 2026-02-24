@@ -30,9 +30,8 @@ class AnalysisService:
     # 진행 중인 작업 추적
     _jobs: Dict[str, Dict] = {}
     
-    # In-memory tracker for currently processing files
-    # Format: {job_id: "current_filename.wav"}
-    _current_processing: Dict[str, str] = {}
+    # NOTE: Removed _current_processing in-memory tracker (Recommendation 2)
+    # Now using DB status field instead for persistent tracking
     
     @staticmethod
     def calculate_files_hash(file_list: List[str]) -> str:
@@ -181,15 +180,22 @@ class AnalysisService:
             file_ids = job.file_ids or []
             total_files = len(file_ids)
             
-            # Get currently processing file from in-memory tracker
-            current_processing_file = AnalysisService._current_processing.get(job_id)
-            
-            # 분석 결과 조회
+            # Query results from DB to check statuses (Recommendation 2)
             results = db.query(AnalysisResult).filter(
                 AnalysisResult.job_id == job_id
             ).all()
             
-            processed_files = len(results)
+            # Build results dictionary for quick lookup
+            results_dict = {result.file_id: result for result in results}
+            
+            # Get currently processing file from DB (replaces in-memory tracking)
+            current_processing_file = None
+            for result in results:
+                if result.status == 'processing':
+                    current_processing_file = result.file_id
+                    break
+            
+            processed_files = sum(1 for r in results if r.status == 'completed')
             progress = int((processed_files / total_files * 100)) if total_files > 0 else 0
             
             # 현재 상태에 따라 조정
@@ -197,9 +203,6 @@ class AnalysisService:
                 progress = 0
             elif job.status == "completed":
                 progress = 100
-            
-            # Build results dictionary for quick lookup
-            results_dict = {result.file_id: result for result in results}
             
             # 결과 데이터 준비 - include ALL files with their statuses
             results_list = []
@@ -210,8 +213,8 @@ class AnalysisService:
                 result = results_dict.get(filename)
                 
                 if result:
-                    # File has been processed - status is "completed"
-                    file_status = "completed"
+                    # Use DB status field (Recommendation 2)
+                    file_status = result.status  # 'pending', 'processing', 'completed', 'failed'
                     
                     # Get confidence from metadata
                     confidence = result.stt_metadata.get("confidence", 0.5) if result.stt_metadata else 0.5
@@ -232,18 +235,11 @@ class AnalysisService:
                         "risk_level": risk_level
                     }
                 else:
-                    # File not processed yet - determine status
-                    if job.status == "processing" and filename == current_processing_file:
-                        file_status = "processing"
-                    elif job.status == "processing":
-                        file_status = "pending"
-                    else:
-                        file_status = "pending"
-                    
+                    # File has no result row yet - shouldn't happen with new flow
                     result_dict = {
                         "filename": filename,
                         "stt_text": None,
-                        "status": file_status,
+                        "status": "pending",
                         "confidence": 0,
                         "risk_level": "safe"
                     }
@@ -549,11 +545,33 @@ class AnalysisService:
             
             if job:
                 job.status = "processing"
+                job.started_at = datetime.utcnow()
                 new_db.commit()
                 logger.info(f"[process_analysis_sync] job status: pending → processing")
             
             total_files = len(files)
             logger.info(f"[process_analysis_sync] 처리할 파일 수: {total_files}")
+            
+            # === Recommendation 2: Create pending result rows upfront ===
+            logger.info(f"[process_analysis_sync] Creating pending result rows...")
+            for filename in files:
+                existing = new_db.query(AnalysisResult).filter(
+                    AnalysisResult.job_id == job_id,
+                    AnalysisResult.file_id == filename
+                ).first()
+                
+                if not existing:
+                    pending_result = AnalysisResult(
+                        job_id=job_id,
+                        file_id=filename,
+                        status='pending',
+                        stt_text=None,
+                        stt_metadata=None
+                    )
+                    new_db.add(pending_result)
+            
+            new_db.commit()
+            logger.info(f"[process_analysis_sync] Created {len(files)} pending result rows")
             
             # Cycle through confidence values to ensure all risk levels appear (for testing)
             test_confidence_values = [0.2, 0.45, 0.8]  # danger, warning, safe
@@ -563,9 +581,30 @@ class AnalysisService:
                 try:
                     logger.info(f"[process_analysis_sync] 파일 처리: {filename}")
                     
-                    # Track current processing file in memory
-                    AnalysisService._current_processing[job_id] = filename
-                    logger.info(f"[process_analysis_sync] {filename} status: → processing (in-memory)")
+                    # === Recommendation 2: Update status to 'processing' ===
+                    result = new_db.query(AnalysisResult).filter(
+                        AnalysisResult.job_id == job_id,
+                        AnalysisResult.file_id == filename
+                    ).first()
+                    
+                    if result:
+                        result.status = 'processing'
+                        new_db.commit()
+                        logger.info(f"[process_analysis_sync] {filename} status: pending → processing")
+                    
+                    # === Recommendation 4: Write to progress table (start) ===
+                    progress_record = AnalysisProgress(
+                        job_id=job_id,
+                        file_id=filename,
+                        step='stt',
+                        progress_percent=0,
+                        status='processing',
+                        message=f'STT 처리 시작: {filename}',
+                        timestamp=datetime.utcnow()
+                    )
+                    new_db.add(progress_record)
+                    new_db.commit()
+                    logger.info(f"[process_analysis_sync] Progress record created for {filename}")
                     
                     # 파일 경로
                     user_dir = get_user_upload_dir(emp_id)
@@ -583,39 +622,48 @@ class AnalysisService:
                     
                     logger.info(f"[process_analysis_sync] STT 결과: {filename}, success={stt_result.get('success')}")
                     
+                    # === Recommendation 4: Update progress table (STT complete) ===
+                    progress_record.step = 'stt'
+                    progress_record.progress_percent = 100
+                    progress_record.status = 'completed' if stt_result.get('success') else 'failed'
+                    progress_record.message = 'STT 처리 완료' if stt_result.get('success') else 'STT 처리 실패'
+                    progress_record.timestamp = datetime.utcnow()
+                    new_db.commit()
+                    
+                    # === Recommendation 2: Update existing result row ===
+                    result = new_db.query(AnalysisResult).filter(
+                        AnalysisResult.job_id == job_id,
+                        AnalysisResult.file_id == filename
+                    ).first()
+                    
                     # STT 성공 시 결과 저장
                     if stt_result.get('success'):
                         # Cycle through test confidence values to show all risk levels
                         confidence = test_confidence_values[idx % len(test_confidence_values)]
                         
-                        result = AnalysisResult(
-                            job_id=job_id,
-                            file_id=filename,
-                            stt_text=stt_result.get('text', ''),
-                            stt_metadata={
+                        if result:
+                            result.status = 'completed'
+                            result.stt_text = stt_result.get('text', '')
+                            result.stt_metadata = {
                                 "duration": stt_result.get('duration_sec', 0),
                                 "language": stt_result.get('language', 'ko'),
                                 "backend": stt_result.get('backend', 'unknown'),
                                 "processing_steps": stt_result.get('processing_steps', {}),
                                 "confidence": confidence  # Cycling confidence for testing all risk levels
                             }
-                        )
                     else:
                         # STT 실패 시에도 결과 기록
-                        result = AnalysisResult(
-                            job_id=job_id,
-                            file_id=filename,
-                            stt_text=None,
-                            stt_metadata={
+                        if result:
+                            result.status = 'failed'
+                            result.stt_text = None
+                            result.stt_metadata = {
                                 "error": stt_result.get('error', 'unknown'),
                                 "message": stt_result.get('message', '처리 실패'),
                                 "backend": stt_result.get('backend', 'unknown')
                             }
-                        )
                     
-                    new_db.add(result)
                     new_db.commit()
-                    logger.info(f"[process_analysis_sync] 결과 저장: {filename}")
+                    logger.info(f"[process_analysis_sync] 결과 저장: {filename}, status={result.status if result else 'N/A'}")
                 
                 except Exception as e:
                     logger.error(f"[process_analysis_sync] 파일 처리 실패: {filename}, {str(e)}", exc_info=True)
@@ -626,11 +674,6 @@ class AnalysisService:
                 job.completed_at = datetime.utcnow()
                 new_db.commit()
                 logger.info(f"[process_analysis_sync] job status: processing → completed")
-            
-            # Clear in-memory tracking
-            if job_id in AnalysisService._current_processing:
-                del AnalysisService._current_processing[job_id]
-                logger.info(f"[process_analysis_sync] Cleared in-memory tracking for {job_id}")
             
             logger.info(f"[process_analysis_sync] 분석 완료: job_id={job_id}")
         
