@@ -35,7 +35,7 @@ from stt_utils import check_memory_available, check_audio_file
 from utils.performance_monitor import PerformanceMonitor
 from api_server.constants import ErrorCode
 from api_server.services.privacy_remover import (
-    PrivacyRemovalService,
+    PrivacyRemoverService,
     _async_get_privacy_remover_service
 )
 from api_server.transcribe_endpoint import (
@@ -1668,7 +1668,7 @@ async def process_privacy_removal(
     prompt_type: str = Query("privacy_remover_default_v6", description="프롬프트 타입"),
     max_tokens: int = Query(8192, description="최대 토큰 수"),
     temperature: float = Query(0.3, description="LLM 온도"),
-    service: PrivacyRemovalService = Depends(_async_get_privacy_remover_service)
+    service: PrivacyRemoverService = Depends(_async_get_privacy_remover_service)
 ):
     """
     텍스트에서 개인정보를 제거합니다.
@@ -1733,7 +1733,7 @@ async def process_privacy_removal(
 
 @app.get("/api/privacy-removal/prompts")
 async def list_available_prompts(
-    service: PrivacyRemovalService = Depends(_async_get_privacy_remover_service)
+    service: PrivacyRemoverService = Depends(_async_get_privacy_remover_service)
 ):
     """
     사용 가능한 프롬프트 타입 목록을 반환합니다.
