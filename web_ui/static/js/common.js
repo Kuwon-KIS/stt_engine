@@ -109,7 +109,7 @@ function showNotification(message, type = 'info', duration = 5000) {
         notifContainer.id = 'notification-container';
         notifContainer.style.cssText = `
             position: fixed;
-            top: 20px;
+            top: 80px;
             right: 20px;
             z-index: 9999;
             max-width: 400px;
@@ -126,8 +126,10 @@ function showNotification(message, type = 'info', duration = 5000) {
         border-radius: 6px;
         margin-bottom: 10px;
         font-size: 14px;
+        font-weight: 500;
         animation: slideIn 0.3s ease-out;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        min-width: 250px;
     `;
 
     // 타입별 배경색
