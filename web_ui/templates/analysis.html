@@ -595,6 +595,107 @@
         #filterSection {
             border-left: 4px solid #667eea;
         }
+
+        /* Checkbox selection styles */
+        .checkbox-cell {
+            text-align: center;
+            padding: 8px;
+        }
+
+        .file-checkbox {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .selection-controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            background-color: #f8f9fa;
+            border-radius: 6px;
+            margin-bottom: 15px;
+        }
+
+        .selection-count {
+            font-size: 14px;
+            color: #495057;
+            font-weight: 500;
+        }
+
+        .btn-rerun {
+            background-color: #ff9800;
+            color: white;
+            padding: 8px 16px;
+            font-size: 14px;
+            white-space: nowrap;
+        }
+
+        .btn-rerun:hover:not(:disabled) {
+            background-color: #f57c00;
+        }
+
+        .btn-rerun:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .btn-select-all {
+            background-color: #6c757d;
+            color: white;
+            padding: 6px 12px;
+            font-size: 13px;
+        }
+
+        .btn-select-all:hover {
+            background-color: #5a6268;
+        }
+
+        /* Table control bar */
+        .table-control-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background-color: #f8f9fa;
+            border-bottom: 2px solid #e9ecef;
+            border-radius: 8px 8px 0 0;
+        }
+
+        .btn-control {
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: background-color 0.2s;
+        }
+
+        .btn-control:hover {
+            background-color: #5a6268;
+        }
+
+        .btn-control-rerun {
+            background-color: #ff9800;
+        }
+
+        .btn-control-rerun:hover:not(:disabled) {
+            background-color: #f57c00;
+        }
+
+        .btn-control-rerun:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .table-container table {
+            border-radius: 0 0 8px 8px;
+        }
     </style>
 </head>
 <body>
@@ -684,8 +785,8 @@
                         <span>완료</span>
                     </label>
                     <label class="filter-radio">
-                        <input type="radio" name="statusFilter" value="error">
-                        <span>오류</span>
+                        <input type="radio" name="statusFilter" value="failed">
+                        <span>실패</span>
                     </label>
                 </div>
                 
@@ -723,15 +824,30 @@
 
         <!-- 결과 테이블 -->
         <div class="table-container">
+            <!-- 테이블 컨트롤 바 -->
+            <div class="table-control-bar">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <button onclick="selectAllFiltered()" class="btn-control">전체선택</button>
+                    <button onclick="deselectAll()" class="btn-control">선택해제</button>
+                    <span class="selection-count">선택: <strong id="selectedCount">0</strong>개</span>
+                </div>
+                <button class="btn-control btn-control-rerun" id="rerunBtn" onclick="rerunSelectedFiles()" disabled>
+                    선택 파일 재실행 (<span id="selectedCountBadge">0</span>)
+                </button>
+            </div>
+            
             <table>
                 <thead>
                     <tr>
+                        <th style="width: 4%">
+                            <input type="checkbox" id="selectAllCheckbox" class="file-checkbox" onchange="toggleSelectAll()" style="visibility: hidden;">
+                        </th>
                         <th style="width: 5%">번호</th>
-                        <th style="width: 20%">파일명</th>
-                        <th style="width: 25%">오디오</th>
+                        <th style="width: 18%">파일명</th>
+                        <th style="width: 22%">오디오</th>
                         <th style="width: 15%">STT 변환</th>
                         <th style="width: 15%">분석 상태</th>
-                        <th style="width: 20%">판매 탐지</th>
+                        <th style="width: 21%">판매 탐지</th>
                     </tr>
                 </thead>
                 <tbody id="analysisTableBody">
@@ -799,6 +915,9 @@
             status: 'all',
             risk: 'all'
         };
+        let selectedFiles = new Set(); // Track selected filenames
+        let currentIncludeClassification = false;
+        let currentIncludeValidation = false;
 
         async function initPage() {
             // URL에서 job_id 추출
@@ -835,6 +954,8 @@
                 }
 
                 console.log('분석 진행 상황:', data);
+                console.log('Results 데이터:', data.results);
+                console.log('Results 개수:', data.results ? data.results.length : 0);
 
                 // 폴더 정보 업데이트
                 if (data.folder_path) {
@@ -884,7 +1005,6 @@
                     document.getElementById('completedText').textContent = `${data.total_files}개 파일 처리 완료`;
                     clearInterval(progressInterval);
                     showNotification('분석이 완료되었습니다', 'success');
-                    renderResults(data.results || []);
                 } else if (data.status === 'failed') {
                     document.getElementById('loadingSection').style.display = 'none';
                     document.getElementById('completedSection').style.display = 'none';
@@ -892,10 +1012,8 @@
                     clearInterval(progressInterval);
                 }
 
-                // 결과가 있으면 렌더링
-                if (data.results && data.results.length > 0) {
-                    renderResults(data.results);
-                }
+                // ALWAYS render results (even if empty) for real-time updates
+                renderResults(data.results || []);
             } catch (error) {
                 console.error('진행률 조회 에러:', error);
             }
@@ -916,10 +1034,13 @@
                 document.getElementById('filterSection').style.display = 'block';
             }
             
+            // Update selection UI (count, button state, etc.)
+            updateSelectionUI();
+            
             const tbody = document.getElementById('analysisTableBody');
             
             if (filteredResults.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="empty-state">필터 조건에 맞는 결과가 없습니다</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" class="empty-state">필터 조건에 맞는 결과가 없습니다</td></tr>';
                 return;
             }
 
@@ -929,7 +1050,7 @@
                 // Only show risk badge if status is 'completed'
                 const riskBadge = result.status === 'completed' 
                     ? getRiskBadge(result.risk_level) 
-                    : '<span class="result-badge" style="background-color: #f5f5f5; color: #999;">분석중</span>';
+                    : '<span class="result-badge" style="background-color: #f5f5f5; color: #999;">-</span>';
                 
                 // 오디오 파일 경로 구성
                 const audioUrl = `/api/files/audio/${currentEmpId}/${currentFolderPath}/${encodeURIComponent(result.filename)}`;
@@ -944,8 +1065,13 @@
                     </div>
                 `;
 
+                // Checkbox - checked if in selectedFiles Set
+                const isChecked = selectedFiles.has(result.filename) ? 'checked' : '';
+                const checkbox = `<input type="checkbox" class="file-checkbox" data-filename="${result.filename}" ${isChecked} onchange="handleFileCheckbox('${result.filename}', this.checked)">`;
+
                 return `
                 <tr>
+                    <td class="checkbox-cell">${checkbox}</td>
                     <td>${index + 1}</td>
                     <td>${result.filename}</td>
                     <td>${audioPlayer}</td>
@@ -1020,7 +1146,7 @@
                 'pending': { text: '대기중', class: 'status-pending' },
                 'processing': { text: '분석중', class: 'status-running' },
                 'completed': { text: '완료', class: 'status-completed' },
-                'error': { text: '오류', class: 'status-error' }
+                'failed': { text: '실패', class: 'status-error' }
             };
 
             const s = statusMap[status] || { text: status, class: 'status-pending' };
@@ -1039,7 +1165,11 @@
                 'danger': { text: '부당권유 발견', class: 'result-danger' }
             };
 
-            const r = riskMap[riskLevel] || { text: riskLevel, class: 'result-safe' };
+            // Only show mapped values, otherwise show "-"
+            const r = riskMap[riskLevel];
+            if (!r) {
+                return '<span class="result-badge result-safe">-</span>';
+            }
             return `<span class="result-badge ${r.class}">${r.text}</span>`;
         }
 
@@ -1281,6 +1411,115 @@
                 closeSttTextModal();
             }
         });
+
+        // ===== CHECKBOX AND RERUN FUNCTIONS =====
+
+        function handleFileCheckbox(filename, isChecked) {
+            if (isChecked) {
+                selectedFiles.add(filename);
+            } else {
+                selectedFiles.delete(filename);
+            }
+            updateSelectionUI();
+        }
+
+        function toggleSelectAll() {
+            const checkbox = document.getElementById('selectAllCheckbox');
+            const filteredResults = applyFilters(allResults);
+            
+            if (checkbox.checked) {
+                // Add all filtered files to selection
+                filteredResults.forEach(result => {
+                    selectedFiles.add(result.filename);
+                });
+            } else {
+                // Remove all filtered files from selection
+                filteredResults.forEach(result => {
+                    selectedFiles.delete(result.filename);
+                });
+            }
+            
+            // Re-render to update checkbox states
+            renderResults(allResults);
+            updateSelectionUI();
+        }
+
+        function selectAllFiltered() {
+            const filteredResults = applyFilters(allResults);
+            filteredResults.forEach(result => {
+                selectedFiles.add(result.filename);
+            });
+            renderResults(allResults);
+            updateSelectionUI();
+        }
+
+        function deselectAll() {
+            selectedFiles.clear();
+            document.getElementById('selectAllCheckbox').checked = false;
+            renderResults(allResults);
+            updateSelectionUI();
+        }
+
+        function updateSelectionUI() {
+            const count = selectedFiles.size;
+            document.getElementById('selectedCount').textContent = count;
+            document.getElementById('selectedCountBadge').textContent = count;
+            
+            const rerunBtn = document.getElementById('rerunBtn');
+            rerunBtn.disabled = count === 0;
+            
+            // Update "select all" checkbox state
+            const filteredResults = applyFilters(allResults);
+            const allFilteredSelected = filteredResults.length > 0 && 
+                filteredResults.every(r => selectedFiles.has(r.filename));
+            document.getElementById('selectAllCheckbox').checked = allFilteredSelected;
+        }
+
+        async function rerunSelectedFiles() {
+            if (selectedFiles.size === 0) {
+                showNotification('재실행할 파일을 선택하세요', 'warning');
+                return;
+            }
+            
+            const confirmed = confirm(`선택한 ${selectedFiles.size}개 파일을 재분석하시겠습니까?`);
+            if (!confirmed) return;
+            
+            try {
+                const selectedFilesArray = Array.from(selectedFiles);
+                
+                const response = await apiCall('/api/analysis/rerun', 'POST', {
+                    job_id: currentJobId,
+                    filenames: selectedFilesArray,
+                    folder_path: currentFolderPath,
+                    include_classification: currentIncludeClassification,
+                    include_validation: currentIncludeValidation
+                });
+                
+                if (response && response.success) {
+                    showNotification(`재분석 시작: ${response.file_count}개 파일`, 'success');
+                    
+                    // Clear selection and stay on the same page
+                    selectedFiles.clear();
+                    updateSelectionUI();
+                    
+                    // Restart polling interval for real-time updates
+                    if (progressInterval) {
+                        clearInterval(progressInterval);
+                    }
+                    progressInterval = setInterval(checkProgress, 2000);
+                    
+                    // Force immediate progress check to see the reset files
+                    setTimeout(() => {
+                        checkProgress();
+                    }, 500);
+                } else {
+                    showNotification('재분석 시작 실패', 'error');
+                }
+            } catch (error) {
+                console.error('재분석 요청 에러:', error);
+                showNotification('재분석 요청 중 오류 발생', 'error');
+            }
+        }
     </script>
 </body>
 </html>

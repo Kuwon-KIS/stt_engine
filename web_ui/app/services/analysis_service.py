@@ -23,6 +23,9 @@ from app.utils.file_utils import get_user_upload_dir
 from app.services.stt_service import stt_service
 from config import STT_API_URL, MAX_CONCURRENT_ANALYSIS
 
+# Test configuration - set to 0 to disable, or value between 0.0-1.0 for failure rate
+TEST_FAILURE_RATE = 0.40 # 0.25 = 25% failure rate for testing
+
 
 class AnalysisService:
     """분석 서비스"""
@@ -569,8 +572,8 @@ class AnalysisService:
             logger.info(f"[process_analysis_sync] 최대 동시 처리 개수: {MAX_CONCURRENT_ANALYSIS}")
             
             # === Create pending result rows upfront ===
-            # 각 파일에 대해 pending 상태의 result row 미리 생성
-            logger.info(f"[process_analysis_sync] pending result rows 생성 중...")
+            # 각 파일에 대해 pending 상태의 result row 미리 생성 (재실행 시는 이미 리셋됨)
+            logger.info(f"[process_analysis_sync] pending result rows 확인 중...")
             for filename in files:
                 existing = new_db.query(AnalysisResult).filter(
                     AnalysisResult.job_id == job_id,
@@ -578,6 +581,7 @@ class AnalysisService:
                 ).first()
                 
                 if not existing:
+                    # 새로운 파일인 경우에만 생성
                     pending_result = AnalysisResult(
                         job_id=job_id,
                         file_id=filename,
@@ -586,9 +590,12 @@ class AnalysisService:
                         stt_metadata=None
                     )
                     new_db.add(pending_result)
+                    logger.info(f"[process_analysis_sync] Created new result row for {filename}")
+                else:
+                    logger.info(f"[process_analysis_sync] Result row already exists for {filename} (status={existing.status})")
             
             new_db.commit()
-            logger.info(f"[process_analysis_sync] Created {total_files} pending result rows")
+            logger.info(f"[process_analysis_sync] Ready to process {total_files} files")
             
             # Cycle through confidence values to ensure all risk levels appear (for testing)
             test_confidence_values = [0.2, 0.45, 0.8]  # danger, warning, safe
@@ -628,21 +635,29 @@ class AnalysisService:
                     db_session = None
                     start_time = time.time()
                     try:
-                        
-                        # 파일 경로
-                        user_dir = get_user_upload_dir(emp_id)
-                        file_path = user_dir / folder_path / filename
-                        
-                        # STT API 호출 (순서: STT → privacy_removal → agent)
-                        stt_result = await stt_service.transcribe_local_file(
-                            file_path=str(file_path),
-                            language="ko",
-                            is_stream=False,
-                            privacy_removal=True,  # privacy_removal 항상 수행
-                            classification=False,
-                            ai_agent=include_classification,  # agent는 선택에 따라
-                            incomplete_elements_check=include_validation
-                        )
+                        # === TEST MODE: Random failure simulation ===
+                        if TEST_FAILURE_RATE > 0 and random.random() < TEST_FAILURE_RATE:
+                            logger.warning(f"[TEST MODE] Simulating failure for {filename} (failure_rate={TEST_FAILURE_RATE})")
+                            stt_result = {
+                                "success": False,
+                                "error": "simulated_test_failure",
+                                "message": f"테스트 모드 실패 (failure_rate={TEST_FAILURE_RATE})"
+                            }
+                        else:
+                            # 파일 경로
+                            user_dir = get_user_upload_dir(emp_id)
+                            file_path = user_dir / folder_path / filename
+                            
+                            # STT API 호출 (순서: STT → privacy_removal → agent)
+                            stt_result = await stt_service.transcribe_local_file(
+                                file_path=str(file_path),
+                                language="ko",
+                                is_stream=False,
+                                privacy_removal=True,  # privacy_removal 항상 수행
+                                classification=False,
+                                ai_agent=include_classification,  # agent는 선택에 따라
+                                incomplete_elements_check=include_validation
+                            )
                         
                         logger.info(f"[process_analysis_sync] STT 완료: {filename}, success={stt_result.get('success')}")
                         
@@ -800,12 +815,29 @@ class AnalysisService:
             failed_count = len(results) - saved_count
             logger.info(f"[process_analysis_sync] 저장 완료: {saved_count}개, 실패: {failed_count}개")
             
-            # 작업 완료 표시
+            # 작업 완료 여부 확인 - 모든 파일이 완료되었는지 체크
             if job:
-                job.status = "completed"
-                job.completed_at = datetime.utcnow()
-                new_db.commit()
-                logger.info(f"[process_analysis_sync] job status: processing → completed")
+                # 전체 job의 모든 파일 결과 확인
+                all_results = new_db.query(AnalysisResult).filter(
+                    AnalysisResult.job_id == job_id
+                ).all()
+                
+                total_count = len(all_results)
+                completed_count = sum(1 for r in all_results if r.status in ['completed', 'failed'])
+                pending_or_processing = total_count - completed_count
+                
+                logger.info(f"[process_analysis_sync] Job 전체 상태: {completed_count}/{total_count} 완료, {pending_or_processing} 진행중/대기중")
+                
+                # 모든 파일이 완료되었을 때만 job을 completed로 표시
+                if pending_or_processing == 0:
+                    job.status = "completed"
+                    job.completed_at = datetime.utcnow()
+                    new_db.commit()
+                    logger.info(f"[process_analysis_sync] job status: processing → completed (모든 파일 완료)")
+                else:
+                    # 일부 파일만 완료된 경우 processing 상태 유지
+                    logger.info(f"[process_analysis_sync] job status: processing 유지 (아직 {pending_or_processing}개 파일 남음)")
+
             
             logger.info(f"[process_analysis_sync] 분석 완료 (동시 처리): job_id={job_id}")
         
