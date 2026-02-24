@@ -576,7 +576,7 @@ class AnalysisService:
                         file_path=str(file_path),
                         language="ko",
                         is_stream=False,
-                        classification=include_classification,
+                        classification=False,
                         ai_agent=include_classification,
                         incomplete_elements_check=include_validation
                     ))
