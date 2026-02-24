@@ -23,6 +23,5 @@ echo "✅ Uvicorn 서버 시작 중..."
 exec uvicorn main:app \
     --host 0.0.0.0 \
     --port 8100 \
-    --workers 2 \
+    --workers 1 \
     --log-level info
-

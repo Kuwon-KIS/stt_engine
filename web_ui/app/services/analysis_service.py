@@ -216,19 +216,28 @@ class AnalysisService:
             for filename in file_ids:
                 result = results_dict.get(filename)
                 
-                if result:
-                    # Use DB status field for persistent state tracking
-                    file_status = result.status  # 'pending', 'processing', 'completed', 'failed'
+                if result and result.status == 'completed':
+                    # File has completed analysis results
+                    file_status = result.status  # 'completed'
                     
                     # Get confidence from metadata
                     confidence = result.stt_metadata.get("confidence", 0.5) if result.stt_metadata else 0.5
                     
-                    # Determine risk level based on confidence value (lower confidence = higher risk)
-                    if confidence < 0.3:
-                        risk_level = "danger"
-                    elif confidence < 0.6:
-                        risk_level = "warning"
-                    else:
+                    # Determine risk level based on detection results, NOT confidence
+                    # Check improper_detection_results and incomplete_detection_results
+                    risk_level = None
+                    if result.improper_detection_results:
+                        improper_detected = result.improper_detection_results.get("detected", False)
+                        if improper_detected:
+                            risk_level = "danger"  # 부당권유 발견
+                    
+                    if result.incomplete_detection_results and not risk_level:
+                        incomplete_detected = result.incomplete_detection_results.get("detected", False)
+                        if incomplete_detected:
+                            risk_level = "warning"  # 불완전판매 발견
+                    
+                    # Default to safe if no issues detected
+                    if not risk_level:
                         risk_level = "safe"
                     
                     result_dict = {
@@ -239,8 +248,8 @@ class AnalysisService:
                         "risk_level": risk_level
                     }
                 else:
-                    # File has no result row yet - show pending status without risk assessment
-                    file_status = "pending"
+                    # File is pending, processing, or failed - no risk assessment yet
+                    file_status = result.status if result else "pending"
                     
                     result_dict = {
                         "filename": filename,
