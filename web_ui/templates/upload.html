@@ -516,7 +516,10 @@
             <div class="file-list">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                     <h2 id="fileListTitle" style="margin: 0;">📄 파일 목록</h2>
-                    <button class="action-button primary-button" onclick="startAnalysis()" id="startAnalysisBtn" disabled style="display: none; font-size: 13px; padding: 8px 16px;">분석 시작</button>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <button class="action-button" onclick="deleteAllFiles()" id="deleteAllBtn" disabled style="font-size: 13px; padding: 10px 20px; background-color: #ff6b6b; color: white;">전체 삭제</button>
+                        <button class="action-button primary-button" onclick="startAnalysis()" id="startAnalysisBtn" disabled style="display: none; font-size: 13px; padding: 10px 20px;">분석 시작</button>
+                    </div>
                 </div>
                 <table class="file-table" id="fileTable">
                     <thead>
@@ -671,6 +674,7 @@
         // 파일 렌더링
         function renderFiles(files) {
             const tbody = document.getElementById('fileTableBody');
+            const deleteAllBtn = document.getElementById('deleteAllBtn');
             
             if (files.length === 0) {
                 tbody.innerHTML = `
@@ -682,6 +686,7 @@
                 `;
                 document.getElementById('startAnalysisBtn').style.display = 'none';
                 document.getElementById('startAnalysisBtn').disabled = true;
+                deleteAllBtn.disabled = true;
                 return;
             }
             
@@ -702,6 +707,9 @@
             // 분석 시작 버튼 활성화
             document.getElementById('startAnalysisBtn').style.display = 'inline-block';
             document.getElementById('startAnalysisBtn').disabled = false;
+            
+            // 전체 삭제 버튼 활성화
+            deleteAllBtn.disabled = false;
         }
 
         // 드래그 앤 드롭 처리
@@ -810,6 +818,62 @@
                 showNotification(error.message, 'error');
                 document.getElementById('uploadProgress').classList.remove('show');
             }
+        }
+
+        // 전체 파일 삭제
+        async function deleteAllFiles() {
+            if (!currentFolder) {
+                showNotification('먼저 폴더를 선택해주세요', 'warning');
+                return;
+            }
+
+            // 현재 폴더의 파일 목록 가져오기
+            const tbody = document.getElementById('fileTableBody');
+            const rows = tbody.querySelectorAll('tr');
+            const fileCount = rows.length;
+
+            if (fileCount === 0 || rows[0].querySelector('.empty-state')) {
+                showNotification('삭제할 파일이 없습니다', 'warning');
+                return;
+            }
+
+            if (!confirm(`현재 폴더의 모든 파일(${fileCount}개)을 삭제하시겠습니까?`)) return;
+
+            let successCount = 0;
+            let failCount = 0;
+
+            // 모든 파일 삭제
+            for (const row of rows) {
+                const cells = row.querySelectorAll('td');
+                if (cells.length >= 1 && !row.querySelector('.empty-state')) {
+                    const filename = cells[0].textContent.trim();
+                    try {
+                        const url = `/api/files/${encodeURIComponent(filename)}?folder_path=${encodeURIComponent(currentFolder)}`;
+                        const response = await fetch(url, {
+                            method: 'DELETE',
+                            credentials: 'include'
+                        });
+
+                        if (response.ok) {
+                            successCount++;
+                        } else {
+                            failCount++;
+                        }
+                    } catch (error) {
+                        console.error('파일 삭제 에러:', filename, error);
+                        failCount++;
+                    }
+                }
+            }
+
+            if (successCount > 0) {
+                showNotification(`${successCount}개 파일이 삭제되었습니다${failCount > 0 ? ` (실패: ${failCount}개)` : ''}`, 'success');
+            } else {
+                showNotification('파일 삭제에 실패했습니다', 'error');
+            }
+
+            loadFiles();
+            loadFolders();
         }
 
         // 파일 삭제
