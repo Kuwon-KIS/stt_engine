@@ -31,8 +31,8 @@ class AnalysisService:
     _jobs: Dict[str, Dict] = {}
     
     # In-memory tracker for currently processing files
-    # Format: {job_id: "current_filename.wav"}
-    _current_processing: Dict[str, str] = {}
+    # Format: {job_id: {"file1.wav", "file2.wav"}} - set of files being processed concurrently
+    _current_processing: Dict[str, set] = {}
     
     @staticmethod
     def calculate_files_hash(file_list: List[str]) -> str:
@@ -181,8 +181,8 @@ class AnalysisService:
             file_ids = job.file_ids or []
             total_files = len(file_ids)
             
-            # Get currently processing file from in-memory tracker
-            current_processing_file = AnalysisService._current_processing.get(job_id)
+            # Get currently processing files (set) from in-memory tracker
+            current_processing_files = AnalysisService._current_processing.get(job_id, set())
             
             # 분석 결과 조회
             results = db.query(AnalysisResult).filter(
@@ -233,7 +233,7 @@ class AnalysisService:
                     }
                 else:
                     # File not processed yet - determine status
-                    if job.status == "processing" and filename == current_processing_file:
+                    if job.status == "processing" and filename in current_processing_files:
                         file_status = "processing"
                     elif job.status == "processing":
                         file_status = "pending"
@@ -255,7 +255,7 @@ class AnalysisService:
                 folder_path=job.folder_path,
                 status=job.status,
                 progress=progress,
-                current_file=current_processing_file,
+                current_file=list(current_processing_files) if current_processing_files else [],
                 total_files=total_files,
                 processed_files=processed_files,
                 error_message=None,
@@ -571,11 +571,14 @@ class AnalysisService:
                     wait_time = time.time() - start_wait
                     logger.info(f"[process_analysis_sync] 파일 처리 시작: {filename} (idx={idx}, 대기시간={wait_time:.2f}s, semaphore_value={semaphore._value})")
                     
+                    # in-memory tracking 업데이트 (set에 파일 추가)
+                    if job_id not in AnalysisService._current_processing:
+                        AnalysisService._current_processing[job_id] = set()
+                    AnalysisService._current_processing[job_id].add(filename)
+                    
                     db_session = None
                     start_time = time.time()
                     try:
-                        # in-memory tracking 업데이트
-                        AnalysisService._current_processing[job_id] = filename
                         
                         # 파일 경로
                         user_dir = get_user_upload_dir(emp_id)
@@ -636,6 +639,9 @@ class AnalysisService:
                             raise
                         finally:
                             db_session.close()
+                            # in-memory tracking에서 파일 제거 (처리 완료)
+                            if job_id in AnalysisService._current_processing:
+                                AnalysisService._current_processing[job_id].discard(filename)
                         
                         return {
                             "idx": idx,
@@ -671,6 +677,9 @@ class AnalysisService:
                             logger.error(f"[process_analysis_sync] 에러 결과 저장 실패: {str(db_error)}", exc_info=True)
                         finally:
                             db_session.close()
+                            # in-memory tracking에서 파일 제거 (처리 완료/실패)
+                            if job_id in AnalysisService._current_processing:
+                                AnalysisService._current_processing[job_id].discard(filename)
                         
                         return {
                             "idx": idx,

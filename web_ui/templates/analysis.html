@@ -731,11 +731,13 @@
                 document.getElementById('progressFill').style.width = `${progress}%`;
                 document.getElementById('progressText').textContent = `${progress}% (${data.processed_files}/${data.total_files})`;
                 
-                // 현재 처리 중인 파일 표시
-                if (data.current_file) {
+                // 현재 처리 중인 파일들 표시 (배열일 수 있음)
+                if (data.current_file && data.current_file.length > 0) {
                     const currentFileEl = document.getElementById('currentFile');
                     if (currentFileEl) {
-                        currentFileEl.textContent = `현재 처리: ${data.current_file}`;
+                        // current_file이 배열이므로 join으로 처리
+                        const fileList = Array.isArray(data.current_file) ? data.current_file.join(', ') : data.current_file;
+                        currentFileEl.textContent = `현재 처리: ${fileList}`;
                         currentFileEl.style.display = 'block';
                     }
                 }
