@@ -84,8 +84,8 @@ class AnalysisService:
             if not files:
                 raise ValueError("분석할 파일이 없습니다")
             
-            # 파일 목록과 해시 계산
-            file_list = [f.filename for f in files]
+            # 파일 목록과 해시 계산 (중복 제거)
+            file_list = list(set([f.filename for f in files]))  # 중복 제거
             current_hash = AnalysisService.calculate_files_hash(file_list)
             
             # 마지막 완료된 분석 찾기
