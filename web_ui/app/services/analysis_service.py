@@ -560,12 +560,16 @@ class AnalysisService:
             # Cycle through confidence values to ensure all risk levels appear (for testing)
             test_confidence_values = [0.2, 0.45, 0.8]  # danger, warning, safe
             
-            # 비동기 함수로 파일 처리
+            # 비동기 함수로 파일 처리 (결과는 즉시 DB에 저장)
             async def process_single_file(idx: int, filename: str, semaphore: asyncio.Semaphore):
-                """개별 파일 처리 (세마포어로 동시성 제어)"""
+                """개별 파일 처리 (세마포어로 동시성 제어, 결과 즉시 저장)"""
                 async with semaphore:  # 세마포어로 동시 실행 개수 제한
+                    db_session = None
                     try:
                         logger.info(f"[process_analysis_sync] 파일 처리 시작: {filename} (idx={idx})")
+                        
+                        # in-memory tracking 업데이트
+                        AnalysisService._current_processing[job_id] = filename
                         
                         # 파일 경로
                         user_dir = get_user_upload_dir(emp_id)
@@ -583,20 +587,88 @@ class AnalysisService:
                         
                         logger.info(f"[process_analysis_sync] STT 완료: {filename}, success={stt_result.get('success')}")
                         
+                        # 결과를 즉시 DB에 저장 (동시성 제어 필요)
+                        from app.utils.db import SessionLocal
+                        db_session = SessionLocal()
+                        
+                        try:
+                            if stt_result.get('success'):
+                                # STT 성공
+                                confidence = test_confidence_values[idx % len(test_confidence_values)]
+                                result = AnalysisResult(
+                                    job_id=job_id,
+                                    file_id=filename,
+                                    stt_text=stt_result.get('text', ''),
+                                    stt_metadata={
+                                        "duration": stt_result.get('duration_sec', 0),
+                                        "language": stt_result.get('language', 'ko'),
+                                        "backend": stt_result.get('backend', 'unknown'),
+                                        "processing_steps": stt_result.get('processing_steps', {}),
+                                        "confidence": confidence
+                                    }
+                                )
+                            else:
+                                # STT 실패
+                                result = AnalysisResult(
+                                    job_id=job_id,
+                                    file_id=filename,
+                                    stt_text=None,
+                                    stt_metadata={
+                                        "error": stt_result.get('error', 'unknown'),
+                                        "message": stt_result.get('message', '처리 실패')
+                                    }
+                                )
+                            
+                            db_session.add(result)
+                            db_session.commit()
+                            logger.info(f"[process_analysis_sync] 결과 즉시 저장: {filename}")
+                        
+                        except Exception as db_error:
+                            db_session.rollback()
+                            logger.error(f"[process_analysis_sync] DB 저장 실패: {filename}, {str(db_error)}", exc_info=True)
+                            raise
+                        finally:
+                            db_session.close()
+                        
                         return {
                             "idx": idx,
                             "filename": filename,
                             "stt_result": stt_result,
-                            "error": None
+                            "error": None,
+                            "saved": True
                         }
                     
                     except Exception as e:
                         logger.error(f"[process_analysis_sync] 파일 처리 중 에러: {filename}, {str(e)}", exc_info=True)
+                        
+                        # 에러 결과도 DB에 저장
+                        if db_session is None:
+                            from app.utils.db import SessionLocal
+                            db_session = SessionLocal()
+                        
+                        try:
+                            result = AnalysisResult(
+                                job_id=job_id,
+                                file_id=filename,
+                                stt_text=None,
+                                stt_metadata={"error": str(e)}
+                            )
+                            db_session.add(result)
+                            db_session.commit()
+                            logger.info(f"[process_analysis_sync] 에러 결과 저장: {filename}")
+                        
+                        except Exception as db_error:
+                            db_session.rollback()
+                            logger.error(f"[process_analysis_sync] 에러 결과 저장 실패: {str(db_error)}", exc_info=True)
+                        finally:
+                            db_session.close()
+                        
                         return {
                             "idx": idx,
                             "filename": filename,
                             "stt_result": None,
-                            "error": str(e)
+                            "error": str(e),
+                            "saved": False
                         }
             
             # 모든 파일을 동시에 처리 (동시성 제어)
@@ -605,66 +677,16 @@ class AnalysisService:
                 # 세마포어 생성: 동시에 MAX_CONCURRENT_ANALYSIS개만 실행
                 semaphore = asyncio.Semaphore(MAX_CONCURRENT_ANALYSIS)
                 
-                tasks = [
-                    process_single_file(idx, filename, semaphore)
-                    for idx, filename in enumerate(files)
-                ]
-                return await asyncio.gather(*tasks)
             
             # asyncio.run으로 동시 처리 실행
             results = asyncio.run(process_all_files())
             logger.info(f"[process_analysis_sync] 모든 파일 처리 완료: {len(results)}개 결과")
             
-            # 결과를 DB에 저장 (동시 처리 후 순차 저장)
-            for result_item in results:
-                try:
-                    idx = result_item["idx"]
-                    filename = result_item["filename"]
-                    stt_result = result_item["stt_result"]
-                    error = result_item["error"]
-                    
-                    if error:
-                        # 처리 실패
-                        logger.error(f"[process_analysis_sync] {filename} 처리 실패: {error}")
-                        result = AnalysisResult(
-                            job_id=job_id,
-                            file_id=filename,
-                            stt_text=None,
-                            stt_metadata={"error": error}
-                        )
-                    elif stt_result and stt_result.get('success'):
-                        # STT 성공
-                        confidence = test_confidence_values[idx % len(test_confidence_values)]
-                        result = AnalysisResult(
-                            job_id=job_id,
-                            file_id=filename,
-                            stt_text=stt_result.get('text', ''),
-                            stt_metadata={
-                                "duration": stt_result.get('duration_sec', 0),
-                                "language": stt_result.get('language', 'ko'),
-                                "backend": stt_result.get('backend', 'unknown'),
-                                "processing_steps": stt_result.get('processing_steps', {}),
-                                "confidence": confidence
-                            }
-                        )
-                    else:
-                        # STT 실패
-                        result = AnalysisResult(
-                            job_id=job_id,
-                            file_id=filename,
-                            stt_text=None,
-                            stt_metadata={
-                                "error": stt_result.get('error', 'unknown') if stt_result else 'unknown',
-                                "message": stt_result.get('message', '처리 실패') if stt_result else '처리 실패'
-                            }
-                        )
-                    
-                    new_db.add(result)
-                    new_db.commit()
-                    logger.info(f"[process_analysis_sync] 결과 저장: {filename}")
-                
-                except Exception as e:
-                    logger.error(f"[process_analysis_sync] 결과 저장 실패: {str(e)}", exc_info=True)
+            # 결과는 이미 process_single_file에서 즉시 DB에 저장되었으므로 
+            # 여기서는 최종 상태만 확인하고 로깅
+            saved_count = sum(1 for r in results if r.get("saved", False))
+            failed_count = len(results) - saved_count
+            logger.info(f"[process_analysis_sync] 저장 완료: {saved_count}개, 실패: {failed_count}개")
             
             # 작업 완료 표시
             if job:
