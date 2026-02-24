@@ -16,26 +16,11 @@ DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'db.s
 
 def migrate():
     """Apply the migration"""
-    # DB 파일이 없으면 마이그레이션 스킵 (초기화 시 이미 새 스키마로 생성됨)
-    if not os.path.exists(DB_PATH):
-        print(f"⏭️  DB 파일이 없습니다: {DB_PATH}")
-        print("   → 초기화 스크립트에서 새 스키마로 생성될 예정입니다. 마이그레이션 스킵")
-        return
-    
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
     try:
         print("🔄 Starting migration: add_result_status")
-        
-        # Check if table exists first
-        cursor.execute("""
-            SELECT name FROM sqlite_master 
-            WHERE type='table' AND name='analysis_results';
-        """)
-        if not cursor.fetchone():
-            print("⏭️  analysis_results 테이블이 없습니다. 마이그레이션 스킵")
-            return
         
         # Check if columns already exist
         cursor.execute("PRAGMA table_info(analysis_results);")
@@ -69,7 +54,7 @@ def migrate():
             UPDATE analysis_results 
             SET status = 'completed', 
                 updated_at = created_at 
-            WHERE status IS NULL OR status = 'pending';
+            WHERE status = 'pending';
         """)
         rows_updated = cursor.rowcount
         print(f"  ✅ Updated {rows_updated} existing rows")
@@ -91,7 +76,7 @@ def migrate():
         print("✅ Migration completed successfully")
         
         # Verify the schema
-        print("\n📋 Updated schema:")
+        print("\n📋 New schema:")
         cursor.execute("PRAGMA table_info(analysis_results);")
         for row in cursor.fetchall():
             print(f"  {row[1]}: {row[2]}")
