@@ -545,57 +545,6 @@
             background-color: #f8f9fa;
         }
 
-        /* Filter Section Styles */
-        .filter-radio {
-            display: inline-flex;
-            align-items: center;
-            padding: 6px 12px;
-            border: 2px solid #ddd;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            font-size: 13px;
-            background-color: white;
-        }
-
-        .filter-radio:hover {
-            border-color: #667eea;
-            background-color: #f8f9ff;
-        }
-
-        .filter-radio input[type="radio"] {
-            display: none;
-        }
-
-        .filter-radio input[type="radio"]:checked + span {
-            font-weight: bold;
-        }
-
-        .filter-radio:has(input[type="radio"]:checked) {
-            background-color: #667eea;
-            border-color: #667eea;
-            color: white;
-        }
-
-        .filter-radio.risk-safe:has(input[type="radio"]:checked) {
-            background-color: #4CAF50;
-            border-color: #4CAF50;
-        }
-
-        .filter-radio.risk-warning:has(input[type="radio"]:checked) {
-            background-color: #ff9800;
-            border-color: #ff9800;
-        }
-
-        .filter-radio.risk-danger:has(input[type="radio"]:checked) {
-            background-color: #f44336;
-            border-color: #f44336;
-        }
-
-        #filterSection {
-            border-left: 4px solid #667eea;
-        }
-
         /* Checkbox selection styles */
         .checkbox-cell {
             text-align: center;
@@ -763,85 +712,61 @@
             </div>
         </div>
 
-        <!-- 필터 섹션 -->
-        <div id="filterSection" class="card" style="display: none; background-color: white; padding: 15px 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);">
-            <div style="display: flex; align-items: center; gap: 20px; flex-wrap: wrap;">
-                <!-- 분석상태 필터 -->
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <label style="font-weight: 600; color: #555; font-size: 14px; white-space: nowrap;">분석 상태</label>
-                    <label class="filter-radio">
-                        <input type="radio" name="statusFilter" value="all" checked>
-                        <span>전체</span>
-                    </label>
-                    <label class="filter-radio">
-                        <input type="radio" name="statusFilter" value="pending">
-                        <span>대기중</span>
-                    </label>
-                    <label class="filter-radio">
-                        <input type="radio" name="statusFilter" value="processing">
-                        <span>분석중</span>
-                    </label>
-                    <label class="filter-radio">
-                        <input type="radio" name="statusFilter" value="completed">
-                        <span>완료</span>
-                    </label>
-                    <label class="filter-radio">
-                        <input type="radio" name="statusFilter" value="failed">
-                        <span>실패</span>
-                    </label>
-                </div>
-                
-                <div style="height: 20px; width: 1px; background-color: #ddd;"></div>
-                
-                <!-- 판매탐지 필터 -->
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <label style="font-weight: 600; color: #555; font-size: 14px; white-space: nowrap;">불완전판매 탐지</label>
-                    <label class="filter-radio">
-                        <input type="radio" name="riskFilter" value="all" checked>
-                        <span>전체</span>
-                    </label>
-                    <label class="filter-radio risk-safe">
-                        <input type="radio" name="riskFilter" value="safe">
-                        <span>정상</span>
-                    </label>
-                    <label class="filter-radio risk-warning">
-                        <input type="radio" name="riskFilter" value="warning">
-                        <span>의심</span>
-                    </label>
-                    <label class="filter-radio risk-danger">
-                        <input type="radio" name="riskFilter" value="danger">
-                        <span>부당권유</span>
-                    </label>
-                </div>
-                
-                <div style="margin-left: auto; display: flex; align-items: center; gap: 10px;">
-                    <span style="font-size: 13px; color: #666; white-space: nowrap;">표시: <strong id="filteredCount">0</strong> / <strong id="totalCount">0</strong>건</span>
-                    <button onclick="resetFilters()" class="btn" style="background-color: #6c757d; color: white; padding: 6px 12px; font-size: 13px; white-space: nowrap;">
-                        필터 초기화
-                    </button>
-                </div>
-            </div>
-        </div>
-
         <!-- 결과 테이블 -->
         <div class="table-container">
-            <!-- 테이블 컨트롤 바 -->
-            <div class="table-control-bar">
-                <div style="display: flex; align-items: center; gap: 12px;">
-                    <button onclick="selectAllFiltered()" class="btn-control">전체선택</button>
-                    <button onclick="deselectAll()" class="btn-control">선택해제</button>
-                    <span class="selection-count">선택: <strong id="selectedCount">0</strong>개</span>
+            <!-- 테이블 컨트롤 바 with 필터 -->
+            <div class="table-control-bar" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background-color: #f8f9fa; border-bottom: 2px solid #dee2e6; flex-wrap: wrap; gap: 16px;">
+                <!-- 좌측: 선택 컨트롤 -->
+                <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                    <button class="btn-control btn-control-rerun" id="rerunBtn" onclick="rerunSelectedFiles()" disabled style="padding: 6px 14px; font-size: 13px;">
+                        선택 파일 재실행 (<span id="selectedCountBadge">0</span>)
+                    </button>
                 </div>
-                <button class="btn-control btn-control-rerun" id="rerunBtn" onclick="rerunSelectedFiles()" disabled>
-                    선택 파일 재실행 (<span id="selectedCountBadge">0</span>)
-                </button>
+                
+                <!-- 우측: 필터 영역 -->
+                <div id="filterSection" style="display: none; align-items: center; gap: 12px; flex-wrap: wrap;">
+                    <!-- 분석상태 필터 -->
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <label style="font-weight: 600; color: #555; font-size: 13px; white-space: nowrap;">분석상태</label>
+                        <select id="statusFilter" style="padding: 5px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; cursor: pointer; background-color: white;">
+                            <option value="all">전체</option>
+                            <option value="pending">대기중</option>
+                            <option value="processing">분석중</option>
+                            <option value="completed">완료</option>
+                            <option value="failed">실패</option>
+                        </select>
+                    </div>
+                    
+                    <div style="height: 20px; width: 1px; background-color: #ccc;"></div>
+                    
+                    <!-- 판매탐지 필터 -->
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <label style="font-weight: 600; color: #555; font-size: 13px; white-space: nowrap;">판매탐지</label>
+                        <select id="riskFilter" style="padding: 5px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; cursor: pointer; background-color: white;">
+                            <option value="all">전체</option>
+                            <option value="safe">정상</option>
+                            <option value="warning">의심</option>
+                            <option value="danger">부당권유</option>
+                        </select>
+                    </div>
+                    
+                    <div style="height: 20px; width: 1px; background-color: #ccc;"></div>
+                    
+                    <!-- 필터 통계 및 리셋 -->
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 12px; color: #666; white-space: nowrap;">표시: <strong id="filteredCount">0</strong>/<strong id="totalCount">0</strong></span>
+                        <button onclick="resetFilters()" class="btn" style="background-color: #6c757d; color: white; padding: 6px 14px; font-size: 13px; white-space: nowrap; border: none; border-radius: 4px; cursor: pointer;">
+                            필터 초기화
+                        </button>
+                    </div>
+                </div>
             </div>
             
             <table>
                 <thead>
                     <tr>
                         <th style="width: 4%">
-                            <input type="checkbox" id="selectAllCheckbox" class="file-checkbox" onchange="toggleSelectAll()" style="visibility: hidden;">
+                            <input type="checkbox" id="selectAllCheckbox" class="file-checkbox" onchange="toggleSelectAll()">
                         </th>
                         <th style="width: 5%">번호</th>
                         <th style="width: 18%">파일명</th>
@@ -853,7 +778,7 @@
                 </thead>
                 <tbody id="analysisTableBody">
                     <tr>
-                        <td colspan="6" class="empty-state">분석 대기 중...</td>
+                        <td colspan="7" class="empty-state">분석 대기 중...</td>
                     </tr>
                 </tbody>
             </table>
@@ -1021,18 +946,22 @@
         }
 
         function renderResults(results) {
+            console.log('renderResults 호출됨, results:', results);
+            console.log('results 길이:', results ? results.length : 'null/undefined');
+            
             // Store all results globally
             allResults = results || [];
             
             // Apply filters
             const filteredResults = applyFilters(allResults);
+            console.log('filteredResults 길이:', filteredResults.length);
             
             // Update filter stats
             updateFilterStats(filteredResults.length, allResults.length);
             
             // Show filter section if we have results
             if (allResults.length > 0) {
-                document.getElementById('filterSection').style.display = 'block';
+                document.getElementById('filterSection').style.display = 'flex';
             }
             
             // Update selection UI (count, button state, etc.)
@@ -1116,30 +1045,29 @@
 
         function resetFilters() {
             currentFilters = { status: 'all', risk: 'all' };
-            document.querySelectorAll('input[name="statusFilter"]').forEach(radio => {
-                radio.checked = radio.value === 'all';
-            });
-            document.querySelectorAll('input[name="riskFilter"]').forEach(radio => {
-                radio.checked = radio.value === 'all';
-            });
+            document.getElementById('statusFilter').value = 'all';
+            document.getElementById('riskFilter').value = 'all';
             renderResults(allResults);
         }
 
         // Setup filter event listeners
         document.addEventListener('DOMContentLoaded', () => {
-            document.querySelectorAll('input[name="statusFilter"]').forEach(radio => {
-                radio.addEventListener('change', (e) => {
+            const statusFilter = document.getElementById('statusFilter');
+            const riskFilter = document.getElementById('riskFilter');
+            
+            if (statusFilter) {
+                statusFilter.addEventListener('change', (e) => {
                     currentFilters.status = e.target.value;
                     renderResults(allResults);
                 });
-            });
+            }
             
-            document.querySelectorAll('input[name="riskFilter"]').forEach(radio => {
-                radio.addEventListener('change', (e) => {
+            if (riskFilter) {
+                riskFilter.addEventListener('change', (e) => {
                     currentFilters.risk = e.target.value;
                     renderResults(allResults);
                 });
-            });
+            }
         });
 
         function getStatusBadge(status) {
@@ -1463,17 +1391,26 @@
 
         function updateSelectionUI() {
             const count = selectedFiles.size;
-            document.getElementById('selectedCount').textContent = count;
-            document.getElementById('selectedCountBadge').textContent = count;
+            
+            // Update badge count in button
+            const badgeElement = document.getElementById('selectedCountBadge');
+            if (badgeElement) {
+                badgeElement.textContent = count;
+            }
             
             const rerunBtn = document.getElementById('rerunBtn');
-            rerunBtn.disabled = count === 0;
+            if (rerunBtn) {
+                rerunBtn.disabled = count === 0;
+            }
             
             // Update "select all" checkbox state
             const filteredResults = applyFilters(allResults);
             const allFilteredSelected = filteredResults.length > 0 && 
                 filteredResults.every(r => selectedFiles.has(r.filename));
-            document.getElementById('selectAllCheckbox').checked = allFilteredSelected;
+            const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+            if (selectAllCheckbox) {
+                selectAllCheckbox.checked = allFilteredSelected;
+            }
         }
 
         async function rerunSelectedFiles() {
