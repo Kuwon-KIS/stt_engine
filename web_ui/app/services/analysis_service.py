@@ -584,13 +584,14 @@ class AnalysisService:
                         user_dir = get_user_upload_dir(emp_id)
                         file_path = user_dir / folder_path / filename
                         
-                        # STT API 호출
+                        # STT API 호출 (순서: STT → privacy_removal → agent)
                         stt_result = await stt_service.transcribe_local_file(
                             file_path=str(file_path),
                             language="ko",
                             is_stream=False,
+                            privacy_removal=True,  # privacy_removal 항상 수행
                             classification=False,
-                            ai_agent=include_classification,
+                            ai_agent=include_classification,  # agent는 선택에 따라
                             incomplete_elements_check=include_validation
                         )
                         
