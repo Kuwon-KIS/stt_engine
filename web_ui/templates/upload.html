@@ -482,7 +482,10 @@
     <div class="container">
         <!-- 사이드바: 폴더 목록 -->
         <div class="sidebar">
-            <h2>📁 폴더</h2>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h2 style="margin: 0;">📁 폴더</h2>
+                <button class="action-button secondary-button" onclick="showCreateFolderDialog()" style="font-size: 12px; padding: 6px 12px;">새 폴더</button>
+            </div>
             <ul class="folder-list" id="folderList">
                 <li class="folder-item active" onclick="selectFolder(null)">전체 파일</li>
             </ul>
@@ -511,7 +514,10 @@
 
             <!-- 파일 목록 -->
             <div class="file-list">
-                <h2 id="fileListTitle">📄 파일 목록</h2>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h2 id="fileListTitle" style="margin: 0;">📄 파일 목록</h2>
+                    <button class="action-button primary-button" onclick="startAnalysis()" id="startAnalysisBtn" disabled style="display: none; font-size: 13px; padding: 8px 16px;">분석 시작</button>
+                </div>
                 <table class="file-table" id="fileTable">
                     <thead>
                         <tr>
@@ -531,12 +537,6 @@
                 </table>
             </div>
 
-            <!-- 작업 버튼 -->
-            <div class="action-bar">
-                <button class="action-button secondary-button" onclick="showCreateFolderDialog()">📁 새 폴더</button>
-                <button class="action-button primary-button" onclick="startAnalysis()" id="startAnalysisBtn" disabled style="display: none;">🔍 분석 시작</button>
-                <button class="action-button secondary-button" onclick="showAnalysisHistory()" id="historyBtn" disabled style="display: none;">📊 분석 이력</button>
-            </div>
         </div>
     </div>
 
