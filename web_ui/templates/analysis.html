@@ -844,6 +844,28 @@
         </div>
     </div>
 
+    <!-- 내보내기 형식 선택 모달 -->
+    <div id="exportFormatModal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-header">
+                <h2>내보내기 형식 선택</h2>
+                <button class="close-btn" onclick="closeExportFormatModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div style="display: flex; flex-direction: column; gap: 15px;">
+                    <button class="btn btn-export" onclick="exportToExcel()" style="padding: 15px; font-size: 16px;">
+                        📊 Excel 파일 (.xlsx)
+                    </button>
+                    <button class="btn btn-export" onclick="exportToCSV()" style="padding: 15px; font-size: 16px;">
+                        📄 CSV 파일 (.csv)
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SheetJS for Excel export -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <script src="/static/js/common.js"></script>
     <script>
         let currentJobId = null;
@@ -1137,31 +1159,116 @@
         }
 
         function exportResults() {
+            // 형식 선택 모달 표시
+            document.getElementById('exportFormatModal').style.display = 'flex';
+        }
+
+        function closeExportFormatModal() {
+            document.getElementById('exportFormatModal').style.display = 'none';
+        }
+
+        function exportToExcel() {
             try {
-                const data = [];
-                const tbody = document.getElementById('analysisTableBody');
-                const rows = tbody.querySelectorAll('tr');
+                closeExportFormatModal();
+                
+                // 필터링된 결과 사용
+                const filteredResults = applyFilters(allResults);
+                
+                // Excel 워크북 생성
+                const wb = XLSX.utils.book_new();
+                
+                // 데이터 배열 생성
+                const wsData = [
+                    ['번호', '파일명', 'STT 변환 텍스트', '분석 상태', '불완전판매 탐지']
+                ];
+                
+                // 각 결과를 행으로 추가
+                filteredResults.forEach((result, index) => {
+                    console.log(`File ${index + 1} risk_level:`, result.risk_level); // Debug log
+                    
+                    // risk_level 매핑: detected = 청상, normal/safe = 정상
+                    const riskStatus = result.risk_level === 'detected' ? '청상' : 
+                                      (result.risk_level === 'normal' || result.risk_level === 'safe') ? '정상' : '-';
+                    
+                    // status 매핑
+                    const statusText = result.status === 'completed' ? '완료' : 
+                                      result.status === 'pending' ? '대기중' : 
+                                      result.status === 'processing' ? '분석중' : 
+                                      result.status === 'failed' ? '실패' : '-';
+                    
+                    wsData.push([
+                        index + 1,
+                        result.filename || '',
+                        result.stt_text || '-',
+                        statusText,
+                        riskStatus
+                    ]);
+                });
+                
+                // 워크시트 생성
+                const ws = XLSX.utils.aoa_to_sheet(wsData);
+                
+                // 열 너비 설정
+                ws['!cols'] = [
+                    { wch: 8 },   // 번호
+                    { wch: 25 },  // 파일명
+                    { wch: 80 },  // STT 변환 텍스트
+                    { wch: 12 },  // 분석 상태
+                    { wch: 15 }   // 불완전판매 탐지
+                ];
+                
+                // 워크북에 워크시트 추가
+                XLSX.utils.book_append_sheet(wb, ws, '분석결과');
+                
+                // Excel 파일 다운로드
+                XLSX.writeFile(wb, `analysis_results_${currentFolderPath}_${new Date().toISOString().slice(0,10)}.xlsx`);
+                
+                showNotification('Excel 파일을 내보냈습니다', 'success');
+            } catch (error) {
+                console.error('Excel 내보내기 에러:', error);
+                showNotification('Excel 내보내기에 실패했습니다', 'error');
+            }
+        }
+
+        function exportToCSV() {
+            try {
+                closeExportFormatModal();
+                
+                // 필터링된 결과 사용
+                const filteredResults = applyFilters(allResults);
+                
+                // CSV 데이터 생성
+                const csvRows = [];
                 
                 // 헤더 추가
-                data.push(['번호', '파일명', 'STT 변환 텍스트', '분석 상태', '불완전판매 탐지'].join(','));
+                csvRows.push(['번호', '파일명', 'STT 변환 텍스트', '분석 상태', '불완전판매 탐지'].join(','));
                 
-                // 데이터 행 추가
-                rows.forEach((row, index) => {
-                    const cells = row.querySelectorAll('td');
-                    if (cells.length >= 6) {
-                        const rowData = [
-                            cells[0].textContent.trim(),
-                            `"${cells[1].textContent.trim()}"`,
-                            `"${document.getElementById('sttTextArea')?.value || '-'}"`,
-                            cells[4].textContent.trim(),
-                            cells[5].textContent.trim()
-                        ];
-                        data.push(rowData.join(','));
-                    }
+                // 각 결과를 행으로 추가
+                filteredResults.forEach((result, index) => {
+                    // risk_level 매핑: detected = 청상, normal/safe = 정상
+                    const riskStatus = result.risk_level === 'detected' ? '청상' : 
+                                      (result.risk_level === 'normal' || result.risk_level === 'safe') ? '정상' : '-';
+                    
+                    // status 매핑
+                    const statusText = result.status === 'completed' ? '완료' : 
+                                      result.status === 'pending' ? '대기중' : 
+                                      result.status === 'processing' ? '분석중' : 
+                                      result.status === 'failed' ? '실패' : '-';
+                    
+                    const sttText = (result.stt_text || '-').replace(/"/g, '""');
+                    
+                    const row = [
+                        index + 1,
+                        `"${result.filename || ''}"`,
+                        `"${sttText}"`,
+                        statusText,
+                        riskStatus
+                    ];
+                    csvRows.push(row.join(','));
                 });
                 
                 // CSV 파일 생성 및 다운로드
-                const csvContent = '\uFEFF' + data.join('\n'); // UTF-8 BOM 추가
+                const csvContent = '\uFEFF' + csvRows.join('\n'); // UTF-8 BOM 추가
                 const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
                 const link = document.createElement('a');
                 const url = URL.createObjectURL(blob);
@@ -1173,10 +1280,10 @@
                 link.click();
                 document.body.removeChild(link);
                 
-                showNotification('분석 결과를 내보냈습니다', 'success');
+                showNotification('CSV 파일을 내보냈습니다', 'success');
             } catch (error) {
-                console.error('결과 내보내기 에러:', error);
-                showNotification('결과 내보내기에 실패했습니다', 'error');
+                console.error('CSV 내보내기 에러:', error);
+                showNotification('CSV 내보내기에 실패했습니다', 'error');
             }
         }
 
