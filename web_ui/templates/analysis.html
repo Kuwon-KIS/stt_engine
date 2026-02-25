@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>분석 결과 - STT 불완전판매 탐지 시스템</title>
+    <title>분석 결과 - KIS 불완전판매 탐지 시스템</title>
     <style>
         * {
             margin: 0;
@@ -663,7 +663,7 @@
 </head>
 <body>
     <div class="header">
-        <h1>STT 불완전판매 탐지 시스템</h1>
+        <h1>KIS 불완전판매 탐지 시스템</h1>
         <div class="user-info">
             <span id="userInfo"></span>
             <button class="btn btn-back" onclick="goBack()">← 돌아가기</button>
@@ -753,14 +753,13 @@
                     
                     <div style="height: 20px; width: 1px; background-color: #ccc;"></div>
                     
-                    <!-- 판매탐지 필터 -->
+                    <!-- 분석 결과 필터 -->
                     <div style="display: flex; align-items: center; gap: 6px;">
-                        <label style="font-weight: 600; color: #555; font-size: 13px; white-space: nowrap;">판매탐지</label>
+                        <label style="font-weight: 600; color: #555; font-size: 13px; white-space: nowrap;">분석 결과</label>
                         <select id="riskFilter" style="padding: 5px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; cursor: pointer; background-color: white;">
                             <option value="all">전체</option>
-                            <option value="safe">정상</option>
-                            <option value="warning">의심</option>
-                            <option value="danger">부당권유</option>
+                            <option value="safe">이상 없음</option>
+                            <option value="danger">위반 탐지</option>
                         </select>
                     </div>
                     
@@ -784,15 +783,16 @@
                         </th>
                         <th style="width: 5%; text-align: center;">번호</th>
                         <th style="width: 18%; text-align: left;">파일명</th>
-                        <th style="width: 22%; text-align: left;">오디오</th>
-                        <th style="width: 15%; text-align: center;">STT 변환</th>
-                        <th style="width: 15%; text-align: center;">분석 상태</th>
-                        <th style="width: 21%; text-align: center;">불완전판매 탐지</th>
+                        <th style="width: 20%; text-align: left;">오디오</th>
+                        <th style="width: 12%; text-align: center;">분석 상태</th>
+                        <th style="width: 10%; text-align: center;">카테고리</th>
+                        <th style="width: 12%; text-align: center;">분석 결과</th>
+                        <th style="width: 10%; text-align: center;">분석 내용</th>
                     </tr>
                 </thead>
                 <tbody id="analysisTableBody">
                     <tr>
-                        <td colspan="7" class="empty-state">분석 대기 중...</td>
+                        <td colspan="8" class="empty-state">분석 대기 중...</td>
                     </tr>
                 </tbody>
             </table>
@@ -840,6 +840,55 @@
                 <div class="stt-text-content">
                     <textarea id="sttTextArea" class="stt-text-area" readonly></textarea>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 분석 상세 모달 (옵션 A) -->
+    <div id="analysisDetailModal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 900px;">
+            <div class="modal-header">
+                <h2>분석 상세: <span id="detailFileName"></span></h2>
+                <button class="close-btn" onclick="closeAnalysisDetailModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- 위반사항 섹션 -->
+                <div id="violationSection" style="margin-bottom: 25px;">
+                    <h3 style="margin-bottom: 15px; font-size: 18px; color: #333;">🚨 탐지된 위반사항</h3>
+                    <div id="violationCards" style="display: flex; flex-direction: column; gap: 12px;">
+                        <!-- 위반사항 카드가 여기에 동적으로 추가됩니다 -->
+                    </div>
+                </div>
+
+                <!-- 오디오 플레이어 -->
+                <div style="margin-bottom: 25px;">
+                    <h3 style="margin-bottom: 10px; font-size: 18px; color: #333;">🎵 오디오</h3>
+                    <div class="audio-player">
+                        <audio id="detailAudioPlayer" controls preload="metadata" style="width: 100%;">
+                            <source id="detailAudioSource" src="" type="audio/wav">
+                            지원하지 않는 브라우저입니다.
+                        </audio>
+                    </div>
+                </div>
+
+                <!-- STT 전문 -->
+                <div style="margin-bottom: 25px;">
+                    <h3 style="margin-bottom: 10px; font-size: 18px; color: #333;">📝 STT 전문</h3>
+                    <div style="background-color: #f8f9fa; border: 1px solid #ddd; border-radius: 8px; padding: 15px; max-height: 300px; overflow-y: auto;">
+                        <pre id="detailSttText" style="margin: 0; white-space: pre-wrap; word-wrap: break-word; font-family: monospace; font-size: 14px; line-height: 1.6;"></pre>
+                    </div>
+                </div>
+
+                <!-- 탐지된 키워드 -->
+                <div id="keywordSection" style="margin-bottom: 25px;">
+                    <h3 style="margin-bottom: 10px; font-size: 18px; color: #333;">🔍 탐지된 키워드</h3>
+                    <div id="keywordBadges" style="display: flex; flex-wrap: wrap; gap: 8px;">
+                        <!-- 키워드 배지가 여기에 동적으로 추가됩니다 -->
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="action-button secondary-button" onclick="closeAnalysisDetailModal()">닫기</button>
             </div>
         </div>
     </div>
@@ -1006,17 +1055,35 @@
             const tbody = document.getElementById('analysisTableBody');
             
             if (filteredResults.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" class="empty-state">필터 조건에 맞는 결과가 없습니다</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="8" class="empty-state">필터 조건에 맞는 결과가 없습니다</td></tr>';
                 return;
             }
 
             tbody.innerHTML = filteredResults.map((result, index) => {
                 const statusBadge = getStatusBadge(result.status);
                 
-                // Only show risk badge if status is 'completed'
-                const riskBadge = result.status === 'completed' 
-                    ? getRiskBadge(result.risk_level) 
-                    : '<span class="result-badge" style="background-color: #f5f5f5; color: #999;">-</span>';
+                // 분석 결과 데이터 파싱
+                let category = '-';
+                let detectionResult = '-';
+                let detectionBadgeClass = 'result-badge';
+                
+                if (result.status === 'completed' && result.improper_detection_results) {
+                    const detection = result.improper_detection_results;
+                    
+                    // 카테고리 추출
+                    if (detection.category) {
+                        category = detection.category;
+                    }
+                    
+                    // detected_yn에 따른 결과 표시
+                    if (detection.detected_yn === 'Y') {
+                        detectionResult = '위반 탐지';
+                        detectionBadgeClass = 'result-badge result-danger';
+                    } else if (detection.detected_yn === 'N') {
+                        detectionResult = '이상 없음';
+                        detectionBadgeClass = 'result-badge result-safe';
+                    }
+                }
                 
                 // 오디오 파일 경로 구성
                 const audioUrl = `/api/files/audio/${currentEmpId}/${currentFolderPath}/${encodeURIComponent(result.filename)}`;
@@ -1035,17 +1102,21 @@
                 const isChecked = selectedFiles.has(result.filename) ? 'checked' : '';
                 const checkbox = `<input type="checkbox" class="file-checkbox" data-filename="${result.filename}" ${isChecked} onchange="handleFileCheckbox('${result.filename}', this.checked)">`;
 
+                // 분석 내용 버튼 (완료된 경우에만 표시)
+                const detailButton = result.status === 'completed' 
+                    ? `<button onclick="showAnalysisDetail('${result.filename}')" class="btn-view">상세보기</button>` 
+                    : '-';
+
                 return `
                 <tr>
                     <td class="checkbox-cell" style="text-align: center;">${checkbox}</td>
                     <td style="text-align: center;">${index + 1}</td>
                     <td style="text-align: left;">${result.filename}</td>
                     <td style="text-align: center;">${audioPlayer}</td>
-                    <td style="text-align: center;">
-                        ${result.stt_text ? `<button onclick="showSttContent('${result.filename}', '${escapeHtml(result.stt_text)}')" class="btn-view">내용 보기</button>` : '-'}
-                    </td>
                     <td style="text-align: center;">${statusBadge}</td>
-                    <td style="text-align: center;">${riskBadge}</td>
+                    <td style="text-align: center;">${category}</td>
+                    <td style="text-align: center;"><span class="${detectionBadgeClass}">${detectionResult}</span></td>
+                    <td style="text-align: center;">${detailButton}</td>
                 </tr>
                 `;
             }).join('');
@@ -1125,9 +1196,8 @@
             }
             
             const riskMap = {
-                'safe': { text: '정상', class: 'result-safe' },
-                'warning': { text: '의심', class: 'result-warning' },
-                'danger': { text: '불완전판매 발견', class: 'result-danger' }
+                'safe': { text: '이상 없음', class: 'result-safe' },
+                'danger': { text: '위반 탐지', class: 'result-danger' }
             };
 
             // Only show mapped values, otherwise show "-"
@@ -1156,6 +1226,82 @@
 
         function closeSttTextModal() {
             document.getElementById('sttTextModal').style.display = 'none';
+        }
+
+        function showAnalysisDetail(filename) {
+            // 현재 결과에서 해당 파일 찾기
+            const result = allResults.find(r => r.filename === filename);
+            if (!result || !result.improper_detection_results) {
+                alert('분석 결과를 찾을 수 없습니다.');
+                return;
+            }
+
+            const detection = result.improper_detection_results;
+            
+            // 파일명 설정
+            document.getElementById('detailFileName').textContent = filename;
+            
+            // 오디오 플레이어 설정
+            const audioUrl = `/api/files/audio/${currentEmpId}/${currentFolderPath}/${encodeURIComponent(filename)}`;
+            const audioSource = document.getElementById('detailAudioSource');
+            const audioPlayer = document.getElementById('detailAudioPlayer');
+            audioSource.src = audioUrl;
+            audioPlayer.load();
+            
+            // STT 전문 설정
+            document.getElementById('detailSttText').textContent = result.stt_text || '(STT 데이터 없음)';
+            
+            // 위반사항 카드 생성
+            const violationCards = document.getElementById('violationCards');
+            const violationSection = document.getElementById('violationSection');
+            
+            if (detection.detected_yn === 'Y' && detection.detected_sentence && detection.detected_sentence.length > 0) {
+                violationSection.style.display = 'block';
+                violationCards.innerHTML = detection.detected_sentence.map((sentence, index) => {
+                    const reason = detection.detected_reason && detection.detected_reason[index] 
+                        ? detection.detected_reason[index] 
+                        : '위반 사유 미제공';
+                    
+                    return `
+                        <div style="background-color: #fff5f5; border-left: 4px solid #ef4444; border-radius: 8px; padding: 15px;">
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                                <span style="background-color: #ef4444; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: bold;">위반 ${index + 1}</span>
+                                <span style="color: #dc2626; font-weight: 500; font-size: 14px;">${reason}</span>
+                            </div>
+                            <div style="background-color: white; border: 1px solid #fee; border-radius: 6px; padding: 12px;">
+                                <p style="margin: 0; color: #444; line-height: 1.6;">"${sentence}"</p>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                violationSection.style.display = 'block';
+                violationCards.innerHTML = `
+                    <div style="background-color: #f0fdf4; border-left: 4px solid #10b981; border-radius: 8px; padding: 15px; text-align: center;">
+                        <span style="color: #059669; font-weight: 500; font-size: 16px;">✓ 위반사항이 탐지되지 않았습니다</span>
+                    </div>
+                `;
+            }
+            
+            // 키워드 배지 생성
+            const keywordBadges = document.getElementById('keywordBadges');
+            const keywordSection = document.getElementById('keywordSection');
+            
+            if (detection.detected_keyword && detection.detected_keyword.length > 0) {
+                keywordSection.style.display = 'block';
+                keywordBadges.innerHTML = detection.detected_keyword.map(keyword => {
+                    return `<span style="background-color: #3b82f6; color: white; padding: 6px 14px; border-radius: 16px; font-size: 13px; font-weight: 500;">${keyword}</span>`;
+                }).join('');
+            } else {
+                keywordSection.style.display = 'none';
+            }
+            
+            // 모달 표시
+            document.getElementById('analysisDetailModal').style.display = 'flex';
+        }
+
+        function closeAnalysisDetailModal() {
+            document.getElementById('analysisDetailModal').style.display = 'none';
         }
 
         function exportResults() {
@@ -1453,12 +1599,16 @@
         document.addEventListener('click', function(event) {
             const historyModal = document.getElementById('historyModal');
             const sttTextModal = document.getElementById('sttTextModal');
+            const analysisDetailModal = document.getElementById('analysisDetailModal');
             
             if (event.target === historyModal) {
                 closeHistoryModal();
             }
             if (event.target === sttTextModal) {
                 closeSttTextModal();
+            }
+            if (event.target === analysisDetailModal) {
+                closeAnalysisDetailModal();
             }
         });
 
