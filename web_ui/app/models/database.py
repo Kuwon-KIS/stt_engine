@@ -22,6 +22,11 @@ class Employee(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime)
     
+    # Phase 1: 추가된 관리자 및 저장 용량 관련 컬럼
+    storage_quota = Column(Integer, default=42949672960)  # 40GB in bytes
+    storage_used = Column(Integer, default=0)
+    is_admin = Column(Integer, default=0)  # 0: 일반 사용자, 1: 관리자
+    
     # 관계 설정
     file_uploads = relationship("FileUpload", back_populates="employee")
     analysis_jobs = relationship("AnalysisJob", back_populates="employee")

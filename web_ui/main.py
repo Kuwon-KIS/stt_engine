@@ -27,7 +27,7 @@ from config import (
 )
 # Phase 1: 인증 및 DB 임포트
 from app.utils.db import init_db
-from app.routes import auth, files, analysis
+from app.routes import auth, files, analysis, admin
 # 아래 클래스들은 실제 구현에서 정의되지 않음 - 이후 필요시 각 서비스에서 import
 # from app.models.schemas import (
 #     FileUploadResponse, TranscribeRequest, TranscribeResponse,
@@ -99,6 +99,11 @@ templates = Jinja2Templates(directory=BASE_DIR / "templates")
 # === Phase 1: 인증 라우터 등록 ===
 # ============================================================================
 app.include_router(auth.router)
+
+# ============================================================================
+# === Phase 1.5: 관리자 라우터 등록 ===
+# ============================================================================
+app.include_router(admin.router)
 
 # ============================================================================
 # === Phase 2: 파일 관리 라우터 등록 ===

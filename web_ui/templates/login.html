@@ -201,10 +201,13 @@
             <div class="test-accounts">
                 <p>테스트 아이디:</p>
                 <ul>
-                    <li>100001 - 김철수</li>
-                    <li>100002 - 이영희</li>ㄴ
-                    <li>100003 - 박민수</li>
-                </ul>ㄴ
+                    <li>100001 - 테스트1 (영업팀)</li>
+                    <li>100002 - 테스트2 (기획팀)</li>
+                    <li>100003 - 테스트3 (개발팀)</li>
+                </ul>
+                <p style="margin-top: 15px; font-size: 12px; color: #999;">
+                    * 문의: AI/데이터혁신부 조주상 차장, 강구원 차장, 정서연 사원
+                </p>
             </div>
         </div>
     </div>
@@ -253,7 +256,15 @@
                         window.location.href = '/upload';
                     }, 1500);
                 } else {
-                    errorDiv.textContent = data.detail || '로그인 실패';
+                    // 미등록 사용자 처리
+                    if (data.code === 'USER_NOT_FOUND') {
+                        errorDiv.innerHTML = `
+                            <strong>⚠️ 등록되지 않은 사번입니다</strong><br>
+                            <span style="font-size: 13px;">관리자에게 계정 생성을 요청해주세요.</span>
+                        `;
+                    } else {
+                        errorDiv.textContent = data.detail || '로그인 실패';
+                    }
                     errorDiv.style.display = 'block';
                 }
             } catch (error) {
@@ -282,5 +293,234 @@
             }
         });
     </script>
+
+    <!-- Admin Modal -->
+    <div id="adminModal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 900px;">
+            <div class="modal-header">
+                <h2>🔧 관리자 페이지</h2>
+                <span class="close-btn" onclick="closeAdminModal()">&times;</span>
+            </div>
+            
+            <!-- Admin Authentication Section -->
+            <div id="adminAuthSection" style="display: block;">
+                <div style="padding: 40px; text-align: center;">
+                    <h3 style="margin-bottom: 20px;">관리자 인증</h3>
+                    <div style="max-width: 400px; margin: 0 auto;">
+                        <input 
+                            type="password" 
+                            id="adminPassword" 
+                            placeholder="관리자 비밀번호"
+                            style="width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;"
+                        />
+                        <button 
+                            onclick="authenticateAdmin()"
+                            style="width: 100%; padding: 12px; background: #2563eb; color: white; border: none; border-radius: 4px; font-size: 14px; cursor: pointer;"
+                        >
+                            인증하기
+                        </button>
+                        <div id="adminAuthError" style="color: #ef4444; margin-top: 15px; display: none;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Admin Panel Section (Hidden until authenticated) -->
+            <div id="adminPanelSection" style="display: none;">
+                <!-- Tab Navigation -->
+                <div class="admin-tabs" style="display: flex; border-bottom: 2px solid #e5e7eb; margin-bottom: 20px;">
+                    <button 
+                        class="tab-btn active" 
+                        onclick="showTab('userList')"
+                        style="flex: 1; padding: 12px; background: none; border: none; cursor: pointer; font-size: 14px; font-weight: 500; color: #6b7280; border-bottom: 2px solid transparent; margin-bottom: -2px;"
+                    >
+                        사용자 관리
+                    </button>
+                    <button 
+                        class="tab-btn" 
+                        onclick="showTab('createUser')"
+                        style="flex: 1; padding: 12px; background: none; border: none; cursor: pointer; font-size: 14px; font-weight: 500; color: #6b7280; border-bottom: 2px solid transparent; margin-bottom: -2px;"
+                    >
+                        사용자 생성
+                    </button>
+                </div>
+
+                <!-- User List Tab -->
+                <div id="userListTab" class="admin-tab-content">
+                    <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+                        <h3 style="margin: 0;">사용자 목록</h3>
+                        <button 
+                            onclick="loadUsers()"
+                            style="padding: 8px 16px; background: #10b981; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px;"
+                        >
+                            🔄 새로고침
+                        </button>
+                    </div>
+                    <div style="overflow-x: auto; max-height: 400px; overflow-y: auto;">
+                        <table id="userTable" style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                            <thead style="background: #f3f4f6; position: sticky; top: 0;">
+                                <tr>
+                                    <th style="padding: 10px; text-align: left; border-bottom: 2px solid #e5e7eb;">사번</th>
+                                    <th style="padding: 10px; text-align: left; border-bottom: 2px solid #e5e7eb;">이름</th>
+                                    <th style="padding: 10px; text-align: left; border-bottom: 2px solid #e5e7eb;">부서</th>
+                                    <th style="padding: 10px; text-align: right; border-bottom: 2px solid #e5e7eb;">사용량 (GB)</th>
+                                    <th style="padding: 10px; text-align: right; border-bottom: 2px solid #e5e7eb;">할당량 (GB)</th>
+                                    <th style="padding: 10px; text-align: center; border-bottom: 2px solid #e5e7eb;">관리자</th>
+                                </tr>
+                            </thead>
+                            <tbody id="userTableBody">
+                                <tr>
+                                    <td colspan="6" style="padding: 40px; text-align: center; color: #9ca3af;">
+                                        로딩 중...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Create User Tab -->
+                <div id="createUserTab" class="admin-tab-content" style="display: none;">
+                    <h3 style="margin-bottom: 20px;">신규 사용자 생성</h3>
+                    <form id="createUserForm" onsubmit="createUser(event)" style="max-width: 500px;">
+                        <div style="margin-bottom: 15px;">
+                            <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 13px;">사번 (6자리 숫자)</label>
+                            <input 
+                                type="text" 
+                                id="newEmpId" 
+                                maxlength="6"
+                                pattern="[0-9]{6}"
+                                required
+                                placeholder="예: 100001"
+                                style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;"
+                            />
+                        </div>
+                        <div style="margin-bottom: 15px;">
+                            <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 13px;">이름</label>
+                            <input 
+                                type="text" 
+                                id="newName" 
+                                required
+                                placeholder="홍길동"
+                                style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;"
+                            />
+                        </div>
+                        <div style="margin-bottom: 20px;">
+                            <label style="display: block; margin-bottom: 5px; font-weight: 500; font-size: 13px;">부서</label>
+                            <input 
+                                type="text" 
+                                id="newDept" 
+                                required
+                                placeholder="영업팀"
+                                style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;"
+                            />
+                        </div>
+                        <button 
+                            type="submit"
+                            style="width: 100%; padding: 12px; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500;"
+                        >
+                            사용자 생성
+                        </button>
+                        <div id="createUserError" style="color: #ef4444; margin-top: 15px; display: none;"></div>
+                        <div id="createUserSuccess" style="color: #10b981; margin-top: 15px; display: none;"></div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Button (Fixed Position) -->
+    <button 
+        onclick="showAdminModal()"
+        style="position: fixed; bottom: 30px; right: 30px; width: 60px; height: 60px; border-radius: 50%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; font-size: 24px; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.15); transition: transform 0.2s; z-index: 999;"
+        onmouseover="this.style.transform='scale(1.1)'"
+        onmouseout="this.style.transform='scale(1)'"
+        title="관리자 페이지"
+    >
+        🔧
+    </button>
+
+    <style>
+        .modal {
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-content {
+            background-color: white;
+            border-radius: 8px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            font-size: 20px;
+        }
+
+        .close-btn {
+            font-size: 28px;
+            font-weight: bold;
+            color: #9ca3af;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+
+        .close-btn:hover {
+            color: #374151;
+        }
+
+        .admin-tab-content {
+            padding: 20px;
+        }
+
+        .tab-btn.active {
+            color: #2563eb !important;
+            border-bottom-color: #2563eb !important;
+        }
+
+        #userTable tbody tr {
+            border-bottom: 1px solid #f3f4f6;
+            transition: background-color 0.15s;
+        }
+
+        #userTable tbody tr:hover {
+            background-color: #f9fafb;
+        }
+
+        #userTable input[type="number"] {
+            width: 80px;
+            padding: 4px 8px;
+            border: 1px solid #e5e7eb;
+            border-radius: 4px;
+            font-size: 13px;
+            text-align: right;
+        }
+
+        #userTable input[type="number"]:focus {
+            outline: none;
+            border-color: #2563eb;
+        }
+    </style>
+
+    <!-- Admin JavaScript -->
+    <script src="/static/js/admin.js"></script>
 </body>
 </html>

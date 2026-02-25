@@ -40,18 +40,13 @@ class AuthService:
         # 2. DB에서 직원 정보 조회
         employee = db.query(Employee).filter(Employee.emp_id == emp_id).first()
         
-        # 3. 없으면 새로 생성 (첫 로그인), 있으면 기존 정보 사용
+        # 3. DB에 등록되지 않은 사용자는 로그인 거부
         if not employee:
-            # ALLOWED_EMPLOYEES에서 기본 정보 확인 (선택적)
-            emp_info = ALLOWED_EMPLOYEES.get(emp_id, {})
-            
-            # 새 직원 레코드 생성
-            employee = Employee(
-                emp_id=emp_id,
-                name=emp_info.get("name", f"사용자{emp_id}"),  # 기본 이름
-                dept=emp_info.get("dept", "미분류")  # 기본 부서
-            )
-            db.add(employee)
+            return {
+                "success": False,
+                "error": "USER_NOT_FOUND",
+                "message": "등록되지 않은 사번입니다. 관리자에게 계정 생성을 요청하세요."
+            }
         
         # 4. last_login 업데이트
         employee.last_login = datetime.utcnow()
