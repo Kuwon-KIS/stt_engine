@@ -26,6 +26,64 @@ from config import STT_API_URL, MAX_CONCURRENT_ANALYSIS
 # Test configuration - set to 0 to disable, or value between 0.0-1.0 for failure rate
 TEST_FAILURE_RATE = 0.25 # 0.25 = 25% failure rate for testing
 
+# 샘플 분석 결과 데이터 (더미 모드용)
+SAMPLE_DETECTION_RESULTS = [
+    # Sample 1: 위반탐지 
+    {
+        "category": "사전판매",
+        "detected_yn": "Y",
+        "detected_sentence": [
+            "그 모바일로 이제 청약 개설 하시면 거기서 뭐 담보대출이나 이런 거 뭐 이용하시는 데도 편리하시고 뭐 사실 오프라인 일반 계좌하고 동일하다고 보시면 돼요",
+            "그냥 온라인 해버리면 안 되세요."
+        ],
+        "detected_reason": [
+            "온라인가입유도(부당권유 위배)",
+            "온라인가입유도(부당권유 위배)"
+        ],
+        "detected_keyword": []
+    },
+    # Sample 2: 이상없음
+    {
+        "category": "사전판매",
+        "detected_yn": "N",
+        "detected_sentence": [],
+        "detected_reason": [],
+        "detected_keyword": []
+    },
+    # Sample 3: 위반탐지 
+    {
+        "category": "사전판매",
+        "detected_yn": "Y",
+        "detected_sentence": [
+            "저는 훨씬 더 지금 이제 IMA 쪽이 훨씬 더 빨리 만기가 되고 수익이 날 거라고 봅니다.",
+            "수익 부분은 IMA 쪽이 지금 가지고 계신 국채보다는 더 좋을 겁니다.",
+            "원금 보장도 되고."
+        ],
+        "detected_reason": [
+            "단정적판단 금지(부당권유 위배)",
+            "비교 왜곡 금지(부당권유 위배)",
+            "단정적판단 금지(부당권유 위배)"
+        ],
+        "detected_keyword": ["보장"]
+    },
+    # Sample 4: 위반탐지 
+    {
+        "category": "사전판매",
+        "detected_yn": "Y",
+        "detected_sentence": [
+            "회사에서 4에서 8% 정도 목표로 운영을 하는 거다.",
+            "연간 수익이 한 5에서 7%로 되게 안정적으로 운영이 되고요.",
+            "저희 회사에서 보장하는 원금 보장하는 이거 IMA로 다 들어가셔도 괜찮고요."
+        ],
+        "detected_reason": [
+            "단정적판단 금지(부당권유 위배)",
+            "단정적판단 금지(부당권유 위배)",
+            "단정적판단 금지(부당권유 위배)"
+        ],
+        "detected_keyword": ["보장", "괜찮"]
+    }
+]
+
 
 class AnalysisService:
     """분석 서비스"""
@@ -232,23 +290,24 @@ class AnalysisService:
                     if result.improper_detection_results:
                         improper_detected = result.improper_detection_results.get("detected", False)
                         if improper_detected:
-                            risk_level = "danger"  # 부당권유 발견
+                            risk_level = "danger"  # 위반 탐지
                     
                     if result.incomplete_detection_results and not risk_level:
                         incomplete_detected = result.incomplete_detection_results.get("detected", False)
                         if incomplete_detected:
-                            risk_level = "warning"  # 불완전판매 발견
+                            risk_level = "warning"  # 의심
                     
                     # Default to safe if no issues detected
                     if not risk_level:
-                        risk_level = "safe"
+                        risk_level = "safe"  # 이상없음
                     
                     result_dict = {
                         "filename": result.file_id,
                         "stt_text": result.stt_text,
                         "status": file_status,
                         "confidence": confidence,
-                        "risk_level": risk_level
+                        "risk_level": risk_level,
+                        "improper_detection_results": result.improper_detection_results
                     }
                 else:
                     # File is pending, processing, or failed - no risk assessment yet
@@ -259,7 +318,8 @@ class AnalysisService:
                         "stt_text": None,
                         "status": file_status,
                         "confidence": None,
-                        "risk_level": None
+                        "risk_level": None,
+                        "improper_detection_results": None
                     }
                 
                 results_list.append(result_dict)
@@ -676,6 +736,31 @@ class AnalysisService:
                                 # STT 성공
                                 confidence = test_confidence_values[idx % len(test_confidence_values)]
                                 
+                                # Agent 결과가 있으면 사용, 없으면 더미 데이터 사용
+                                detection_result = None
+                                
+                                # 1. Agent 결과 확인 (incomplete_elements 또는 ai_agent_result)
+                                if include_classification and stt_result.get('incomplete_elements'):
+                                    # Agent가 제공한 불완전판매 탐지 결과
+                                    incomplete_data = stt_result.get('incomplete_elements', {})
+                                    agent_result = incomplete_data.get('result', {})
+                                    
+                                    # Agent 결과를 우리 형식으로 변환
+                                    if agent_result:
+                                        detection_result = {
+                                            "category": agent_result.get("category", "사전판매"),
+                                            "detected_yn": "Y" if agent_result.get("detected", False) else "N",
+                                            "detected_sentence": agent_result.get("detected_sentences", []),
+                                            "detected_reason": agent_result.get("detected_reasons", []),
+                                            "detected_keyword": agent_result.get("keywords", [])
+                                        }
+                                        logger.info(f"[process_analysis_sync] Using agent detection result for {filename}")
+                                
+                                # 2. Agent 결과 없으면 더미 데이터 사용 (개발/테스트용)
+                                if not detection_result:
+                                    logger.warning(f"[process_analysis_sync] No agent result for {filename}, using dummy data")
+                                    detection_result = SAMPLE_DETECTION_RESULTS[idx % len(SAMPLE_DETECTION_RESULTS)]
+                                
                                 if existing_result:
                                     # 기존 result 업데이트
                                     existing_result.status = 'completed'
@@ -687,6 +772,8 @@ class AnalysisService:
                                         "processing_steps": stt_result.get('processing_steps', {}),
                                         "confidence": confidence
                                     }
+                                    # 분석 결과 저장 (Agent 결과 또는 더미 데이터)
+                                    existing_result.improper_detection_results = detection_result
                                     result = existing_result
                                 else:
                                     # 없으면 새로 생성
@@ -701,7 +788,9 @@ class AnalysisService:
                                             "backend": stt_result.get('backend', 'unknown'),
                                             "processing_steps": stt_result.get('processing_steps', {}),
                                             "confidence": confidence
-                                        }
+                                        },
+                                        # 분석 결과 저장 (Agent 결과 또는 더미 데이터)
+                                        improper_detection_results=detection_result
                                     )
                                     db_session.add(result)
                             else:
