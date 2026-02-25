@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>로그인 - STT 불완전판매 탐지 시스템</title>
+    <title>로그인 - KIS 불완전판매 탐지 시스템</title>
     <style>
         * {
             margin: 0;
@@ -170,8 +170,8 @@
 <body>
     <div class="login-container">
         <div class="login-box">
-            <h1>STT 불완전판매 탐지</h1>
-            <p class="subtitle">한국투자증권 불완전판매 사전/사후점검 프로토타입</p>
+            <h1>KIS 불완전판매 탐지</h1>
+            <p class="subtitle">사전판매 녹취파일을 텍스트로 변환하고 부당권유 금지 등 판매원칙 위반 사항이 있는지 분석합니다.</p>
 
             <form id="loginForm">
                 <div id="errorMessage" class="alert alert-danger"></div>
@@ -183,7 +183,7 @@
                         type="text"
                         id="empId"
                         name="emp_id"
-                        placeholder="예: 100001"
+                        placeholder="예: 123456"
                         autocomplete="off"
                         required
                     >
@@ -400,7 +400,7 @@
                                 maxlength="6"
                                 pattern="[0-9]{6}"
                                 required
-                                placeholder="예: 100001"
+                                placeholder="예: 123456"
                                 style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;"
                             />
                         </div>
