@@ -31,18 +31,39 @@ def initialize_database():
         print(f"❌ 테이블 생성 실패: {e}")
         return False
     
-    # DB 경로 찾기
-    db_paths = [
-        Path("/app/data/database.db"),  # Docker
-        Path("data/database.db"),        # 로컬
-        Path("app/database.db"),         # 로컬 fallback
-    ]
-    
+    # DB 경로를 engine URL에서 추출
     db_path = None
-    for path in db_paths:
-        if path.exists():
-            db_path = path
-            break
+    try:
+        # engine.url은 "sqlite:////app/data/database.db" 형태
+        url_string = str(engine.url)
+        if "sqlite:///" in url_string:
+            # sqlite:////path/to/db.db -> /path/to/db.db (3개 슬래시 제거, 마지막 1개는 루트)
+            db_path = Path(url_string.replace("sqlite:///", ""))
+        elif "sqlite://" in url_string:
+            db_path = Path(url_string.replace("sqlite://", ""))
+        
+        if db_path and db_path.exists():
+            print(f"✅ Engine URL에서 DB 경로 감지: {db_path}")
+        else:
+            # engine URL에서 경로를 추출했지만 파일이 없다면, 직접 생성됨
+            if db_path:
+                print(f"✅ Engine이 생성할 DB 경로: {db_path}")
+            else:
+                raise Exception("DB 경로를 추출할 수 없음")
+    except Exception as e:
+        print(f"⚠️  Engine URL 파싱 실패, 대체 방법 사용: {e}")
+        # 대체 경로들 시도
+        db_paths = [
+            Path("/app/data/database.db"),  # Docker
+            Path("data/database.db"),        # 로컬
+            Path("app/database.db"),         # 로컬 fallback
+        ]
+        
+        for path in db_paths:
+            if path.exists():
+                db_path = path
+                print(f"✅ 기존 DB 파일 발견: {db_path}")
+                break
     
     if not db_path:
         print(f"❌ 데이터베이스 파일을 찾을 수 없음")
