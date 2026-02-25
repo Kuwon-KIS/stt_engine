@@ -6,7 +6,6 @@ Phase 1: 사번 검증 및 직원 정보 관리
 from sqlalchemy.orm import Session
 from datetime import datetime
 from app.models.database import Employee
-from config import ALLOWED_EMPLOYEES
 
 
 class AuthService:
