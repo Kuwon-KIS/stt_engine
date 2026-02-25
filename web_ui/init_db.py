@@ -1,15 +1,25 @@
 #!/usr/bin/env python
 """
 데이터베이스 초기화 스크립트
+- SQLAlchemy 모델을 사용하여 DB 생성
+- 기본 테스트 사용자 3명 추가 (100001-100003)
 """
 import sys
 import os
 sys.path.insert(0, '.')
 
+from pathlib import Path
+
+# DB 경로 설정 (config.py와 동일하게)
+db_path = Path('data/db.sqlite')
+
 # 이전 데이터베이스 삭제
-if os.path.exists('app/database.db'):
-    os.remove('app/database.db')
-    print("✅ 이전 데이터베이스 삭제됨")
+if db_path.exists():
+    db_path.unlink()
+    print(f"✅ 이전 데이터베이스 삭제됨: {db_path}")
+
+# data 디렉토리 생성
+db_path.parent.mkdir(parents=True, exist_ok=True)
 
 # 모든 모델을 명시적으로 임포트
 from app.models.database import Base, Employee, FileUpload, AnalysisJob, AnalysisResult, AnalysisProgress
@@ -22,19 +32,21 @@ print("✅ 새로운 데이터베이스 생성됨")
 # 테스트 데이터 추가
 db = SessionLocal()
 
-# 직원 정보 추가 (이미 있으면 무시)
-existing = db.query(Employee).filter_by(emp_id="100001").first()
-if not existing:
-    test_emp = Employee(emp_id="100001", name="김철수", dept="영업팀")
-    db.add(test_emp)
-    db.commit()
-    print("✅ 테스트 직원 정보 추가됨")
-else:
-    print("✅ 직원 정보 이미 존재함")
+# 기본 테스트 사용자 추가 (이미 있으면 무시)
+for emp_id, name in [("100001", "테스트1"), ("100002", "테스트2"), ("100003", "테스트3")]:
+    existing = db.query(Employee).filter_by(emp_id=emp_id).first()
+    if not existing:
+        test_emp = Employee(emp_id=emp_id, name=name, dept="테스트팀")
+        db.add(test_emp)
+        print(f"✅ {name} 추가됨")
+    else:
+        print(f"✅ {name} 이미 존재함")
+
+db.commit()
 
 # 스키마 확인
 import sqlite3
-conn = sqlite3.connect('app/database.db')
+conn = sqlite3.connect(str(db_path))
 cursor = conn.cursor()
 
 print("\n=== 생성된 테이블 목록 ===")

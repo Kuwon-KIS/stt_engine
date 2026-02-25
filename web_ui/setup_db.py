@@ -1,14 +1,26 @@
 #!/usr/bin/env python
+"""
+데이터베이스 초기화 스크립트 (Raw SQL)
+- 순수 SQLite 명령어로 DB 생성
+- 기본 테스트 사용자 3명 추가 (100001-100003)
+"""
 import os
 import sqlite3
+from pathlib import Path
+
+# DB 경로 설정
+db_path = Path('data/db.sqlite')
 
 # 이전 DB 삭제
-if os.path.exists('app/database.db'):
-    os.remove('app/database.db')
-    print("✅ 이전 데이터베이스 삭제")
+if db_path.exists():
+    db_path.unlink()
+    print(f"✅ 이전 데이터베이스 삭제: {db_path}")
+
+# data 디렉토리 생성
+db_path.parent.mkdir(parents=True, exist_ok=True)
 
 # SQLite DB 생성
-conn = sqlite3.connect('app/database.db')
+conn = sqlite3.connect(str(db_path))
 cursor = conn.cursor()
 
 # employees 테이블
@@ -75,11 +87,14 @@ cursor.execute('''CREATE TABLE file_uploads (
 
 conn.commit()
 
-# 테스트 직원 추가
-cursor.execute("INSERT INTO employees (emp_id, name, dept) VALUES (?, ?, ?)", ("100001", "김철수", "영업팀"))
+# 기본 테스트 사용자 추가
+cursor.execute("INSERT INTO employees (emp_id, name, dept) VALUES (?, ?, ?)", ("100001", "테스트1", "테스트팀"))
+cursor.execute("INSERT INTO employees (emp_id, name, dept) VALUES (?, ?, ?)", ("100002", "테스트2", "테스트팀"))
+cursor.execute("INSERT INTO employees (emp_id, name, dept) VALUES (?, ?, ?)", ("100003", "테스트3", "테스트팀"))
 conn.commit()
 
 print("✅ 모든 테이블 생성 완료")
+print("✅ 기본 테스트 사용자 3명 추가 (100001-100003)")
 
 # 확인
 cursor.execute("PRAGMA table_info(analysis_jobs)")
