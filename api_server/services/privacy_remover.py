@@ -521,26 +521,40 @@ class PrivacyRemoverService:
         """
         load_dotenv()
         
-        # LLM 모델: Qwen3-30B-A3B-Thinking-2507-FP8 (기본)
+        # LLM 모델: 기본값은 vLLM (Qwen3-30B-A3B-Thinking)
         # 또는 환경변수 LLM_MODEL_NAME으로 override 가능
         self.model_name = os.getenv("LLM_MODEL_NAME", "Qwen3-30B-A3B-Thinking-2507-FP8")
         self.llm_client = None
         self.prompt_processor = SimplePromptProcessor(prompts_dir)
         self._initialized = False
+        self._llm_clients_cache = {}  # 모델별 클라이언트 캐시
         
-        logger.info(f"PrivacyRemoverService 초기화: model={self.model_name}")
+        logger.info(f"PrivacyRemoverService 초기화: default_model={self.model_name}")
     
-    async def initialize(self):
-        """LLM 클라이언트 초기화"""
-        if self._initialized:
-            logger.debug("LLM 클라이언트 이미 초기화됨")
+    async def initialize(self, model_name: Optional[str] = None):
+        """
+        LLM 클라이언트 초기화
+        
+        Args:
+            model_name: 사용할 모델명 (None이면 기본값 사용)
+        """
+        # 사용할 모델 결정
+        actual_model = model_name or self.model_name
+        
+        # 이미 초기화된 모델인지 확인
+        if actual_model in self._llm_clients_cache:
+            logger.debug(f"LLM 클라이언트 캐시 사용: {actual_model}")
+            self.llm_client = self._llm_clients_cache[actual_model]
+            self._initialized = True
             return
         
         try:
-            logger.info(f"LLM 클라이언트 초기화 시작: {self.model_name}")
-            self.llm_client = LLMClientFactory.create_client(self.model_name)
+            logger.info(f"LLM 클라이언트 초기화 시작: {actual_model}")
+            client = LLMClientFactory.create_client(actual_model)
+            self._llm_clients_cache[actual_model] = client
+            self.llm_client = client
             self._initialized = True
-            logger.info(f"LLM 클라이언트 초기화 완료")
+            logger.info(f"LLM 클라이언트 초기화 완료: {actual_model}")
         except Exception as e:
             logger.error(f"LLM 클라이언트 초기화 실패: {str(e)}", exc_info=True)
             raise
@@ -572,7 +586,8 @@ class PrivacyRemoverService:
         usertxt: str,
         prompt_type: str = "privacy_remover_default_v6",
         max_tokens: int = 32768,
-        temperature: float = 0.3
+        temperature: float = 0.3,
+        model_name: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         텍스트의 개인정보 제거 - privacy_remover_runner.py의 process_text 로직 구현
@@ -582,6 +597,7 @@ class PrivacyRemoverService:
             prompt_type: 프롬프트 타입
             max_tokens: 최대 토큰 수
             temperature: 온도 값
+            model_name: 사용할 모델명 (None이면 기본값 사용)
             
         Returns:
             {
@@ -596,10 +612,11 @@ class PrivacyRemoverService:
         """
         try:
             # LLM 클라이언트 초기화 확인
-            if not self._initialized:
-                await self.initialize()
+            if not self._initialized or (model_name and self.llm_client is None):
+                await self.initialize(model_name)
             
-            logger.info(f"[PrivacyRemover] 텍스트 처리 시작: prompt_type={prompt_type}, text_len={len(usertxt)}")
+            actual_model = model_name or self.model_name
+            logger.info(f"[PrivacyRemover] 텍스트 처리 시작: prompt_type={prompt_type}, model={actual_model}, text_len={len(usertxt)}")
             
             # 프롬프트 생성
             prompt = self.prompt_processor.get_prompt(prompt_type, usertxt)
@@ -709,7 +726,8 @@ class PrivacyRemoverService:
         stt_text: str,
         prompt_type: str = "privacy_remover_default_v6",
         max_tokens: int = 32768,
-        temperature: float = 0.3
+        temperature: float = 0.3,
+        model_name: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         STT 텍스트의 개인정보 제거 (app.py에서 호환성을 위한 래퍼)
@@ -719,6 +737,7 @@ class PrivacyRemoverService:
             prompt_type: 프롬프트 타입
             max_tokens: 최대 토큰 수
             temperature: 온도 값
+            model_name: 사용할 모델명 (None이면 기본값 사용)
             
         Returns:
             process_text와 동일한 결과 형식
@@ -727,7 +746,8 @@ class PrivacyRemoverService:
             usertxt=stt_text,
             prompt_type=prompt_type,
             max_tokens=max_tokens,
-            temperature=temperature
+            temperature=temperature,
+            model_name=model_name
         )
     
     def _regex_fallback(self, text: str) -> Dict[str, str]:

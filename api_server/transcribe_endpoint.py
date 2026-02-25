@@ -238,13 +238,20 @@ async def perform_privacy_removal(
     STT 결과 텍스트에서 개인정보를 마스킹합니다.
     privacy_remover.py의 PrivacyRemoverService.process_text() 호출
     
+    프롬프트 처리 흐름:
+    1. 프롬프트 파일(privacy_remover_default_v6.prompt)에서 템플릿 로드
+    2. {usertxt} 플레이스홀더를 실제 텍스트로 대체
+    3. 생성된 프롬프트를 LLM(vLLM/Ollama)에 전송
+    4. LLM 응답 파싱 (JSON) 및 개인정보 제거 결과 추출
+    5. 실패 시 regex fallback 적용
+    
     Args:
         text: 원본 텍스트
         prompt_type: 프롬프트 타입
                     - 'privacy_remover_default' 또는 'privacy_remover_default_v6': 기본 프롬프트
                     - 'privacy_remover_loosed_contact' 또는 'privacy_remover_loosed_contact_v6': 로우즈드 프롬프트
                     (기본값: privacy_remover_default_v6)
-        llm_type: LLM 타입 ('openai', 'vllm', 'ollama') (기본값: 'openai')
+        llm_type: LLM 타입 ('openai', 'vllm', 'ollama') (기본값: 'vllm')
         vllm_model_name: vLLM 사용 시 모델명
         ollama_model_name: Ollama 사용 시 모델명
     
@@ -256,7 +263,20 @@ async def perform_privacy_removal(
         
         # PrivacyRemoverService 초기화
         privacy_service = get_privacy_remover_service()
-        await privacy_service.initialize()
+        
+        # 사용할 모델명 결정
+        model_name = None
+        if llm_type == "vllm" and vllm_model_name:
+            model_name = vllm_model_name
+            logger.debug(f"[API/Transcribe] vLLM 모델 사용: {model_name}")
+        elif llm_type == "ollama" and ollama_model_name:
+            model_name = ollama_model_name
+            logger.debug(f"[API/Transcribe] Ollama 모델 사용: {model_name}")
+        else:
+            logger.debug(f"[API/Transcribe] 기본 모델 사용")
+        
+        # LLM 클라이언트 초기화
+        await privacy_service.initialize(model_name)
         logger.debug(f"[API/Transcribe] PrivacyRemoverService 초기화 완료")
         
         # 프롬프트 타입 정규화
@@ -271,14 +291,15 @@ async def perform_privacy_removal(
             normalized_prompt_type = 'privacy_remover_default_v6'
             logger.debug(f"[API/Transcribe] 기본 타입 → privacy_remover_default_v6으로 정규화")
         
-        logger.info(f"[API/Transcribe] process_text 호출: prompt_type={normalized_prompt_type}")
+        logger.info(f"[API/Transcribe] process_text 호출: prompt_type={normalized_prompt_type}, model={model_name or 'default'}")
         
         # 개인정보 제거 처리 (process_text 함수 호출)
         result = await privacy_service.process_text(
             usertxt=text,
             prompt_type=normalized_prompt_type,
             max_tokens=32768,
-            temperature=0.3
+            temperature=0.3,
+            model_name=model_name  # 모델명 전달 추가
         )
         
         logger.debug(f"[API/Transcribe] process_text 결과: success={result.get('success')}, privacy_exist={result.get('privacy_exist')}")
