@@ -567,6 +567,13 @@ async def _call_external_api(
     """
     외부 AI Agent API 호출 시도
     
+    외부 API 응답 형식:
+    {
+        "detected_yn": "Y" or "N",
+        "detected_sentence": string,
+        "detected_reason": string
+    }
+    
     Args:
         text: 처리할 텍스트
         detection_types: 탐지 대상 목록
@@ -604,7 +611,23 @@ async def _call_external_api(
         
         result = response.json()
         logger.info(f"[Transcribe/ElementDetection] ✅ 외부 API 호출 성공")
-        return result
+        
+        # 외부 API 응답을 표준 형식으로 변환
+        # 응답 형식: {"detected_yn": "Y"/"N", "detected_sentence": str, "detected_reason": str}
+        detection_results = []
+        detected_yn = result.get("detected_yn", "N").upper()
+        is_detected = detected_yn == "Y"
+        
+        detection_results.append({
+            "detected_yn": detected_yn,
+            "detected_sentence": result.get("detected_sentence", ""),
+            "detected_reason": result.get("detected_reason", "")
+        })
+        
+        return {
+            'detection_results': detection_results,
+            'api_type': 'external'
+        }
     
     except Exception as e:
         logger.warning(f"[Transcribe/ElementDetection] 외부 API 호출 중 오류: {type(e).__name__}: {str(e)}")
@@ -620,6 +643,13 @@ async def _call_local_llm(
 ) -> Optional[dict]:
     """
     로컬 LLM (vLLM/Ollama)을 사용한 요소 탐지
+    
+    LLM 응답을 표준 형식으로 변환:
+    {
+        "detected_yn": "Y" or "N",
+        "detected_sentence": string,
+        "detected_reason": string
+    }
     
     Args:
         text: 처리할 텍스트
@@ -641,7 +671,7 @@ async def _call_local_llm(
             model_name=model_name
         )
         
-        # 요소 탐지 프롬프트 생성
+        # 요소 탐지 프롬프트 생성 - 표준 형식으로 응답하도록 지시
         detection_prompt = f"""다음 고객 상담 통화 내용을 분석하여 요청된 요소들의 탐지 여부를 판단하세요.
 
 감지 대상:
@@ -650,12 +680,14 @@ async def _call_local_llm(
 상담 내용:
 {text}
 
-각 요소에 대해 다음 JSON 형식으로 응답하세요:
+다음 JSON 형식으로 응답하세요 (한 번에 하나의 결과만):
 {{
-    "detections": [
-        {{"type": "요소명", "detected": true/false, "confidence": 0.0~1.0, "reason": "감지 근거"}}
-    ]
+    "detected_yn": "Y" 또는 "N",
+    "detected_sentence": "탐지된 문장 (탐지된 경우)",
+    "detected_reason": "탐지 근거 설명"
 }}
+
+검정 결과:
 """
         
         # LLM 호출
@@ -672,14 +704,18 @@ async def _call_local_llm(
         try:
             import json as json_lib
             result_json = json_lib.loads(response)
-            detections = result_json.get("detections", [])
-            for detection in detections:
-                detection_results.append({
-                    "type": detection.get("type", "unknown"),
-                    "detected": detection.get("detected", False),
-                    "confidence": float(detection.get("confidence", 0.0)),
-                    "details": detection.get("reason", "")
-                })
+            
+            # 표준 형식으로 변환
+            detected_yn = result_json.get("detected_yn", "N").upper()
+            detected_sentence = result_json.get("detected_sentence", "")
+            detected_reason = result_json.get("detected_reason", "")
+            
+            detection_results.append({
+                "detected_yn": detected_yn,
+                "detected_sentence": detected_sentence,
+                "detected_reason": detected_reason
+            })
+            
         except (json_lib.JSONDecodeError, ValueError):
             logger.warning(f"[Transcribe/ElementDetection] LLM 응답 파싱 실패: {response}")
             return None
@@ -700,6 +736,13 @@ def _get_dummy_results(detection_types: list) -> dict:
     """
     더미 결과 반환 (모든 요소 미탐지)
     
+    표준 형식:
+    {
+        "detected_yn": "N",
+        "detected_sentence": "",
+        "detected_reason": "All detection methods failed"
+    }
+    
     Args:
         detection_types: 탐지 대상 목록
     
@@ -707,14 +750,13 @@ def _get_dummy_results(detection_types: list) -> dict:
         더미 결과 dict
     """
     logger.warning("[Transcribe/ElementDetection] 모든 fallback 방법 실패, 더미 결과 반환")
-    detection_results = []
-    for detection_type in detection_types:
-        detection_results.append({
-            "type": detection_type,
-            "detected": False,
-            "confidence": 0.0,
-            "details": "All detection methods failed, returning dummy result"
-        })
+    detection_results = [
+        {
+            "detected_yn": "N",
+            "detected_sentence": "",
+            "detected_reason": "All detection methods failed, returning dummy result"
+        }
+    ]
     return {
         'detection_results': detection_results,
         'api_type': 'dummy',
@@ -760,11 +802,18 @@ async def perform_element_detection(
     Returns:
         {
             'success': bool,
-            'detection_results': list,  # 탐지된 요소 목록
+            'detection_results': list,  # 탐지된 요소 목록 (표준 형식)
             'api_type': str,           # 사용된 API 방식 ('external', 'local', 'dummy')
             'llm_type': str,           # 사용된 LLM (local/fallback 모드일 때)
             'fallback_chain': list,    # fallback 모드일 때 시도한 방법들
             'error': str               # 에러 발생시
+        }
+        
+    응답 형식 (detection_results 요소):
+        {
+            "detected_yn": "Y" or "N",      # 탐지 여부
+            "detected_sentence": string,     # 탐지된 문장/내용
+            "detected_reason": string        # 탐지 근거
         }
     """
     try:
@@ -790,7 +839,7 @@ async def perform_element_detection(
                     logger.info("[Transcribe/ElementDetection] [Fallback] ✅ 단계 1️⃣ 성공 (외부 API 사용)")
                     return {
                         'success': True,
-                        'detection_results': result.get('detection_results', result),
+                        'detection_results': result.get('detection_results', []),
                         'api_type': 'external',
                         'llm_type': None,
                         'fallback_chain': fallback_chain
@@ -827,7 +876,7 @@ async def perform_element_detection(
             if result:
                 return {
                     'success': True,
-                    'detection_results': result.get('detection_results', result),
+                    'detection_results': result.get('detection_results', []),
                     'api_type': 'external',
                     'llm_type': None
                 }

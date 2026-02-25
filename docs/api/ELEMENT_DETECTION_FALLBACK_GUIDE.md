@@ -72,15 +72,14 @@
   "success": true,
   "detection_results": [
     {
-      "type": "incomplete_sales",
-      "detected": true,
-      "confidence": 0.92,
-      "details": "판매 절차 미흡 감지"
+      "detected_yn": "Y",
+      "detected_sentence": "이 상품은 투자하실 가치가 충분합니다",
+      "detected_reason": "충분한 설명 없이 강하게 권유하는 문구 탐지"
     }
   ],
-  "api_type": "external",  // 실제로 사용된 방식
+  "api_type": "external",
   "llm_type": null,
-  "fallback_chain": ["external_api"]  // 시도 내역
+  "fallback_chain": ["external_api"]
 }
 ```
 
@@ -216,16 +215,23 @@ curl -X POST http://localhost:8003/transcribe \
 | `fallback_chain` | list | 시도한 방법들의 목록 |
 | `llm_type` | str | 사용된 LLM 타입 (`vllm`/`ollama`) |
 
-### 탐지 결과 필드
+### 탐지 결과 필드 (표준 형식)
 
 ```json
 {
-  "type": "incomplete_sales",     // 탐지 요소 타입
-  "detected": true,                // 탐지 여부
-  "confidence": 0.92,              // 신뢰도 (0.0 ~ 1.0)
-  "details": "판매 절차 미흡 감지" // 상세 정보
+  "detected_yn": "Y",              // 탐지 여부 (Y/N)
+  "detected_sentence": "강하게 권유하는 표현", // 탐지된 문장/내용
+  "detected_reason": "충분한 설명 없이 강권" // 탐지 근거
 }
 ```
+
+**필드 설명**:
+
+| 필드 | 타입 | 예시 |
+|------|------|------|
+| `detected_yn` | str | "Y" 또는 "N" |
+| `detected_sentence` | str | 원문에서 탐지된 구간 또는 요약 |
+| `detected_reason` | str | 탐지 근거 상세 설명 |
 
 ---
 
@@ -249,6 +255,79 @@ curl -X POST http://localhost:8003/transcribe \
      │
      └─ [3] Dummy 결과 반환 (항상 성공)
          └─ api_type='dummy' ✅
+```
+
+---
+
+## 외부 AI Agent API 스펙
+
+### 요청 형식
+
+**엔드포인트**: `{external_api_url}`  
+**메서드**: `POST`  
+**Content-Type**: `application/json`
+
+**요청 본문**:
+```json
+{
+  "text": "고객 상담 내용 전체",
+  "detection_types": ["incomplete_sales", "aggressive_sales"]
+}
+```
+
+### 응답 형식
+
+**상태 코드**: `200 OK`
+
+**응답 본문** (표준 형식):
+```json
+{
+  "detected_yn": "Y",
+  "detected_sentence": "이 상품은 정말 좋습니다",
+  "detected_reason": "충분한 설명 없이 상품을 강하게 권유함"
+}
+```
+
+**필드 설명**:
+- `detected_yn`: "Y" (탐지됨) 또는 "N" (탐지 안 됨)
+- `detected_sentence`: 탐지된 원문 구간 또는 요약
+- `detected_reason`: 왜 해당 문장이 탐지되었는지 설명
+
+### 외부 API 구현 예제
+
+**Python (FastAPI)**:
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class DetectionRequest(BaseModel):
+    text: str
+    detection_types: list
+
+class DetectionResponse(BaseModel):
+    detected_yn: str  # "Y" or "N"
+    detected_sentence: str
+    detected_reason: str
+
+@app.post("/api/detect", response_model=DetectionResponse)
+async def detect_elements(request: DetectionRequest):
+    # 요소 탐지 로직
+    is_detected = analyze_text(request.text, request.detection_types)
+    
+    if is_detected:
+        return DetectionResponse(
+            detected_yn="Y",
+            detected_sentence="탐지된 문장",
+            detected_reason="탐지 근거"
+        )
+    else:
+        return DetectionResponse(
+            detected_yn="N",
+            detected_sentence="",
+            detected_reason=""
+        )
 ```
 
 ---
