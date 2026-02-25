@@ -65,6 +65,16 @@ async def login(request: LoginRequest, req: Request, db: Session = Depends(get_d
     result = AuthService.validate_employee(request.emp_id, db)
     
     if not result["success"]:
+        # 미등록 사용자인 경우 404 반환
+        if result.get("error") == "USER_NOT_FOUND":
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "detail": result.get("message", "등록되지 않은 사번입니다."),
+                    "code": "USER_NOT_FOUND"
+                }
+            )
+        # 기타 오류는 401 반환
         raise HTTPException(
             status_code=401,
             detail=result.get("error", "Login failed")

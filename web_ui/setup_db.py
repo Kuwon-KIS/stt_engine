@@ -75,11 +75,14 @@ cursor.execute('''CREATE TABLE file_uploads (
 
 conn.commit()
 
-# 테스트 직원 추가
-cursor.execute("INSERT INTO employees (emp_id, name, dept) VALUES (?, ?, ?)", ("100001", "김철수", "영업팀"))
+# 기본 테스트 사용자 추가
+cursor.execute("INSERT INTO employees (emp_id, name, dept) VALUES (?, ?, ?)", ("100001", "테스트1", "테스트팀"))
+cursor.execute("INSERT INTO employees (emp_id, name, dept) VALUES (?, ?, ?)", ("100002", "테스트2", "테스트팀"))
+cursor.execute("INSERT INTO employees (emp_id, name, dept) VALUES (?, ?, ?)", ("100003", "테스트3", "테스트팀"))
 conn.commit()
 
 print("✅ 모든 테이블 생성 완료")
+print("✅ 기본 테스트 사용자 3명 추가 (100001-100003)")
 
 # 확인
 cursor.execute("PRAGMA table_info(analysis_jobs)")

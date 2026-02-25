@@ -81,6 +81,45 @@
             color: #333;
         }
 
+        .storage-info-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            color: white;
+        }
+
+        .storage-info-box h3 {
+            font-size: 13px;
+            margin: 0 0 10px 0;
+            opacity: 0.9;
+        }
+
+        .storage-text {
+            font-size: 12px;
+            margin-bottom: 8px;
+        }
+
+        .storage-bar {
+            width: 100%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 5px;
+        }
+
+        .storage-bar-fill {
+            height: 100%;
+            background: #4caf50;
+            transition: width 0.3s, background 0.3s;
+        }
+
+        .storage-details {
+            font-size: 11px;
+            opacity: 0.8;
+        }
+
         .folder-list {
             list-style: none;
         }
@@ -93,6 +132,44 @@
             cursor: pointer;
             transition: background-color 0.2s;
             border-left: 3px solid transparent;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: relative;
+        }
+
+        .folder-name {
+            flex: 1;
+        }
+
+        .folder-size {
+            font-size: 11px;
+            color: #999;
+            margin-left: 10px;
+        }
+
+        .folder-delete-btn {
+            background: none;
+            border: none;
+            color: #999;
+            cursor: pointer;
+            padding: 2px 6px;
+            font-size: 14px;
+            opacity: 0;
+            transition: opacity 0.2s, color 0.2s;
+            margin-left: 5px;
+        }
+
+        .folder-item:hover .folder-delete-btn {
+            opacity: 1;
+        }
+
+        .folder-delete-btn:hover {
+            color: #f44336;
+        }
+
+        .folder-item.active .folder-size {
+            color: rgba(255, 255, 255, 0.8);
         }
 
         .folder-item:hover {
@@ -469,6 +546,103 @@
             font-size: 14px;
         }
 
+        /* Phase 5: 폴더 생성 다이얼로그 */
+        .dialog-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .dialog-overlay.active {
+            display: flex;
+        }
+
+        .dialog-box {
+            background: white;
+            border-radius: 8px;
+            padding: 25px;
+            max-width: 400px;
+            width: 90%;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+        }
+
+        .dialog-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #333;
+        }
+
+        .dialog-content {
+            margin-bottom: 20px;
+        }
+
+        .dialog-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+
+        .dialog-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .dialog-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .dialog-button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        .dialog-button:hover {
+            opacity: 0.8;
+        }
+
+        .dialog-button.primary {
+            background-color: #667eea;
+            color: white;
+        }
+
+        .dialog-button.secondary {
+            background-color: #f5f5f5;
+            color: #333;
+        }
+
+        /* 확인 다이얼로그 */
+        .confirm-text {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 10px;
+        }
+
+        .confirm-warning {
+            font-size: 12px;
+            color: #f57c00;
+            background: #fff3e0;
+            padding: 8px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+
         @media (max-width: 768px) {
             .container {
                 grid-template-columns: 1fr;
@@ -496,12 +670,26 @@
     <div class="container">
         <!-- 사이드바: 폴더 목록 -->
         <div class="sidebar">
+            <!-- Storage Info -->
+            <div class="storage-info-box" id="storageInfoBox">
+                <h3>💾 저장 용량</h3>
+                <div class="storage-text" id="storageText">로딩 중...</div>
+                <div class="storage-bar">
+                    <div class="storage-bar-fill" id="storageBarFill"></div>
+                </div>
+                <div class="storage-details" id="storageDetails"></div>
+            </div>
+
+            <!-- Folder List -->
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                 <h2 style="margin: 0;">📁 폴더</h2>
                 <button class="action-button secondary-button" onclick="showCreateFolderDialog()" style="font-size: 12px; padding: 6px 12px;">새 폴더</button>
             </div>
             <ul class="folder-list" id="folderList">
-                <li class="folder-item active" onclick="selectFolder(null)">전체 파일</li>
+                <li class="folder-item active" onclick="selectFolder(null)">
+                    <span class="folder-name">전체 파일</span>
+                    <span class="folder-size" id="totalFolderSize">-</span>
+                </li>
             </ul>
         </div>
 
@@ -557,6 +745,42 @@
         </div>
     </div>
 
+    <!-- Phase 5: 폴더 생성 다이얼로그 -->
+    <div id="createFolderDialog" class="dialog-overlay">
+        <div class="dialog-box">
+            <div class="dialog-title">📁 새 폴더 만들기</div>
+            <div class="dialog-content">
+                <input type="text" id="folderNameInput" class="dialog-input" placeholder="폴더 이름을 입력하세요" maxlength="50">
+                <div style="font-size: 11px; color: #999; margin-top: 5px;">
+                    한글, 영문, 숫자, 공백, 하이픈(-), 언더스코어(_) 사용 가능
+                </div>
+            </div>
+            <div class="dialog-buttons">
+                <button class="dialog-button secondary" onclick="closeCreateFolderDialog()">취소</button>
+                <button class="dialog-button primary" onclick="createFolder()">만들기</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Phase 5: 폴더 삭제 확인 다이얼로그 -->
+    <div id="deleteFolderDialog" class="dialog-overlay">
+        <div class="dialog-box">
+            <div class="dialog-title">⚠️ 폴더 삭제 확인</div>
+            <div class="dialog-content">
+                <div class="confirm-text">
+                    '<span id="deleteFolderName"></span>' 폴더를 삭제하시겠습니까?
+                </div>
+                <div class="confirm-warning">
+                    ⚠️ 폴더 내의 모든 파일이 함께 삭제됩니다. 이 작업은 되돌릴 수 없습니다.
+                </div>
+            </div>
+            <div class="dialog-buttons">
+                <button class="dialog-button secondary" onclick="closeDeleteFolderDialog()">취소</button>
+                <button class="dialog-button primary" style="background-color: #f44336;" onclick="confirmDeleteFolder()">삭제</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 분석 이력 모달 -->
     <div id="historyModal" class="modal" style="display: none;">
         <div class="modal-content">
@@ -587,10 +811,74 @@
             if (session) {
                 currentEmpId = session.emp_id;
                 document.getElementById('userInfo').textContent = `${session.name} (${session.emp_id})`;
+                loadStorageInfo();  // Phase 4: 저장 용량 정보 로드
                 loadFolders();
                 loadFiles();
             }
         });
+
+        // Phase 4: 저장 용량 정보 로드
+        async function loadStorageInfo() {
+            try {
+                const response = await fetch('/api/storage/info', {
+                    credentials: 'include'
+                });
+                
+                if (!response.ok) {
+                    throw new Error('저장 용량 정보 로드 실패');
+                }
+                
+                const data = await response.json();
+                
+                // bytes를 직접 사용하여 정확하게 계산
+                const usedBytes = data.storage_used;
+                const usedMB = usedBytes / (1024 * 1024);
+                const usedGB = usedBytes / (1024 * 1024 * 1024);
+                
+                const quotaGB = data.storage_quota_gb;
+                const percent = data.usage_percent;
+                
+                let usedDisplay, quotaDisplay;
+                
+                // 사용량이 1GB 미만이면 MB로 표시
+                if (usedGB < 1) {
+                    usedDisplay = `${usedMB.toFixed(2)} MB`;
+                } else {
+                    usedDisplay = `${usedGB.toFixed(2)} GB`;
+                }
+                
+                quotaDisplay = `${quotaGB} GB`;
+                
+                // 저장 용량 텍스트 업데이트 (퍼센티지 포함)
+                const storageText = document.getElementById('storageText');
+                storageText.textContent = `${usedDisplay} / ${quotaDisplay} 사용 중 (${percent.toFixed(1)}%)`;
+                
+                // 프로그레스 바 업데이트
+                const storageBarFill = document.getElementById('storageBarFill');
+                storageBarFill.style.width = `${percent}%`;
+                
+                // 색상 변경 (사용량에 따라)
+                if (percent >= 90) {
+                    storageBarFill.style.background = '#f44336';  // 빨강 (90% 이상)
+                } else if (percent >= 75) {
+                    storageBarFill.style.background = '#ff9800';  // 주황 (75% 이상)
+                } else {
+                    storageBarFill.style.background = '#4caf50';  // 초록 (75% 미만)
+                }
+                
+                // 상세 정보 업데이트
+                const storageDetails = document.getElementById('storageDetails');
+                const availableMB = data.available_gb * 1024;
+                const availableDisplay = data.available_gb >= 1 
+                    ? `${data.available_gb.toFixed(1)} GB` 
+                    : `${availableMB.toFixed(0)} MB`;
+                storageDetails.textContent = `사용 가능: ${availableDisplay}`;
+                
+            } catch (error) {
+                console.error('저장 용량 정보 로드 에러:', error);
+                document.getElementById('storageText').textContent = '용량 정보 로드 실패';
+            }
+        }
 
         // 폴더 목록 로드
         async function loadFolders(showError = true) {
@@ -604,7 +892,7 @@
                 }
                 
                 const data = await response.json();
-                renderFolders(data.folders || []);
+                await renderFolders(data.folders || []);  // await 추가
             } catch (error) {
                 console.error('폴더 로드 에러:', error);
                 if (showError) {
@@ -614,29 +902,98 @@
         }
 
         // 폴더 렌더링
-        function renderFolders(folders) {
+        async function renderFolders(folders) {
             const folderList = document.getElementById('folderList');
-            folderList.innerHTML = '<li class="folder-item active" onclick="selectFolder(null)">전체 파일</li>';
             
-            folders.forEach(folder => {
-                const li = document.createElement('li');
-                li.className = 'folder-item';
-                li.textContent = folder;
-                li.onclick = () => selectFolder(folder);
-                folderList.appendChild(li);
-            });
+            // 전체 파일 항목 추가
+            folderList.innerHTML = `
+                <li class="folder-item active" onclick="selectFolder(null)">
+                    <span class="folder-name">전체 파일</span>
+                    <span class="folder-size" id="totalFolderSize">-</span>
+                </li>
+            `;
+            
+            // 각 폴더별로 용량 계산
+            for (const folder of folders) {
+                try {
+                    // 해당 폴더의 파일 목록 조회
+                    const response = await fetch(`/api/files/list?folder_path=${encodeURIComponent(folder)}`, {
+                        credentials: 'include'
+                    });
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        const totalSize = (data.files || []).reduce((sum, file) => sum + (file.file_size_mb || 0), 0);
+                        
+                        const li = document.createElement('li');
+                        li.className = 'folder-item';
+                        li.innerHTML = `
+                            <span class="folder-name" onclick="selectFolder('${folder}')" style="cursor: pointer; flex: 1;">${folder}</span>
+                            <span class="folder-size">${totalSize.toFixed(2)} MB</span>
+                            <button class="folder-delete-btn" onclick="event.stopPropagation(); showDeleteFolderDialog('${folder}')" title="폴더 삭제">🗑️</button>
+                        `;
+                        folderList.appendChild(li);
+                    }
+                } catch (error) {
+                    console.error(`폴더 ${folder} 용량 로드 에러:`, error);
+                    // 에러 발생 시에도 폴더는 표시
+                    const li = document.createElement('li');
+                    li.className = 'folder-item';
+                    li.innerHTML = `
+                        <span class="folder-name" onclick="selectFolder('${folder}')" style="cursor: pointer; flex: 1;">${folder}</span>
+                        <span class="folder-size">-</span>
+                        <button class="folder-delete-btn" onclick="event.stopPropagation(); showDeleteFolderDialog('${folder}')" title="폴더 삭제">🗑️</button>
+                    `;
+                    folderList.appendChild(li);
+                }
+            }
+            
+            // 전체 파일 크기 계산 (모든 폴더의 합)
+            updateTotalFolderSize();
+        }
+        
+        // 전체 폴더 크기 업데이트
+        async function updateTotalFolderSize() {
+            try {
+                const response = await fetch('/api/files/list', {
+                    credentials: 'include'
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    const totalSize = (data.files || []).reduce((sum, file) => sum + (file.file_size_mb || 0), 0);
+                    document.getElementById('totalFolderSize').textContent = `${totalSize.toFixed(2)} MB`;
+                }
+            } catch (error) {
+                console.error('전체 파일 크기 로드 에러:', error);
+            }
         }
 
         // 폴더 선택
         function selectFolder(folder) {
             currentFolder = folder;
             
-            // UI 업데이트
+            // UI 업데이트: 모든 폴더 항목의 active 클래스 제거
             document.querySelectorAll('.folder-item').forEach(item => {
                 item.classList.remove('active');
             });
-            if (event && event.target) {
-                event.target.classList.add('active');
+            
+            // 선택된 폴더에 active 클래스 추가
+            if (folder === null) {
+                // 전체 파일 선택
+                const allFilesItem = document.querySelector('.folder-item[onclick*="selectFolder(null)"]');
+                if (allFilesItem) {
+                    allFilesItem.classList.add('active');
+                }
+            } else {
+                // 특정 폴더 선택
+                const selectedItem = Array.from(document.querySelectorAll('.folder-item')).find(item => {
+                    const folderNameSpan = item.querySelector('.folder-name');
+                    return folderNameSpan && folderNameSpan.textContent === folder;
+                });
+                if (selectedItem) {
+                    selectedItem.classList.add('active');
+                }
             }
             
             // 파일 목록 로드
@@ -644,21 +1001,139 @@
             
             // 제목 업데이트
             const title = document.getElementById('fileListTitle');
-            title.textContent = folder ? `📄 ${folder} 폴더의 파일` : '📄 모든 파일';
+            if (title) {
+                title.textContent = folder ? `📄 ${folder} 폴더의 파일` : '📄 모든 파일';
+            }
             
-            // 분석 이력 버튼 활성화/비활성화
+            // 분석 이력 버튼 활성화/비활성화 (존재하는 경우만)
             const historyBtn = document.getElementById('historyBtn');
             const startBtn = document.getElementById('startAnalysisBtn');
-            if (folder) {
-                historyBtn.disabled = false;
-                historyBtn.style.display = 'inline-block';
-                startBtn.style.display = 'inline-block';
-            } else {
-                historyBtn.disabled = true;
-                historyBtn.style.display = 'none';
-                startBtn.style.display = 'none';
+            
+            if (historyBtn) {
+                if (folder) {
+                    historyBtn.disabled = false;
+                    historyBtn.style.display = 'inline-block';
+                } else {
+                    historyBtn.disabled = true;
+                    historyBtn.style.display = 'none';
+                }
+            }
+            
+            if (startBtn) {
+                if (folder) {
+                    startBtn.style.display = 'inline-block';
+                } else {
+                    startBtn.style.display = 'none';
+                }
             }
         }
+
+        // Phase 5: 폴더 생성 다이얼로그 표시
+        function showCreateFolderDialog() {
+            document.getElementById('createFolderDialog').classList.add('active');
+            document.getElementById('folderNameInput').value = '';
+            document.getElementById('folderNameInput').focus();
+        }
+
+        // Phase 5: 폴더 생성 다이얼로그 닫기
+        function closeCreateFolderDialog() {
+            document.getElementById('createFolderDialog').classList.remove('active');
+        }
+
+        // Phase 5: 폴더 생성
+        async function createFolder() {
+            const input = document.getElementById('folderNameInput');
+            const folderName = input.value.trim();
+            
+            if (!folderName) {
+                showNotification('폴더 이름을 입력해주세요', 'warning');
+                input.focus();
+                return;
+            }
+            
+            try {
+                const formData = new FormData();
+                formData.append('folder_name', folderName);
+                
+                const response = await fetch('/api/files/folders', {
+                    method: 'POST',
+                    credentials: 'include',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showNotification(data.message || '폴더가 생성되었습니다', 'success');
+                    closeCreateFolderDialog();
+                    await loadFolders(false);  // 폴더 목록 새로고침
+                } else {
+                    showNotification(data.detail || '폴더 생성 실패', 'error');
+                }
+            } catch (error) {
+                console.error('폴더 생성 에러:', error);
+                showNotification('폴더 생성 중 오류가 발생했습니다', 'error');
+            }
+        }
+
+        // Phase 5: 폴더 삭제 확인 다이얼로그 표시
+        let folderToDelete = null;
+        
+        function showDeleteFolderDialog(folderName) {
+            folderToDelete = folderName;
+            document.getElementById('deleteFolderName').textContent = folderName;
+            document.getElementById('deleteFolderDialog').classList.add('active');
+        }
+
+        // Phase 5: 폴더 삭제 다이얼로그 닫기
+        function closeDeleteFolderDialog() {
+            document.getElementById('deleteFolderDialog').classList.remove('active');
+            folderToDelete = null;
+        }
+
+        // Phase 5: 폴더 삭제 확인
+        async function confirmDeleteFolder() {
+            if (!folderToDelete) return;
+            
+            try {
+                const response = await fetch(`/api/files/folders/${encodeURIComponent(folderToDelete)}`, {
+                    method: 'DELETE',
+                    credentials: 'include'
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showNotification(data.message || '폴더가 삭제되었습니다', 'success');
+                    closeDeleteFolderDialog();
+                    
+                    // 삭제된 폴더가 현재 선택된 폴더면 전체 파일로 이동
+                    if (currentFolder === folderToDelete) {
+                        selectFolder(null);
+                    }
+                    
+                    await loadFolders(false);  // 폴더 목록 새로고침
+                    await loadStorageInfo();   // 저장 용량 정보 새로고침
+                } else {
+                    showNotification(data.detail || '폴더 삭제 실패', 'error');
+                }
+            } catch (error) {
+                console.error('폴더 삭제 에러:', error);
+                showNotification('폴더 삭제 중 오류가 발생했습니다', 'error');
+            }
+        }
+
+        // Enter 키로 폴더 생성
+        document.addEventListener('DOMContentLoaded', () => {
+            const input = document.getElementById('folderNameInput');
+            if (input) {
+                input.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        createFolder();
+                    }
+                });
+            }
+        });
 
         // 파일 목록 로드
         async function loadFiles(showError = true) {
@@ -828,6 +1303,9 @@
                 
                 document.getElementById('uploadProgress').classList.remove('show');
                 
+                // Phase 4: 저장 용량 다시 로드
+                loadStorageInfo();
+                
             } catch (error) {
                 showNotification(error.message, 'error');
                 document.getElementById('uploadProgress').classList.remove('show');
@@ -921,17 +1399,11 @@
                 console.log('파일 삭제 성공:', filename);
                 loadFiles();
                 loadFolders();
+                // Phase 4: 저장 용량 다시 로드
+                loadStorageInfo();
             } catch (error) {
                 console.error('파일 삭제 에러:', error);
                 showNotification(error.message, 'error');
-            }
-        }
-
-        // 새 폴더 생성 (미구현)
-        function showCreateFolderDialog() {
-            const folderName = prompt('폴더명을 입력하세요:');
-            if (folderName) {
-                showNotification('폴더 생성 기능은 추후 구현됩니다', 'info');
             }
         }
 

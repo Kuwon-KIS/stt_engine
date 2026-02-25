@@ -34,16 +34,10 @@ DATABASE_URL = f"sqlite:///{DATA_DIR / 'stt_web.db'}"
 SESSION_SECRET_KEY = os.getenv("SESSION_SECRET_KEY", "dev-secret-key-change-in-production")
 SESSION_TIMEOUT = timedelta(hours=8)
 
-# === Phase 1: 인증된 직원 정보 ===
-# 주의: 아이디만 입력 (비밀번호 없음)
-# 구분값으로 사용하며, 프로덕션에서는 LDAP 또는 DB에서 동적 조회 권장
-# 아이디는 6자리 숫자 형식 (예: 100001, 100002, 100003)
-# 첫 로그인 시 자동으로 직원 레코드가 생성됩니다.
-ALLOWED_EMPLOYEES = {
-    "100001": {"name": "김철수", "dept": "영업팀"},
-    "100002": {"name": "이영희", "dept": "기획팀"},
-    "100003": {"name": "박민수", "dept": "기술팀"},
-}
+# === 인증 방식 ===
+# DB 기반 인증 사용: employees 테이블에서 사용자 정보 관리
+# 새로운 사용자는 관리자 페이지에서 추가 가능
+# 관리자 비밀번호: app/routes/admin.py의 ADMIN_PASSWORD_HASH 참조
 
 # === Phase 1: AI Agent 설정 ===
 AI_AGENTS = {

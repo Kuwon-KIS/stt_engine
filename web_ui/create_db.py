@@ -1,3 +1,4 @@
+
 import os
 import sqlite3
 
@@ -14,7 +15,10 @@ cursor.execute('CREATE TABLE analysis_results (id INTEGER PRIMARY KEY,job_id VAR
 cursor.execute('CREATE TABLE analysis_progress (id INTEGER PRIMARY KEY,job_id VARCHAR(50) UNIQUE NOT NULL,total_files INTEGER DEFAULT 0,processed_files INTEGER DEFAULT 0,current_file VARCHAR(500),status VARCHAR(20) DEFAULT "pending",created_at DATETIME DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(job_id) REFERENCES analysis_jobs(job_id))')
 cursor.execute('CREATE TABLE file_uploads (id INTEGER PRIMARY KEY,emp_id VARCHAR(10) NOT NULL,folder_path VARCHAR(500) NOT NULL,filename VARCHAR(500) NOT NULL,file_size_mb REAL,uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(emp_id) REFERENCES employees(emp_id))')
 
-cursor.execute("INSERT INTO employees (emp_id,name,dept) VALUES (?,?,?)", ("100001","김철수","영업팀"))
+# 기본 테스트 사용자 추가
+cursor.execute("INSERT INTO employees (emp_id,name,dept) VALUES (?,?,?)", ("100001","테스트1","테스트팀"))
+cursor.execute("INSERT INTO employees (emp_id,name,dept) VALUES (?,?,?)", ("100002","테스트2","테스트팀"))
+cursor.execute("INSERT INTO employees (emp_id,name,dept) VALUES (?,?,?)", ("100003","테스트3","테스트팀"))
 conn.commit()
 
 cursor.execute("PRAGMA table_info(analysis_jobs)")
