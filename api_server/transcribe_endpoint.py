@@ -570,8 +570,9 @@ async def _call_external_api(
     외부 API 응답 형식:
     {
         "detected_yn": "Y" or "N",
-        "detected_sentence": string,
-        "detected_reason": string
+        "detected_sentences": list of string,
+        "detected_reasons": list of string,
+        "detected_keywords": list of string
     }
     
     Args:
@@ -613,15 +614,15 @@ async def _call_external_api(
         logger.info(f"[Transcribe/ElementDetection] ✅ 외부 API 호출 성공")
         
         # 외부 API 응답을 표준 형식으로 변환
-        # 응답 형식: {"detected_yn": "Y"/"N", "detected_sentence": str, "detected_reason": str}
+        # 응답 형식: {"detected_yn": "Y"/"N", "detected_sentences": list, "detected_reasons": list, "detected_keywords": list}
         detection_results = []
         detected_yn = result.get("detected_yn", "N").upper()
-        is_detected = detected_yn == "Y"
         
         detection_results.append({
             "detected_yn": detected_yn,
-            "detected_sentence": result.get("detected_sentence", ""),
-            "detected_reason": result.get("detected_reason", "")
+            "detected_sentences": result.get("detected_sentences", []),
+            "detected_reasons": result.get("detected_reasons", []),
+            "detected_keywords": result.get("detected_keywords", [])
         })
         
         return {
@@ -647,8 +648,9 @@ async def _call_local_llm(
     LLM 응답을 표준 형식으로 변환:
     {
         "detected_yn": "Y" or "N",
-        "detected_sentence": string,
-        "detected_reason": string
+        "detected_sentences": list of string,
+        "detected_reasons": list of string,
+        "detected_keywords": list of string
     }
     
     Args:
@@ -680,11 +682,12 @@ async def _call_local_llm(
 상담 내용:
 {text}
 
-다음 JSON 형식으로 응답하세요 (한 번에 하나의 결과만):
+다음 JSON 형식으로 응답하세요:
 {{
     "detected_yn": "Y" 또는 "N",
-    "detected_sentence": "탐지된 문장 (탐지된 경우)",
-    "detected_reason": "탐지 근거 설명"
+    "detected_sentences": ["탐지된 문장1", "탐지된 문장2", ...],
+    "detected_reasons": ["근거1", "근거2", ...],
+    "detected_keywords": ["키워드1", "키워드2", ...]
 }}
 
 검정 결과:
@@ -707,13 +710,23 @@ async def _call_local_llm(
             
             # 표준 형식으로 변환
             detected_yn = result_json.get("detected_yn", "N").upper()
-            detected_sentence = result_json.get("detected_sentence", "")
-            detected_reason = result_json.get("detected_reason", "")
+            detected_sentences = result_json.get("detected_sentences", [])
+            detected_reasons = result_json.get("detected_reasons", [])
+            detected_keywords = result_json.get("detected_keywords", [])
+            
+            # 리스트가 아닌 경우 리스트로 변환
+            if isinstance(detected_sentences, str):
+                detected_sentences = [detected_sentences]
+            if isinstance(detected_reasons, str):
+                detected_reasons = [detected_reasons]
+            if isinstance(detected_keywords, str):
+                detected_keywords = [detected_keywords]
             
             detection_results.append({
                 "detected_yn": detected_yn,
-                "detected_sentence": detected_sentence,
-                "detected_reason": detected_reason
+                "detected_sentences": detected_sentences,
+                "detected_reasons": detected_reasons,
+                "detected_keywords": detected_keywords
             })
             
         except (json_lib.JSONDecodeError, ValueError):
@@ -739,8 +752,9 @@ def _get_dummy_results(detection_types: list) -> dict:
     표준 형식:
     {
         "detected_yn": "N",
-        "detected_sentence": "",
-        "detected_reason": "All detection methods failed"
+        "detected_sentences": [],
+        "detected_reasons": [],
+        "detected_keywords": []
     }
     
     Args:
@@ -753,8 +767,9 @@ def _get_dummy_results(detection_types: list) -> dict:
     detection_results = [
         {
             "detected_yn": "N",
-            "detected_sentence": "",
-            "detected_reason": "All detection methods failed, returning dummy result"
+            "detected_sentences": [],
+            "detected_reasons": [],
+            "detected_keywords": []
         }
     ]
     return {
@@ -811,9 +826,10 @@ async def perform_element_detection(
         
     응답 형식 (detection_results 요소):
         {
-            "detected_yn": "Y" or "N",      # 탐지 여부
-            "detected_sentence": string,     # 탐지된 문장/내용
-            "detected_reason": string        # 탐지 근거
+            "detected_yn": "Y" or "N",           # 탐지 여부
+            "detected_sentences": list of string, # 탐지된 문장들
+            "detected_reasons": list of string,   # 탐지 근거들
+            "detected_keywords": list of string   # 탐지된 키워드들
         }
     """
     try:
