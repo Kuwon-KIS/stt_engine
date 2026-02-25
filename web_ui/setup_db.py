@@ -1,26 +1,14 @@
 #!/usr/bin/env python
-"""
-데이터베이스 초기화 스크립트 (Raw SQL)
-- 순수 SQLite 명령어로 DB 생성
-- 기본 테스트 사용자 3명 추가 (100001-100003)
-"""
 import os
 import sqlite3
-from pathlib import Path
-
-# DB 경로 설정
-db_path = Path('data/db.sqlite')
 
 # 이전 DB 삭제
-if db_path.exists():
-    db_path.unlink()
-    print(f"✅ 이전 데이터베이스 삭제: {db_path}")
-
-# data 디렉토리 생성
-db_path.parent.mkdir(parents=True, exist_ok=True)
+if os.path.exists('app/database.db'):
+    os.remove('app/database.db')
+    print("✅ 이전 데이터베이스 삭제")
 
 # SQLite DB 생성
-conn = sqlite3.connect(str(db_path))
+conn = sqlite3.connect('app/database.db')
 cursor = conn.cursor()
 
 # employees 테이블

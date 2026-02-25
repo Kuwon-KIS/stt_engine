@@ -1,9 +1,4 @@
-#!/usr/bin/env python
-"""
-데이터베이스 생성 스크립트 (Simple)
-- data/db.sqlite 생성
-- 기본 테스트 사용자 3명 추가 (100001-100003)
-"""
+
 import os
 import sqlite3
 

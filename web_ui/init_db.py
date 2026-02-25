@@ -1,25 +1,15 @@
 #!/usr/bin/env python
 """
 데이터베이스 초기화 스크립트
-- SQLAlchemy 모델을 사용하여 DB 생성
-- 기본 테스트 사용자 3명 추가 (100001-100003)
 """
 import sys
 import os
 sys.path.insert(0, '.')
 
-from pathlib import Path
-
-# DB 경로 설정 (config.py와 동일하게)
-db_path = Path('data/db.sqlite')
-
 # 이전 데이터베이스 삭제
-if db_path.exists():
-    db_path.unlink()
-    print(f"✅ 이전 데이터베이스 삭제됨: {db_path}")
-
-# data 디렉토리 생성
-db_path.parent.mkdir(parents=True, exist_ok=True)
+if os.path.exists('app/database.db'):
+    os.remove('app/database.db')
+    print("✅ 이전 데이터베이스 삭제됨")
 
 # 모든 모델을 명시적으로 임포트
 from app.models.database import Base, Employee, FileUpload, AnalysisJob, AnalysisResult, AnalysisProgress
@@ -46,7 +36,7 @@ db.commit()
 
 # 스키마 확인
 import sqlite3
-conn = sqlite3.connect(str(db_path))
+conn = sqlite3.connect('app/database.db')
 cursor = conn.cursor()
 
 print("\n=== 생성된 테이블 목록 ===")
