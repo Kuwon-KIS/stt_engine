@@ -13,7 +13,7 @@ FastAPI를 사용한 STT(Speech-to-Text) 서버
 - OpenAI Whisper: 공식 모델명만 (tiny, base, small, medium, large)
 """
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, Body, Form, Query, Depends
+from fastapi import FastAPI, File, UploadFile, HTTPException, Body, Form, Query, Depends, Request
 from fastapi.responses import JSONResponse, FileResponse
 from pathlib import Path
 from typing import Optional
@@ -45,6 +45,7 @@ from api_server.transcribe_endpoint import (
     perform_classification,
     build_transcribe_response,
 )
+from api_server.models import ClassificationResult
 
 
 # 로깅 설정
@@ -282,48 +283,72 @@ async def reload_backend(request_body: dict = Body(None)):
 # ============================================================================
 
 @app.post("/transcribe")
-async def transcribe_v2(
-    file_path: str = Form(...),
-    language: str = Form("ko"),
-    is_stream: str = Form("false"),
-    privacy_removal: str = Form("false"),
-    classification: str = Form("false"),
-    ai_agent: str = Form("false"),
-    ai_agent_type: str = Form("external"),
-    export: Optional[str] = Query(None, description="Export format: 'txt' or 'json'"),
-    privacy_prompt_type: str = Form("privacy_remover_default_v6"),
-    classification_prompt_type: str = Form("classification_default_v1"),
-):
+async def transcribe(request: Request, export: Optional[str] = Query(None, description="Export format: 'txt' or 'json'")):
     """
-    개선된 음성인식 엔드포인트 (단건 처리)
+    통합 음성인식 엔드포인트 (단건 처리)
     
-    Parameters:
-    - file_path: 서버 파일 경로
+    2가지 입력 방식 지원:
+    1. file_path: 오디오 파일 경로 → STT 수행 후 후처리
+    2. stt_text: 이미 변환된 텍스트 → 후처리만 수행 (NEW)
+    
+    Form Parameters:
+    - file_path: 서버 파일 경로 (선택: file_path 또는 stt_text 중 하나 필수)
+    - stt_text: 이미 변환된 텍스트 (선택: NEW - STT 스킵)
     - language: 언어 코드 (기본: "ko")
     - is_stream: 스트리밍 모드 (기본: "false")
     - privacy_removal: 개인정보 제거 (기본: "false")
+    - privacy_llm_type: Privacy Removal LLM 타입 (openai, vllm, ollama) (기본: "openai")
+    - vllm_model_name: vLLM 모델명 (privacy_llm_type='vllm'일 때)
+    - ollama_model_name: Ollama 모델명 (privacy_llm_type='ollama'일 때)
     - classification: 통화 분류 (기본: "false")
-    - ai_agent: AI Agent 처리 (기본: "false")
-    - ai_agent_type: AI Agent 타입 (external, vllm, dummy) (기본: "external")
+    - classification_llm_type: Classification LLM 타입 (openai, vllm, ollama) (기본: "openai")
+    - element_detection: 요소 탐지 여부 (기본: "false") - 불완전판매/부당권유 판매 등 탐지
+    - detection_types: 탐지할 요소 타입 (CSV 또는 JSON, 예: "incomplete_sales,aggressive_sales")
+    - detection_api_type: 요소 탐지 방식 (external: 외부 API 호출, local: vLLM/Ollama 사용) (기본: "external")
+    - detection_llm_type: 요소 탐지 LLM 타입 (openai, vllm, ollama) (기본: "openai", detection_api_type='local'일 때만)
+    - privacy_prompt_type: Privacy Removal 프롬프트 타입 (기본: "privacy_remover_default_v6")
+    - classification_prompt_type: Classification 프롬프트 타입 (기본: "classification_default_v1")
+    
+    Query Parameters:
     - export: 내보내기 형식 ("txt" 또는 "json")
-    - privacy_prompt_type: Privacy Removal 프롬프트 타입
-    - classification_prompt_type: Classification 프롬프트 타입
     
     Returns:
     - TranscribeResponse: 처리 결과
     
-    Example:
+    Example (음성파일):
     ```bash
     curl -X POST http://localhost:8003/transcribe \
       -F 'file_path=/app/audio/test.wav' \
       -F 'privacy_removal=true' \
       -F 'classification=true'
     ```
-    """
     
-    if stt is None:
-        logger.error("[API] STT 모델이 로드되지 않음")
-        raise HTTPException(status_code=503, detail="STT 모델 로드 실패")
+    Example (텍스트 입력):
+    ```bash
+    curl -X POST http://localhost:8003/transcribe \
+      -F 'stt_text=고객님, 저희 상품 정말 좋습니다' \
+      -F 'privacy_removal=true' \
+      -F 'classification=true'
+    ```
+    """
+    # FormData 수동 파싱
+    form_data = await request.form()
+    file_path = form_data.get('file_path')
+    stt_text = form_data.get('stt_text')
+    language = form_data.get('language', 'ko')
+    is_stream = form_data.get('is_stream', 'false')
+    privacy_removal = form_data.get('privacy_removal', 'false')
+    privacy_llm_type = form_data.get('privacy_llm_type', 'openai')
+    vllm_model_name = form_data.get('vllm_model_name')
+    ollama_model_name = form_data.get('ollama_model_name')
+    classification = form_data.get('classification', 'false')
+    classification_llm_type = form_data.get('classification_llm_type', 'openai')
+    element_detection = form_data.get('element_detection', 'false')
+    detection_types = form_data.get('detection_types', '')  # CSV: "incomplete_sales,aggressive_sales"
+    detection_api_type = form_data.get('detection_api_type', 'external')  # external or local
+    detection_llm_type = form_data.get('detection_llm_type', 'openai')  # openai, vllm, ollama
+    privacy_prompt_type = form_data.get('privacy_prompt_type', 'privacy_remover_default_v6')
+    classification_prompt_type = form_data.get('classification_prompt_type', 'classification_default_v1')
     
     # 처리 시간 측정
     start_time = time.time()
@@ -331,18 +356,90 @@ async def transcribe_v2(
     perf_monitor.start()
     
     try:
-        # 1. 파일 검증 및 준비
-        file_path_obj, file_check, memory_info = await validate_and_prepare_file(file_path)
-        file_size_mb = file_path_obj.stat().st_size / (1024**2)
+        # 0. 입력 검증 (file_path XOR stt_text)
+        logger.info(f"[API] 입력 검증: file_path={bool(file_path)}, stt_text={bool(stt_text)}")
         
-        # 2. STT 처리
-        is_streaming = is_stream.lower() in ['true', '1', 'yes', 'on']
-        stt_result = await perform_stt(
-            stt_instance=stt,
-            file_path_obj=file_path_obj,
-            language=language,
-            is_streaming=is_streaming
-        )
+        if not file_path and not stt_text:
+            logger.error("[API] file_path 또는 stt_text 중 하나를 제공하세요")
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "INVALID_INPUT",
+                    "message": "file_path 또는 stt_text 중 하나를 제공하세요"
+                }
+            )
+        
+        if file_path and stt_text:
+            logger.error("[API] file_path와 stt_text 중 하나만 제공하세요")
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "INVALID_INPUT",
+                    "message": "file_path와 stt_text 중 하나만 제공하세요"
+                }
+            )
+        
+        # 1. 파일 검증 및 STT 처리 (file_path 기반)
+        file_path_obj = None
+        file_check = None
+        file_size_mb = 0
+        memory_info = None
+        
+        if file_path:
+            logger.info(f"[API] 음성파일 기반 처리 시작")
+            
+            # STT 모델 확인 (파일 기반 처리에만 필요)
+            if stt is None:
+                logger.error("[API] STT 모델이 로드되지 않음")
+                raise HTTPException(status_code=503, detail="STT 모델 로드 실패")
+            
+            # 기존 방식: 파일 검증 및 STT 수행
+            file_path_obj, file_check, memory_info = await validate_and_prepare_file(file_path)
+            file_size_mb = file_path_obj.stat().st_size / (1024**2)
+            
+            # 2. STT 처리
+            is_streaming = is_stream.lower() in ['true', '1', 'yes', 'on']
+            stt_result = await perform_stt(
+                stt_instance=stt,
+                file_path_obj=file_path_obj,
+                language=language,
+                is_streaming=is_streaming
+            )
+            logger.info(f"[API] STT 처리 완료 (텍스트 길이: {len(stt_result.get('text', ''))} 글자)")
+        else:
+            logger.info(f"[API] 텍스트 입력 기반 처리 시작 (텍스트 길이: {len(stt_text)} 글자)")
+            # 새로운 방식: 텍스트 직접 입력 (STT 스킵)
+            is_streaming = False  # STT 스킵시 스트리밍 불가
+            
+            # 메모리 확인 (텍스트 입력도 후처리에 메모리 필요)
+            from stt_utils import check_memory_available
+            memory_info = check_memory_available(logger=logger)
+            if memory_info['critical']:
+                logger.error(f"[API] 메모리 부족: {memory_info['message']}")
+                raise HTTPException(
+                    status_code=503,
+                    detail={
+                        "error": ErrorCode.STT_MEMORY_ERROR.value,
+                        "message": memory_info['message'],
+                    }
+                )
+            
+            # 텍스트 기반 결과 구성
+            stt_result = {
+                'success': True,
+                'text': stt_text,
+                'language': language,
+                'duration': 0,  # 알 수 없음
+                'backend': 'text_input',
+                'processing_steps': {
+                    'stt': {
+                        'completed': True,
+                        'skipped': True,
+                        'reason': 'Text input provided'
+                    }
+                }
+            }
+            logger.info(f"[API] STT 단계 스킵 (텍스트 입력 사용)")
         
         # 에러 확인
         if not stt_result.get('success', False) or 'error' in stt_result:
@@ -366,7 +463,10 @@ async def transcribe_v2(
         if privacy_removal_enabled:
             privacy_result = await perform_privacy_removal(
                 text=stt_result.get('text', ''),
-                prompt_type=privacy_prompt_type
+                prompt_type=privacy_prompt_type,
+                llm_type=privacy_llm_type,
+                vllm_model_name=vllm_model_name,
+                ollama_model_name=ollama_model_name
             )
         
         # 4. Classification (선택)
@@ -377,14 +477,15 @@ async def transcribe_v2(
             # Classification을 위해서는 Privacy Removal이 먼저 수행되어야 함
             classification_text = privacy_result.text if privacy_result else stt_result.get('text', '')
             
-            from api_server.services.classification_service import get_classification_service
-            classification_service = await get_classification_service()
-            classification_response = await classification_service.classify_call(
+            classification_response = await perform_classification(
                 text=classification_text,
-                prompt_type=classification_prompt_type
+                prompt_type=classification_prompt_type,
+                llm_type=classification_llm_type,
+                vllm_model_name=vllm_model_name,
+                ollama_model_name=ollama_model_name
             )
             
-            if classification_response.get('success', True):
+            if classification_response and classification_response.get('success', False):
                 classification_result = ClassificationResult(
                     code=classification_response['code'],
                     category=classification_response['category'],
@@ -392,30 +493,36 @@ async def transcribe_v2(
                     reason=classification_response.get('reason')
                 )
         
-        # 5. AI Agent 처리 (선택)
-        ai_agent_enabled = ai_agent.lower() in ['true', '1', 'yes', 'on']
-        agent_result = None
+        # 5. 요소 탐지 처리 (선택)
+        element_detection_enabled = element_detection.lower() in ['true', '1', 'yes', 'on']
+        element_result = None
         
-        if ai_agent_enabled:
-            logger.info(f"[API] AI Agent 처리 시작 (agent_type={ai_agent_type})")
-            from api_server.transcribe_endpoint import perform_ai_agent
+        if element_detection_enabled:
+            logger.info(f"[API] 요소 탐지 처리 시작 (detection_types={detection_types}, api_type={detection_api_type})")
+            from api_server.transcribe_endpoint import perform_element_detection
             
             # 정제된 텍스트 또는 원본 사용
-            agent_text = privacy_result.text if privacy_result else stt_result.get('text', '')
+            detection_text = privacy_result.text if privacy_result else stt_result.get('text', '')
             
-            agent_response = await perform_ai_agent(
-                text=agent_text,
-                stt_result=stt_result,
-                agent_type=ai_agent_type,  # 사용자가 선택한 agent_type 전달
+            # detection_types를 리스트로 파싱 (CSV 형식 지원)
+            detection_types_list = [t.strip() for t in detection_types.split(',') if t.strip()] if detection_types else []
+            
+            element_response = await perform_element_detection(
+                text=detection_text,
+                detection_types=detection_types_list,
+                api_type=detection_api_type,
+                llm_type=detection_llm_type,
+                vllm_model_name=vllm_model_name,
+                ollama_model_name=ollama_model_name,
                 classification_result=classification_result,
                 privacy_removal_result=privacy_result
             )
             
-            if agent_response.get('success'):
-                agent_result = agent_response
-                logger.info(f"[API] ✅ AI Agent 처리 완료 (실제_사용: {agent_response.get('agent_type')})")
+            if element_response.get('success'):
+                element_result = element_response
+                logger.info(f"[API] ✅ 요소 탐지 완료 (api_type={element_response.get('api_type')}, llm_type={element_response.get('llm_type')})")
             else:
-                logger.warning(f"[API] ⚠️ AI Agent 처리 실패: {agent_response.get('error')}")
+                logger.warning(f"[API] ⚠️ 요소 탐지 실패: {element_response.get('error')}")
         
         # 6. 처리 시간 계산
         processing_time = time.time() - start_time
@@ -431,15 +538,10 @@ async def transcribe_v2(
             processing_time=processing_time,
             privacy_result=privacy_result,
             classification_result=classification_result,
+            element_detection_result=element_result,
             file_path_obj=file_path_obj,
             processing_mode="streaming" if is_streaming else "normal"
         )
-        
-        # AI Agent 결과 추가
-        if agent_result:
-            response.agent_response = agent_result.get('response')
-            response.agent_type = agent_result.get('agent_type')
-            response.chat_thread_id = agent_result.get('chat_thread_id')
         
         logger.info(f"[API] ✅ 요청 처리 완료 (처리시간: {processing_time:.2f}초)")
         
