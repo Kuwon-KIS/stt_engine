@@ -830,19 +830,13 @@
                 
                 const data = await response.json();
                 
-                // 디버깅: API 응답 확인
-                console.log('Storage API Response:', data);
-                console.log('storage_used_gb:', data.storage_used_gb);
-                console.log('storage_used (bytes):', data.storage_used);
-                
                 // bytes를 직접 사용하여 정확하게 계산
                 const usedBytes = data.storage_used;
                 const usedMB = usedBytes / (1024 * 1024);
                 const usedGB = usedBytes / (1024 * 1024 * 1024);
-                console.log('Calculated usedMB:', usedMB.toFixed(2));
-                console.log('Calculated usedGB:', usedGB.toFixed(4));
                 
                 const quotaGB = data.storage_quota_gb;
+                const percent = data.usage_percent;
                 
                 let usedDisplay, quotaDisplay;
                 
@@ -853,17 +847,14 @@
                     usedDisplay = `${usedGB.toFixed(2)} GB`;
                 }
                 
-                console.log('usedDisplay:', usedDisplay);
-                
                 quotaDisplay = `${quotaGB} GB`;
                 
-                // 저장 용량 텍스트 업데이트
+                // 저장 용량 텍스트 업데이트 (퍼센티지 포함)
                 const storageText = document.getElementById('storageText');
-                storageText.textContent = `${usedDisplay} / ${quotaDisplay} 사용 중`;
+                storageText.textContent = `${usedDisplay} / ${quotaDisplay} 사용 중 (${percent.toFixed(1)}%)`;
                 
                 // 프로그레스 바 업데이트
                 const storageBarFill = document.getElementById('storageBarFill');
-                const percent = data.usage_percent;
                 storageBarFill.style.width = `${percent}%`;
                 
                 // 색상 변경 (사용량에 따라)
@@ -881,7 +872,7 @@
                 const availableDisplay = data.available_gb >= 1 
                     ? `${data.available_gb.toFixed(1)} GB` 
                     : `${availableMB.toFixed(0)} MB`;
-                storageDetails.textContent = `사용 가능: ${availableDisplay} (${percent.toFixed(1)}%)`;
+                storageDetails.textContent = `사용 가능: ${availableDisplay}`;
                 
             } catch (error) {
                 console.error('저장 용량 정보 로드 에러:', error);
@@ -982,12 +973,27 @@
         function selectFolder(folder) {
             currentFolder = folder;
             
-            // UI 업데이트
+            // UI 업데이트: 모든 폴더 항목의 active 클래스 제거
             document.querySelectorAll('.folder-item').forEach(item => {
                 item.classList.remove('active');
             });
-            if (event && event.target) {
-                event.target.classList.add('active');
+            
+            // 선택된 폴더에 active 클래스 추가
+            if (folder === null) {
+                // 전체 파일 선택
+                const allFilesItem = document.querySelector('.folder-item[onclick*="selectFolder(null)"]');
+                if (allFilesItem) {
+                    allFilesItem.classList.add('active');
+                }
+            } else {
+                // 특정 폴더 선택
+                const selectedItem = Array.from(document.querySelectorAll('.folder-item')).find(item => {
+                    const folderNameSpan = item.querySelector('.folder-name');
+                    return folderNameSpan && folderNameSpan.textContent === folder;
+                });
+                if (selectedItem) {
+                    selectedItem.classList.add('active');
+                }
             }
             
             // 파일 목록 로드
