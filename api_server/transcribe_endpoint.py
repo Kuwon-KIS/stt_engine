@@ -538,84 +538,90 @@ async def perform_incomplete_elements_check(
         }
 
 
-async def perform_element_detection(
+async def _call_external_api(
     text: str,
-    detection_types: list = None,
-    api_type: str = "external",
-    llm_type: str = "vllm",
-    vllm_model_name: Optional[str] = None,
-    ollama_model_name: Optional[str] = None,
-    classification_result: dict = None,
-    privacy_removal_result: dict = None,
-    external_api_url: Optional[str] = None
-) -> dict:
+    detection_types: list,
+    external_api_url: Optional[str]
+) -> Optional[dict]:
     """
-    요소 탐지 (불완전판매, 부당권유 판매 등)를 수행
+    외부 AI Agent API 호출 시도
     
     Args:
-        text: 처리할 텍스트 (정제되거나 원본 STT 결과)
-        detection_types: 탐지 대상 목록 (예: ["incomplete_sales", "aggressive_sales"])
-        api_type: API 방식 ("external" = 외부 서비스 호출, "local" = 로컬 LLM 사용)
-        llm_type: LLM 타입 ('openai', 'vllm', 'ollama') - api_type="local"일 때만 사용 (기본값: 'openai')
-        vllm_model_name: vLLM 사용 시 모델명
-        ollama_model_name: Ollama 사용 시 모델명
-        classification_result: 분류 결과
-        privacy_removal_result: 개인정보 제거 결과
-        external_api_url: 외부 API 엔드포인트 URL (api_type="external"일 때)
+        text: 처리할 텍스트
+        detection_types: 탐지 대상 목록
+        external_api_url: 외부 API 엔드포인트 URL
     
     Returns:
-        {
-            'success': bool,
-            'detection_results': list,  # 탐지된 요소 목록
-            'api_type': str,           # 사용된 API 방식
-            'llm_type': str,           # 사용된 LLM (local 모드일 때)
-            'error': str               # 에러 발생시
+        성공 시 dict, 실패 시 None
+    """
+    if not external_api_url:
+        logger.warning("[Transcribe/ElementDetection] 외부 API URL이 지정되지 않음")
+        return None
+    
+    try:
+        import httpx
+        import json as json_lib
+        
+        logger.info(f"[Transcribe/ElementDetection] 외부 AI Agent 호출 시작 (url={external_api_url})")
+        
+        # 요청 준비
+        payload = {
+            "text": text,
+            "detection_types": detection_types,
         }
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                external_api_url,
+                json=payload,
+                headers={"Content-Type": "application/json"}
+            )
+        
+        if response.status_code != 200:
+            logger.warning(f"[Transcribe/ElementDetection] 외부 API 호출 실패 (status={response.status_code})")
+            return None
+        
+        result = response.json()
+        logger.info(f"[Transcribe/ElementDetection] ✅ 외부 API 호출 성공")
+        return result
+    
+    except Exception as e:
+        logger.warning(f"[Transcribe/ElementDetection] 외부 API 호출 중 오류: {type(e).__name__}: {str(e)}")
+        return None
+
+
+async def _call_local_llm(
+    text: str,
+    detection_types: list,
+    llm_type: str = "vllm",
+    vllm_model_name: Optional[str] = None,
+    ollama_model_name: Optional[str] = None
+) -> Optional[dict]:
+    """
+    로컬 LLM (vLLM/Ollama)을 사용한 요소 탐지
+    
+    Args:
+        text: 처리할 텍스트
+        detection_types: 탐지 대상 목록
+        llm_type: LLM 타입 ('vllm', 'ollama')
+        vllm_model_name: vLLM 모델명
+        ollama_model_name: Ollama 모델명
+    
+    Returns:
+        성공 시 dict, 실패 시 None
     """
     try:
-        logger.info(f"[Transcribe/ElementDetection] 요소 탐지 시작 (api_type={api_type}, llm_type={llm_type}, detection_types={detection_types}, text_length={len(text)})")
+        logger.info(f"[Transcribe/ElementDetection] 로컬 LLM 호출 시작 (llm_type={llm_type})")
         
-        # detection_types가 지정되지 않았으면 기본값 사용
-        if not detection_types:
-            detection_types = ["incomplete_sales", "aggressive_sales"]
+        # LLM 클라이언트 생성
+        model_name = vllm_model_name if llm_type == "vllm" else (ollama_model_name if llm_type == "ollama" else None)
+        llm_client = LLMClientFactory.create_client(
+            llm_type=llm_type,
+            model_name=model_name
+        )
         
-        # API 타입에 따라 다르게 처리
-        if api_type == "external":
-            # 외부 API 호출
-            logger.info(f"[Transcribe/ElementDetection] 외부 API 호출 시작 (url={external_api_url})")
-            
-            # 외부 API 호출 (현재 더미 구현)
-            # TODO: 실제 외부 API 엔드포인트로 요청 전송
-            detection_results = []
-            for detection_type in detection_types:
-                detection_results.append({
-                    "type": detection_type,
-                    "detected": False,
-                    "confidence": 0.0,
-                    "details": f"External API call pending for {detection_type}"
-                })
-            
-            logger.info(f"[Transcribe/ElementDetection] ✅ 외부 API 처리 완료 (결과_수={len(detection_results)})")
-            return {
-                'success': True,
-                'detection_results': detection_results,
-                'api_type': 'external',
-                'llm_type': None
-            }
-        
-        elif api_type == "local":
-            # 로컬 LLM 사용
-            logger.info(f"[Transcribe/ElementDetection] 로컬 LLM 요소 탐지 시작 (llm_type={llm_type})")
-            
-            # LLM 클라이언트 생성
-            model_name = vllm_model_name if llm_type == "vllm" else (ollama_model_name if llm_type == "ollama" else None)
-            llm_client = LLMClientFactory.create_client(
-                llm_type=llm_type,
-                model_name=model_name
-            )
-            
-            # 요소 탐지 프롬프트 생성
-            detection_prompt = f"""다음 고객 상담 통화 내용을 분석하여 요청된 요소들의 탐지 여부를 판단하세요.
+        # 요소 탐지 프롬프트 생성
+        detection_prompt = f"""다음 고객 상담 통화 내용을 분석하여 요청된 요소들의 탐지 여부를 판단하세요.
 
 감지 대상:
 {', '.join(detection_types)}
@@ -630,50 +636,210 @@ async def perform_element_detection(
     ]
 }}
 """
+        
+        # LLM 호출
+        response = await llm_client.call(
+            prompt=detection_prompt,
+            temperature=0.3,
+            max_tokens=1000
+        )
+        
+        logger.debug(f"[Transcribe/ElementDetection] LLM 응답: {response[:100]}...")
+        
+        # 응답 파싱
+        detection_results = []
+        try:
+            import json as json_lib
+            result_json = json_lib.loads(response)
+            detections = result_json.get("detections", [])
+            for detection in detections:
+                detection_results.append({
+                    "type": detection.get("type", "unknown"),
+                    "detected": detection.get("detected", False),
+                    "confidence": float(detection.get("confidence", 0.0)),
+                    "details": detection.get("reason", "")
+                })
+        except (json_lib.JSONDecodeError, ValueError):
+            logger.warning(f"[Transcribe/ElementDetection] LLM 응답 파싱 실패: {response}")
+            return None
+        
+        logger.info(f"[Transcribe/ElementDetection] ✅ 로컬 LLM 처리 완료 (llm_type={llm_type}, 결과_수={len(detection_results)})")
+        return {
+            'detection_results': detection_results,
+            'api_type': 'local',
+            'llm_type': llm_type
+        }
+    
+    except Exception as e:
+        logger.warning(f"[Transcribe/ElementDetection] 로컬 LLM 호출 중 오류: {type(e).__name__}: {str(e)}")
+        return None
+
+
+def _get_dummy_results(detection_types: list) -> dict:
+    """
+    더미 결과 반환 (모든 요소 미탐지)
+    
+    Args:
+        detection_types: 탐지 대상 목록
+    
+    Returns:
+        더미 결과 dict
+    """
+    logger.warning("[Transcribe/ElementDetection] 모든 fallback 방법 실패, 더미 결과 반환")
+    detection_results = []
+    for detection_type in detection_types:
+        detection_results.append({
+            "type": detection_type,
+            "detected": False,
+            "confidence": 0.0,
+            "details": "All detection methods failed, returning dummy result"
+        })
+    return {
+        'detection_results': detection_results,
+        'api_type': 'dummy',
+        'llm_type': None
+    }
+
+
+async def perform_element_detection(
+    text: str,
+    detection_types: list = None,
+    api_type: str = "external",
+    llm_type: str = "vllm",
+    vllm_model_name: Optional[str] = None,
+    ollama_model_name: Optional[str] = None,
+    classification_result: dict = None,
+    privacy_removal_result: dict = None,
+    external_api_url: Optional[str] = None
+) -> dict:
+    """
+    요소 탐지 (불완전판매, 부당권유 판매 등)를 수행 - Fallback 메커니즘 포함
+    
+    Fallback 흐름:
+    1. api_type이 'fallback'이면:
+       - 1️⃣ 외부 AI Agent 호출 시도
+       - 2️⃣ 실패 시 → 로컬 vLLM/Ollama 호출
+       - 3️⃣ 그것도 실패 시 → Dummy 결과 반환
+    2. api_type이 'external'이면:
+       - 외부 AI Agent만 호출
+    3. api_type이 'local'이면:
+       - 로컬 LLM만 호출
+    
+    Args:
+        text: 처리할 텍스트 (정제되거나 원본 STT 결과)
+        detection_types: 탐지 대상 목록 (예: ["incomplete_sales", "aggressive_sales"])
+        api_type: API 방식 ("external"=외부만, "local"=로컬만, "fallback"=자동 선택)
+        llm_type: LLM 타입 ('vllm', 'ollama') - api_type이 "local"이나 "fallback"일 때 사용
+        vllm_model_name: vLLM 사용 시 모델명
+        ollama_model_name: Ollama 사용 시 모델명
+        classification_result: 분류 결과
+        privacy_removal_result: 개인정보 제거 결과
+        external_api_url: 외부 API 엔드포인트 URL
+    
+    Returns:
+        {
+            'success': bool,
+            'detection_results': list,  # 탐지된 요소 목록
+            'api_type': str,           # 사용된 API 방식 ('external', 'local', 'dummy')
+            'llm_type': str,           # 사용된 LLM (local/fallback 모드일 때)
+            'fallback_chain': list,    # fallback 모드일 때 시도한 방법들
+            'error': str               # 에러 발생시
+        }
+    """
+    try:
+        logger.info(f"[Transcribe/ElementDetection] 요소 탐지 시작 (api_type={api_type}, llm_type={llm_type}, detection_types={detection_types}, text_length={len(text)})")
+        
+        # detection_types가 지정되지 않았으면 기본값 사용
+        if not detection_types:
+            detection_types = ["incomplete_sales", "aggressive_sales"]
+        
+        # ============================================
+        # Fallback 모드: 자동 선택 (추천 방식)
+        # ============================================
+        if api_type == "fallback":
+            fallback_chain = []
             
-            # LLM 호출
-            response = await llm_client.call(
-                prompt=detection_prompt,
-                temperature=0.3,
-                max_tokens=1000
+            # 1️⃣ 단계 1: 외부 AI Agent 호출 시도
+            if external_api_url:
+                logger.info("[Transcribe/ElementDetection] [Fallback] 단계 1️⃣: 외부 AI Agent 호출 시도...")
+                result = await _call_external_api(text, detection_types, external_api_url)
+                fallback_chain.append("external_api")
+                
+                if result:
+                    logger.info("[Transcribe/ElementDetection] [Fallback] ✅ 단계 1️⃣ 성공 (외부 API 사용)")
+                    return {
+                        'success': True,
+                        'detection_results': result.get('detection_results', result),
+                        'api_type': 'external',
+                        'llm_type': None,
+                        'fallback_chain': fallback_chain
+                    }
+            
+            # 2️⃣ 단계 2: 로컬 LLM 호출
+            logger.info(f"[Transcribe/ElementDetection] [Fallback] 단계 2️⃣: 로컬 LLM 호출 시도 (llm_type={llm_type})...")
+            result = await _call_local_llm(
+                text, detection_types, llm_type,
+                vllm_model_name, ollama_model_name
+            )
+            fallback_chain.append(f"local_llm({llm_type})")
+            
+            if result:
+                logger.info(f"[Transcribe/ElementDetection] [Fallback] ✅ 단계 2️⃣ 성공 (로컬 LLM 사용)")
+                result['fallback_chain'] = fallback_chain
+                result['success'] = True
+                return result
+            
+            # 3️⃣ 단계 3: Dummy 결과 반환
+            logger.warning("[Transcribe/ElementDetection] [Fallback] 단계 3️⃣: 모든 방법 실패, 더미 결과 반환")
+            result = _get_dummy_results(detection_types)
+            result['success'] = True
+            result['fallback_chain'] = fallback_chain + ["dummy"]
+            return result
+        
+        # ============================================
+        # 외부 API만 사용
+        # ============================================
+        elif api_type == "external":
+            logger.info(f"[Transcribe/ElementDetection] 외부 API 호출 시작 (url={external_api_url})")
+            result = await _call_external_api(text, detection_types, external_api_url)
+            
+            if result:
+                return {
+                    'success': True,
+                    'detection_results': result.get('detection_results', result),
+                    'api_type': 'external',
+                    'llm_type': None
+                }
+            else:
+                return {
+                    'success': False,
+                    'error': 'External API call failed',
+                    'api_type': 'external'
+                }
+        
+        # ============================================
+        # 로컬 LLM만 사용
+        # ============================================
+        elif api_type == "local":
+            logger.info(f"[Transcribe/ElementDetection] 로컬 LLM 요소 탐지 시작 (llm_type={llm_type})")
+            result = await _call_local_llm(
+                text, detection_types, llm_type,
+                vllm_model_name, ollama_model_name
             )
             
-            logger.debug(f"[Transcribe/ElementDetection] LLM 응답: {response[:100]}...")
-            
-            # 응답 파싱
-            detection_results = []
-            try:
-                import json
-                result_json = json.loads(response)
-                detections = result_json.get("detections", [])
-                for detection in detections:
-                    detection_results.append({
-                        "type": detection.get("type", "unknown"),
-                        "detected": detection.get("detected", False),
-                        "confidence": float(detection.get("confidence", 0.0)),
-                        "details": detection.get("reason", "")
-                    })
-            except (json.JSONDecodeError, ValueError):
-                logger.warning(f"[Transcribe/ElementDetection] LLM 응답 파싱 실패: {response}")
-                # 파싱 실패 시 기본값 반환
-                for detection_type in detection_types:
-                    detection_results.append({
-                        "type": detection_type,
-                        "detected": False,
-                        "confidence": 0.0,
-                        "details": "LLM response parsing failed"
-                    })
-            
-            logger.info(f"[Transcribe/ElementDetection] ✅ 로컬 LLM 처리 완료 (llm_type={llm_type}, 결과_수={len(detection_results)})")
-            return {
-                'success': True,
-                'detection_results': detection_results,
-                'api_type': 'local',
-                'llm_type': llm_type
-            }
+            if result:
+                result['success'] = True
+                return result
+            else:
+                return {
+                    'success': False,
+                    'error': 'Local LLM call failed',
+                    'api_type': 'local',
+                    'llm_type': llm_type
+                }
         
         else:
-            error_msg = f"Unknown api_type: {api_type}. Expected 'external' or 'local'"
+            error_msg = f"Unknown api_type: {api_type}. Expected 'external', 'local', or 'fallback'"
             logger.error(f"[Transcribe/ElementDetection] {error_msg}")
             return {
                 'success': False,
@@ -687,4 +853,5 @@ async def perform_element_detection(
         return {
             'success': False,
             'error': error_msg,
-            'api_type': api_type        }
+            'api_type': api_type
+        }
