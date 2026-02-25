@@ -24,7 +24,7 @@ from app.services.stt_service import stt_service
 from config import STT_API_URL, MAX_CONCURRENT_ANALYSIS
 
 # Test configuration - set to 0 to disable, or value between 0.0-1.0 for failure rate
-TEST_FAILURE_RATE = 0.25 # 0.25 = 25% failure rate for testing
+TEST_FAILURE_RATE = 0.25 # 0.25 = 25% failure rate for testing fallback (dummy) responses only
 
 
 class AnalysisService:
@@ -635,29 +635,30 @@ class AnalysisService:
                     db_session = None
                     start_time = time.time()
                     try:
-                        # === TEST MODE: Random failure simulation ===
-                        if TEST_FAILURE_RATE > 0 and random.random() < TEST_FAILURE_RATE:
-                            logger.warning(f"[TEST MODE] Simulating failure for {filename} (failure_rate={TEST_FAILURE_RATE})")
+                        # 파일 경로
+                        user_dir = get_user_upload_dir(emp_id)
+                        file_path = user_dir / folder_path / filename
+                        
+                        # STT API 호출 (순서: STT → privacy_removal → agent)
+                        stt_result = await stt_service.transcribe_local_file(
+                            file_path=str(file_path),
+                            language="ko",
+                            is_stream=False,
+                            privacy_removal=True,  # privacy_removal 항상 수행
+                            classification=False,
+                            ai_agent=include_classification,  # agent는 선택에 따라
+                            incomplete_elements_check=include_validation
+                        )
+                        
+                        # === TEST MODE: Simulate failure on fallback (dummy response) ===
+                        # STT 호출 실패 후 fallback(dummy)일 때만 TEST MODE 적용
+                        if not stt_result.get('success') and TEST_FAILURE_RATE > 0 and random.random() < TEST_FAILURE_RATE:
+                            logger.warning(f"[TEST MODE] Simulating failure on fallback for {filename} (failure_rate={TEST_FAILURE_RATE})")
                             stt_result = {
                                 "success": False,
-                                "error": "simulated_test_failure",
-                                "message": f"테스트 모드 실패 (failure_rate={TEST_FAILURE_RATE})"
+                                "error": "simulated_test_failure_on_fallback",
+                                "message": f"테스트 모드 실패 - fallback에서 시뮬레이션 (failure_rate={TEST_FAILURE_RATE})"
                             }
-                        else:
-                            # 파일 경로
-                            user_dir = get_user_upload_dir(emp_id)
-                            file_path = user_dir / folder_path / filename
-                            
-                            # STT API 호출 (순서: STT → privacy_removal → agent)
-                            stt_result = await stt_service.transcribe_local_file(
-                                file_path=str(file_path),
-                                language="ko",
-                                is_stream=False,
-                                privacy_removal=True,  # privacy_removal 항상 수행
-                                classification=False,
-                                ai_agent=include_classification,  # agent는 선택에 따라
-                                incomplete_elements_check=include_validation
-                            )
                         
                         logger.info(f"[process_analysis_sync] STT 완료: {filename}, success={stt_result.get('success')}")
                         
