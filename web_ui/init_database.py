@@ -141,9 +141,9 @@ def initialize_database():
         else:
             print("  ℹ️  status 이미 존재")
         
-        # updated_at 추가
+        # updated_at 추가 (SQLite는 ALTER TABLE에서 CURRENT_TIMESTAMP를 지원하지 않으므로 NULL 기본값으로 설정)
         if 'updated_at' not in columns:
-            cursor.execute("ALTER TABLE analysis_results ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+            cursor.execute("ALTER TABLE analysis_results ADD COLUMN updated_at TIMESTAMP DEFAULT NULL")
             migrations_applied.append("updated_at")
             print("  ✅ updated_at 컬럼 추가")
         else:
