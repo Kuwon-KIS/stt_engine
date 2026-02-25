@@ -14,6 +14,8 @@ from app.models.file_schemas import FileUploadResponse, FileListResponse, Folder
 from app.utils import file_utils
 from app.services.storage_service import StorageService
 from config import UPLOAD_DIR
+import shutil
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -199,16 +201,18 @@ class FileService:
                 if not employee:
                     raise HTTPException(status_code=401, detail="사용자 정보를 찾을 수 없습니다")
             
-            # DB에서 고유한 폴더 목록 조회
-            folder_paths = db.query(FileUpload.folder_path).filter(
-                FileUpload.emp_id == emp_id
-            ).distinct().all()
+            # Phase 5: 물리적 폴더 스캔 (빈 폴더도 포함)
+            user_dir = file_utils.get_user_upload_dir(emp_id)
+            folders = []
             
-            # 폴더명 추출 및 정렬
-            folders = sorted(
-                [fp[0] for fp in folder_paths],
-                reverse=True  # 최근 폴더 먼저
-            )
+            if user_dir.exists() and user_dir.is_dir():
+                # 물리적으로 존재하는 폴더 목록
+                for item in user_dir.iterdir():
+                    if item.is_dir():
+                        folders.append(item.name)
+            
+            # 정렬: 최근 폴더 먼저 (날짜 형식은 역순, 나머지는 알파벳 순)
+            folders = sorted(folders, reverse=True)
             
             return FolderListResponse(folders=folders)
         
@@ -306,6 +310,167 @@ class FileService:
         except Exception as e:
             logger.error(f"파일 삭제 실패 - emp_id: {emp_id}, filename: {filename}, folder_path: {folder_path}, error: {str(e)}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"삭제 실패: {str(e)}")
+
+    @staticmethod
+    def create_folder(emp_id: str, folder_name: str, db: Session = None) -> dict:
+        """
+        새 폴더 생성
+        
+        Args:
+            emp_id: 사번
+            folder_name: 폴더 이름
+            db: DB 세션
+        
+        Returns:
+            dict: 생성 결과
+        
+        Raises:
+            HTTPException: 폴더 생성 실패
+        """
+        try:
+            # 1. 폴더 이름 검증
+            if not folder_name or not folder_name.strip():
+                raise HTTPException(status_code=400, detail="폴더 이름을 입력해주세요")
+            
+            folder_name = folder_name.strip()
+            
+            # 특수문자 검증 (한글, 영문, 숫자, 공백, 하이픈, 언더스코어만 허용)
+            import re
+            if not re.match(r'^[\w\sㄱ-ㅎㅏ-ㅣ가-힣-]+$', folder_name):
+                raise HTTPException(status_code=400, detail="폴더 이름에 특수문자는 사용할 수 없습니다")
+            
+            # 예약어 검증
+            reserved_names = ['전체 파일', 'all', '.', '..']
+            if folder_name.lower() in [r.lower() for r in reserved_names]:
+                raise HTTPException(status_code=400, detail="사용할 수 없는 폴더 이름입니다")
+            
+            # 2. 사용자 검증
+            if db:
+                employee = db.query(Employee).filter(
+                    Employee.emp_id == emp_id
+                ).first()
+                
+                if not employee:
+                    raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다")
+            
+            # 3. 폴더 중복 확인
+            if db:
+                existing_folder = db.query(FileUpload).filter(
+                    FileUpload.emp_id == emp_id,
+                    FileUpload.folder_path == folder_name
+                ).first()
+                
+                if existing_folder:
+                    raise HTTPException(status_code=409, detail="이미 존재하는 폴더 이름입니다")
+            
+            # 4. 물리적 폴더 생성
+            user_dir = file_utils.get_user_upload_dir(emp_id)
+            folder_path = user_dir / folder_name
+            folder_path.mkdir(parents=True, exist_ok=True)
+            
+            logger.info(f"폴더 생성 완료 - emp_id: {emp_id}, folder: {folder_name}")
+            
+            return {
+                "success": True,
+                "message": "폴더가 생성되었습니다",
+                "folder_name": folder_name
+            }
+        
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"폴더 생성 실패 - emp_id: {emp_id}, folder: {folder_name}, error: {str(e)}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"폴더 생성 실패: {str(e)}")
+
+    @staticmethod
+    def delete_folder(emp_id: str, folder_name: str, db: Session = None) -> dict:
+        """
+        폴더 삭제 (내부 파일 포함)
+        
+        Args:
+            emp_id: 사번
+            folder_name: 폴더 이름
+            db: DB 세션
+        
+        Returns:
+            dict: 삭제 결과
+        
+        Raises:
+            HTTPException: 폴더 삭제 실패
+        """
+        try:
+            # 1. 폴더 이름 검증
+            if not folder_name or not folder_name.strip():
+                raise HTTPException(status_code=400, detail="폴더 이름이 필요합니다")
+            
+            folder_name = folder_name.strip()
+            
+            # 예약어 검증 (전체 파일 폴더는 삭제 불가)
+            reserved_names = ['전체 파일', 'all']
+            if folder_name.lower() in [r.lower() for r in reserved_names]:
+                raise HTTPException(status_code=400, detail="이 폴더는 삭제할 수 없습니다")
+            
+            # 2. 사용자 검증
+            if db:
+                employee = db.query(Employee).filter(
+                    Employee.emp_id == emp_id
+                ).first()
+                
+                if not employee:
+                    raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다")
+            
+            # 3. 폴더 내 파일 조회 및 용량 계산
+            total_size = 0
+            file_count = 0
+            
+            if db:
+                files_in_folder = db.query(FileUpload).filter(
+                    FileUpload.emp_id == emp_id,
+                    FileUpload.folder_path == folder_name
+                ).all()
+                
+                for file in files_in_folder:
+                    # file_size_mb를 bytes로 변환
+                    file_size_bytes = int((file.file_size_mb or 0) * 1024 * 1024)
+                    total_size += file_size_bytes
+                    file_count += 1
+                
+                logger.info(f"폴더 내 파일 - folder: {folder_name}, count: {file_count}, size: {total_size} bytes")
+            
+            # 4. 물리적 폴더 및 파일 삭제
+            user_dir = file_utils.get_user_upload_dir(emp_id)
+            folder_path = user_dir / folder_name
+            
+            if folder_path.exists() and folder_path.is_dir():
+                shutil.rmtree(folder_path)
+                logger.info(f"물리적 폴더 삭제 완료: {folder_path}")
+            
+            # 5. DB에서 파일 레코드 삭제
+            if db:
+                delete_count = db.query(FileUpload).filter(
+                    FileUpload.emp_id == emp_id,
+                    FileUpload.folder_path == folder_name
+                ).delete()
+                
+                # Phase 4: 사용량 차감
+                if total_size > 0:
+                    StorageService.subtract_usage(emp_id, total_size, db)
+                
+                db.commit()
+                logger.info(f"DB에서 폴더 및 파일 삭제: {delete_count}개 레코드, {total_size} bytes 차감")
+            
+            return {
+                "success": True,
+                "message": f"폴더가 삭제되었습니다 (파일 {file_count}개, {total_size / (1024*1024):.2f} MB)",
+                "deleted_files": file_count,
+                "freed_bytes": total_size
+            }
+        
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"폴더 삭제 실패 - emp_id: {emp_id}, folder: {folder_name}, error: {str(e)}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"폴더 삭제 실패: {str(e)}")
 
 # 전역 인스턴스 생성
 file_service = FileService()

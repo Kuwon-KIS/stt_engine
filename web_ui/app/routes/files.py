@@ -190,3 +190,52 @@ async def get_audio_file(
     except Exception as e:
         logger.error(f"오디오 파일 제공 실패: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/folders", status_code=201)
+async def create_folder(
+    request: Request,
+    folder_name: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """
+    새 폴더 생성
+    
+    Args:
+        folder_name: 폴더 이름
+    
+    Returns:
+        dict: 생성 결과
+    """
+    # 세션에서 사번 추출
+    emp_id = request.session.get("emp_id")
+    if not emp_id:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다")
+    
+    result = FileService.create_folder(emp_id, folder_name, db)
+    return result
+
+
+@router.delete("/folders/{folder_name}")
+async def delete_folder(
+    folder_name: str,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    폴더 삭제 (내부 파일 포함)
+    
+    Args:
+        folder_name: 폴더 이름
+    
+    Returns:
+        dict: 삭제 결과
+    """
+    # 세션에서 사번 추출
+    emp_id = request.session.get("emp_id")
+    if not emp_id:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다")
+    
+    result = FileService.delete_folder(emp_id, folder_name, db)
+    return result
+

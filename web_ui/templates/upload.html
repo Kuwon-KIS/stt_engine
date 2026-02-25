@@ -135,6 +135,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            position: relative;
         }
 
         .folder-name {
@@ -145,6 +146,26 @@
             font-size: 11px;
             color: #999;
             margin-left: 10px;
+        }
+
+        .folder-delete-btn {
+            background: none;
+            border: none;
+            color: #999;
+            cursor: pointer;
+            padding: 2px 6px;
+            font-size: 14px;
+            opacity: 0;
+            transition: opacity 0.2s, color 0.2s;
+            margin-left: 5px;
+        }
+
+        .folder-item:hover .folder-delete-btn {
+            opacity: 1;
+        }
+
+        .folder-delete-btn:hover {
+            color: #f44336;
         }
 
         .folder-item.active .folder-size {
@@ -525,6 +546,103 @@
             font-size: 14px;
         }
 
+        /* Phase 5: 폴더 생성 다이얼로그 */
+        .dialog-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .dialog-overlay.active {
+            display: flex;
+        }
+
+        .dialog-box {
+            background: white;
+            border-radius: 8px;
+            padding: 25px;
+            max-width: 400px;
+            width: 90%;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+        }
+
+        .dialog-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #333;
+        }
+
+        .dialog-content {
+            margin-bottom: 20px;
+        }
+
+        .dialog-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+
+        .dialog-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .dialog-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .dialog-button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        .dialog-button:hover {
+            opacity: 0.8;
+        }
+
+        .dialog-button.primary {
+            background-color: #667eea;
+            color: white;
+        }
+
+        .dialog-button.secondary {
+            background-color: #f5f5f5;
+            color: #333;
+        }
+
+        /* 확인 다이얼로그 */
+        .confirm-text {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 10px;
+        }
+
+        .confirm-warning {
+            font-size: 12px;
+            color: #f57c00;
+            background: #fff3e0;
+            padding: 8px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+
         @media (max-width: 768px) {
             .container {
                 grid-template-columns: 1fr;
@@ -627,6 +745,42 @@
         </div>
     </div>
 
+    <!-- Phase 5: 폴더 생성 다이얼로그 -->
+    <div id="createFolderDialog" class="dialog-overlay">
+        <div class="dialog-box">
+            <div class="dialog-title">📁 새 폴더 만들기</div>
+            <div class="dialog-content">
+                <input type="text" id="folderNameInput" class="dialog-input" placeholder="폴더 이름을 입력하세요" maxlength="50">
+                <div style="font-size: 11px; color: #999; margin-top: 5px;">
+                    한글, 영문, 숫자, 공백, 하이픈(-), 언더스코어(_) 사용 가능
+                </div>
+            </div>
+            <div class="dialog-buttons">
+                <button class="dialog-button secondary" onclick="closeCreateFolderDialog()">취소</button>
+                <button class="dialog-button primary" onclick="createFolder()">만들기</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Phase 5: 폴더 삭제 확인 다이얼로그 -->
+    <div id="deleteFolderDialog" class="dialog-overlay">
+        <div class="dialog-box">
+            <div class="dialog-title">⚠️ 폴더 삭제 확인</div>
+            <div class="dialog-content">
+                <div class="confirm-text">
+                    '<span id="deleteFolderName"></span>' 폴더를 삭제하시겠습니까?
+                </div>
+                <div class="confirm-warning">
+                    ⚠️ 폴더 내의 모든 파일이 함께 삭제됩니다. 이 작업은 되돌릴 수 없습니다.
+                </div>
+            </div>
+            <div class="dialog-buttons">
+                <button class="dialog-button secondary" onclick="closeDeleteFolderDialog()">취소</button>
+                <button class="dialog-button primary" style="background-color: #f44336;" onclick="confirmDeleteFolder()">삭제</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 분석 이력 모달 -->
     <div id="historyModal" class="modal" style="display: none;">
         <div class="modal-content">
@@ -676,18 +830,30 @@
                 
                 const data = await response.json();
                 
-                // 사용량을 MB 또는 GB로 적절하게 표시
-                const usedMB = data.storage_used_gb * 1024;
+                // 디버깅: API 응답 확인
+                console.log('Storage API Response:', data);
+                console.log('storage_used_gb:', data.storage_used_gb);
+                console.log('storage_used (bytes):', data.storage_used);
+                
+                // bytes를 직접 사용하여 정확하게 계산
+                const usedBytes = data.storage_used;
+                const usedMB = usedBytes / (1024 * 1024);
+                const usedGB = usedBytes / (1024 * 1024 * 1024);
+                console.log('Calculated usedMB:', usedMB.toFixed(2));
+                console.log('Calculated usedGB:', usedGB.toFixed(4));
+                
                 const quotaGB = data.storage_quota_gb;
                 
                 let usedDisplay, quotaDisplay;
                 
                 // 사용량이 1GB 미만이면 MB로 표시
-                if (data.storage_used_gb < 1) {
-                    usedDisplay = `${usedMB.toFixed(0)} MB`;
+                if (usedGB < 1) {
+                    usedDisplay = `${usedMB.toFixed(2)} MB`;
                 } else {
-                    usedDisplay = `${data.storage_used_gb.toFixed(2)} GB`;
+                    usedDisplay = `${usedGB.toFixed(2)} GB`;
                 }
+                
+                console.log('usedDisplay:', usedDisplay);
                 
                 quotaDisplay = `${quotaGB} GB`;
                 
@@ -770,10 +936,10 @@
                         
                         const li = document.createElement('li');
                         li.className = 'folder-item';
-                        li.onclick = () => selectFolder(folder);
                         li.innerHTML = `
-                            <span class="folder-name">${folder}</span>
+                            <span class="folder-name" onclick="selectFolder('${folder}')" style="cursor: pointer; flex: 1;">${folder}</span>
                             <span class="folder-size">${totalSize.toFixed(2)} MB</span>
+                            <button class="folder-delete-btn" onclick="event.stopPropagation(); showDeleteFolderDialog('${folder}')" title="폴더 삭제">🗑️</button>
                         `;
                         folderList.appendChild(li);
                     }
@@ -782,10 +948,10 @@
                     // 에러 발생 시에도 폴더는 표시
                     const li = document.createElement('li');
                     li.className = 'folder-item';
-                    li.onclick = () => selectFolder(folder);
                     li.innerHTML = `
-                        <span class="folder-name">${folder}</span>
+                        <span class="folder-name" onclick="selectFolder('${folder}')" style="cursor: pointer; flex: 1;">${folder}</span>
                         <span class="folder-size">-</span>
+                        <button class="folder-delete-btn" onclick="event.stopPropagation(); showDeleteFolderDialog('${folder}')" title="폴더 삭제">🗑️</button>
                     `;
                     folderList.appendChild(li);
                 }
@@ -829,21 +995,139 @@
             
             // 제목 업데이트
             const title = document.getElementById('fileListTitle');
-            title.textContent = folder ? `📄 ${folder} 폴더의 파일` : '📄 모든 파일';
+            if (title) {
+                title.textContent = folder ? `📄 ${folder} 폴더의 파일` : '📄 모든 파일';
+            }
             
-            // 분석 이력 버튼 활성화/비활성화
+            // 분석 이력 버튼 활성화/비활성화 (존재하는 경우만)
             const historyBtn = document.getElementById('historyBtn');
             const startBtn = document.getElementById('startAnalysisBtn');
-            if (folder) {
-                historyBtn.disabled = false;
-                historyBtn.style.display = 'inline-block';
-                startBtn.style.display = 'inline-block';
-            } else {
-                historyBtn.disabled = true;
-                historyBtn.style.display = 'none';
-                startBtn.style.display = 'none';
+            
+            if (historyBtn) {
+                if (folder) {
+                    historyBtn.disabled = false;
+                    historyBtn.style.display = 'inline-block';
+                } else {
+                    historyBtn.disabled = true;
+                    historyBtn.style.display = 'none';
+                }
+            }
+            
+            if (startBtn) {
+                if (folder) {
+                    startBtn.style.display = 'inline-block';
+                } else {
+                    startBtn.style.display = 'none';
+                }
             }
         }
+
+        // Phase 5: 폴더 생성 다이얼로그 표시
+        function showCreateFolderDialog() {
+            document.getElementById('createFolderDialog').classList.add('active');
+            document.getElementById('folderNameInput').value = '';
+            document.getElementById('folderNameInput').focus();
+        }
+
+        // Phase 5: 폴더 생성 다이얼로그 닫기
+        function closeCreateFolderDialog() {
+            document.getElementById('createFolderDialog').classList.remove('active');
+        }
+
+        // Phase 5: 폴더 생성
+        async function createFolder() {
+            const input = document.getElementById('folderNameInput');
+            const folderName = input.value.trim();
+            
+            if (!folderName) {
+                showNotification('폴더 이름을 입력해주세요', 'warning');
+                input.focus();
+                return;
+            }
+            
+            try {
+                const formData = new FormData();
+                formData.append('folder_name', folderName);
+                
+                const response = await fetch('/api/files/folders', {
+                    method: 'POST',
+                    credentials: 'include',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showNotification(data.message || '폴더가 생성되었습니다', 'success');
+                    closeCreateFolderDialog();
+                    await loadFolders(false);  // 폴더 목록 새로고침
+                } else {
+                    showNotification(data.detail || '폴더 생성 실패', 'error');
+                }
+            } catch (error) {
+                console.error('폴더 생성 에러:', error);
+                showNotification('폴더 생성 중 오류가 발생했습니다', 'error');
+            }
+        }
+
+        // Phase 5: 폴더 삭제 확인 다이얼로그 표시
+        let folderToDelete = null;
+        
+        function showDeleteFolderDialog(folderName) {
+            folderToDelete = folderName;
+            document.getElementById('deleteFolderName').textContent = folderName;
+            document.getElementById('deleteFolderDialog').classList.add('active');
+        }
+
+        // Phase 5: 폴더 삭제 다이얼로그 닫기
+        function closeDeleteFolderDialog() {
+            document.getElementById('deleteFolderDialog').classList.remove('active');
+            folderToDelete = null;
+        }
+
+        // Phase 5: 폴더 삭제 확인
+        async function confirmDeleteFolder() {
+            if (!folderToDelete) return;
+            
+            try {
+                const response = await fetch(`/api/files/folders/${encodeURIComponent(folderToDelete)}`, {
+                    method: 'DELETE',
+                    credentials: 'include'
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showNotification(data.message || '폴더가 삭제되었습니다', 'success');
+                    closeDeleteFolderDialog();
+                    
+                    // 삭제된 폴더가 현재 선택된 폴더면 전체 파일로 이동
+                    if (currentFolder === folderToDelete) {
+                        selectFolder(null);
+                    }
+                    
+                    await loadFolders(false);  // 폴더 목록 새로고침
+                    await loadStorageInfo();   // 저장 용량 정보 새로고침
+                } else {
+                    showNotification(data.detail || '폴더 삭제 실패', 'error');
+                }
+            } catch (error) {
+                console.error('폴더 삭제 에러:', error);
+                showNotification('폴더 삭제 중 오류가 발생했습니다', 'error');
+            }
+        }
+
+        // Enter 키로 폴더 생성
+        document.addEventListener('DOMContentLoaded', () => {
+            const input = document.getElementById('folderNameInput');
+            if (input) {
+                input.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        createFolder();
+                    }
+                });
+            }
+        });
 
         // 파일 목록 로드
         async function loadFiles(showError = true) {
@@ -1114,14 +1398,6 @@
             } catch (error) {
                 console.error('파일 삭제 에러:', error);
                 showNotification(error.message, 'error');
-            }
-        }
-
-        // 새 폴더 생성 (미구현)
-        function showCreateFolderDialog() {
-            const folderName = prompt('폴더명을 입력하세요:');
-            if (folderName) {
-                showNotification('폴더 생성 기능은 추후 구현됩니다', 'info');
             }
         }
 
