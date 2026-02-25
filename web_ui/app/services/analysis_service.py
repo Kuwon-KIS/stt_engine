@@ -639,15 +639,21 @@ class AnalysisService:
                         user_dir = get_user_upload_dir(emp_id)
                         file_path = user_dir / folder_path / filename
                         
-                        # STT API 호출 (순서: STT → privacy_removal → agent)
+                        # STT API 호출 (순서: STT → privacy_removal → element_detection → agent)
+                        logger.info(f"[process_analysis_sync] STT API 호출 시작: {filename}")
+                        logger.info(f"[process_analysis_sync]   - file_path: {file_path}")
+                        logger.info(f"[process_analysis_sync]   - privacy_removal: True (항상 수행)")
+                        logger.info(f"[process_analysis_sync]   - incomplete_elements_check: True (항상 수행)")
+                        logger.info(f"[process_analysis_sync]   - ai_agent: {include_classification} (요청에 따라)")
+                        
                         stt_result = await stt_service.transcribe_local_file(
                             file_path=str(file_path),
                             language="ko",
                             is_stream=False,
                             privacy_removal=True,  # privacy_removal 항상 수행
                             classification=False,
-                            ai_agent=include_classification,  # agent는 선택에 따라
-                            incomplete_elements_check=include_validation
+                            ai_agent=include_classification,  # agent는 사용자 요청에 따라
+                            incomplete_elements_check=True  # element_detection 항상 수행
                         )
                         
                         # === TEST MODE: Simulate failure on fallback (dummy response) ===
@@ -660,7 +666,32 @@ class AnalysisService:
                                 "message": f"테스트 모드 실패 - fallback에서 시뮬레이션 (failure_rate={TEST_FAILURE_RATE})"
                             }
                         
-                        logger.info(f"[process_analysis_sync] STT 완료: {filename}, success={stt_result.get('success')}")
+                        # 상세 로깅: 처리 결과
+                        logger.info(f"[process_analysis_sync] STT 호출 완료: {filename}")
+                        logger.info(f"[process_analysis_sync]   - success: {stt_result.get('success')}")
+                        if stt_result.get('success'):
+                            logger.info(f"[process_analysis_sync]   - text_length: {len(stt_result.get('text', ''))}")
+                            logger.info(f"[process_analysis_sync]   - backend: {stt_result.get('backend', 'unknown')}")
+                            
+                            # Privacy Removal 결과 로깅
+                            processing_steps = stt_result.get('processing_steps', {})
+                            if processing_steps.get('privacy_removal'):
+                                logger.info(f"[process_analysis_sync]   - privacy_removal: {processing_steps['privacy_removal']}")
+                            
+                            # Element Detection 결과 로깅
+                            if processing_steps.get('incomplete_elements'):
+                                logger.info(f"[process_analysis_sync]   - incomplete_elements: {processing_steps['incomplete_elements']}")
+                                incomplete_elem = stt_result.get('incomplete_elements', {})
+                                if incomplete_elem:
+                                    logger.info(f"[process_analysis_sync]     - agent_type: {incomplete_elem.get('agent_type')}")
+                                    logger.info(f"[process_analysis_sync]     - detected_sentences: {len(incomplete_elem.get('detected_sentences', []))}")
+                            
+                            # AI Agent 결과 로깅 (ai_agent=True인 경우)
+                            if include_classification and processing_steps.get('ai_agent'):
+                                logger.info(f"[process_analysis_sync]   - ai_agent: {processing_steps['ai_agent']}")
+                        else:
+                            error_msg = stt_result.get('message', stt_result.get('error', 'Unknown error'))
+                            logger.warning(f"[process_analysis_sync]   - error: {error_msg}")
                         
                         # 결과를 즉시 DB에 저장 (동시성 제어 필요)
                         from app.utils.db import SessionLocal
@@ -689,6 +720,7 @@ class AnalysisService:
                                         "confidence": confidence
                                     }
                                     result = existing_result
+                                    logger.info(f"[process_analysis_sync] DB result 업데이트: {filename}")
                                 else:
                                     # 없으면 새로 생성
                                     result = AnalysisResult(
@@ -705,6 +737,7 @@ class AnalysisService:
                                         }
                                     )
                                     db_session.add(result)
+                                    logger.info(f"[process_analysis_sync] DB result 생성: {filename}")
                             else:
                                 # STT 실패
                                 if existing_result:
@@ -715,6 +748,7 @@ class AnalysisService:
                                         "message": stt_result.get('message', '처리 실패')
                                     }
                                     result = existing_result
+                                    logger.warning(f"[process_analysis_sync] DB result 실패 업데이트: {filename}")
                                 else:
                                     result = AnalysisResult(
                                         job_id=job_id,
@@ -727,6 +761,7 @@ class AnalysisService:
                                         }
                                     )
                                     db_session.add(result)
+                                    logger.warning(f"[process_analysis_sync] DB result 실패 생성: {filename}")
                             
                             db_session.commit()
                             elapsed = time.time() - start_time
