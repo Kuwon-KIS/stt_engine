@@ -81,6 +81,45 @@
             color: #333;
         }
 
+        .storage-info-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            color: white;
+        }
+
+        .storage-info-box h3 {
+            font-size: 13px;
+            margin: 0 0 10px 0;
+            opacity: 0.9;
+        }
+
+        .storage-text {
+            font-size: 12px;
+            margin-bottom: 8px;
+        }
+
+        .storage-bar {
+            width: 100%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 5px;
+        }
+
+        .storage-bar-fill {
+            height: 100%;
+            background: #4caf50;
+            transition: width 0.3s, background 0.3s;
+        }
+
+        .storage-details {
+            font-size: 11px;
+            opacity: 0.8;
+        }
+
         .folder-list {
             list-style: none;
         }
@@ -93,6 +132,23 @@
             cursor: pointer;
             transition: background-color 0.2s;
             border-left: 3px solid transparent;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .folder-name {
+            flex: 1;
+        }
+
+        .folder-size {
+            font-size: 11px;
+            color: #999;
+            margin-left: 10px;
+        }
+
+        .folder-item.active .folder-size {
+            color: rgba(255, 255, 255, 0.8);
         }
 
         .folder-item:hover {
@@ -496,12 +552,26 @@
     <div class="container">
         <!-- 사이드바: 폴더 목록 -->
         <div class="sidebar">
+            <!-- Storage Info -->
+            <div class="storage-info-box" id="storageInfoBox">
+                <h3>💾 저장 용량</h3>
+                <div class="storage-text" id="storageText">로딩 중...</div>
+                <div class="storage-bar">
+                    <div class="storage-bar-fill" id="storageBarFill"></div>
+                </div>
+                <div class="storage-details" id="storageDetails"></div>
+            </div>
+
+            <!-- Folder List -->
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                 <h2 style="margin: 0;">📁 폴더</h2>
                 <button class="action-button secondary-button" onclick="showCreateFolderDialog()" style="font-size: 12px; padding: 6px 12px;">새 폴더</button>
             </div>
             <ul class="folder-list" id="folderList">
-                <li class="folder-item active" onclick="selectFolder(null)">전체 파일</li>
+                <li class="folder-item active" onclick="selectFolder(null)">
+                    <span class="folder-name">전체 파일</span>
+                    <span class="folder-size" id="totalFolderSize">-</span>
+                </li>
             </ul>
         </div>
 
@@ -587,10 +657,71 @@
             if (session) {
                 currentEmpId = session.emp_id;
                 document.getElementById('userInfo').textContent = `${session.name} (${session.emp_id})`;
+                loadStorageInfo();  // Phase 4: 저장 용량 정보 로드
                 loadFolders();
                 loadFiles();
             }
         });
+
+        // Phase 4: 저장 용량 정보 로드
+        async function loadStorageInfo() {
+            try {
+                const response = await fetch('/api/storage/info', {
+                    credentials: 'include'
+                });
+                
+                if (!response.ok) {
+                    throw new Error('저장 용량 정보 로드 실패');
+                }
+                
+                const data = await response.json();
+                
+                // 사용량을 MB 또는 GB로 적절하게 표시
+                const usedMB = data.storage_used_gb * 1024;
+                const quotaGB = data.storage_quota_gb;
+                
+                let usedDisplay, quotaDisplay;
+                
+                // 사용량이 1GB 미만이면 MB로 표시
+                if (data.storage_used_gb < 1) {
+                    usedDisplay = `${usedMB.toFixed(0)} MB`;
+                } else {
+                    usedDisplay = `${data.storage_used_gb.toFixed(2)} GB`;
+                }
+                
+                quotaDisplay = `${quotaGB} GB`;
+                
+                // 저장 용량 텍스트 업데이트
+                const storageText = document.getElementById('storageText');
+                storageText.textContent = `${usedDisplay} / ${quotaDisplay} 사용 중`;
+                
+                // 프로그레스 바 업데이트
+                const storageBarFill = document.getElementById('storageBarFill');
+                const percent = data.usage_percent;
+                storageBarFill.style.width = `${percent}%`;
+                
+                // 색상 변경 (사용량에 따라)
+                if (percent >= 90) {
+                    storageBarFill.style.background = '#f44336';  // 빨강 (90% 이상)
+                } else if (percent >= 75) {
+                    storageBarFill.style.background = '#ff9800';  // 주황 (75% 이상)
+                } else {
+                    storageBarFill.style.background = '#4caf50';  // 초록 (75% 미만)
+                }
+                
+                // 상세 정보 업데이트
+                const storageDetails = document.getElementById('storageDetails');
+                const availableMB = data.available_gb * 1024;
+                const availableDisplay = data.available_gb >= 1 
+                    ? `${data.available_gb.toFixed(1)} GB` 
+                    : `${availableMB.toFixed(0)} MB`;
+                storageDetails.textContent = `사용 가능: ${availableDisplay} (${percent.toFixed(1)}%)`;
+                
+            } catch (error) {
+                console.error('저장 용량 정보 로드 에러:', error);
+                document.getElementById('storageText').textContent = '용량 정보 로드 실패';
+            }
+        }
 
         // 폴더 목록 로드
         async function loadFolders(showError = true) {
@@ -604,7 +735,7 @@
                 }
                 
                 const data = await response.json();
-                renderFolders(data.folders || []);
+                await renderFolders(data.folders || []);  // await 추가
             } catch (error) {
                 console.error('폴더 로드 에러:', error);
                 if (showError) {
@@ -614,17 +745,71 @@
         }
 
         // 폴더 렌더링
-        function renderFolders(folders) {
+        async function renderFolders(folders) {
             const folderList = document.getElementById('folderList');
-            folderList.innerHTML = '<li class="folder-item active" onclick="selectFolder(null)">전체 파일</li>';
             
-            folders.forEach(folder => {
-                const li = document.createElement('li');
-                li.className = 'folder-item';
-                li.textContent = folder;
-                li.onclick = () => selectFolder(folder);
-                folderList.appendChild(li);
-            });
+            // 전체 파일 항목 추가
+            folderList.innerHTML = `
+                <li class="folder-item active" onclick="selectFolder(null)">
+                    <span class="folder-name">전체 파일</span>
+                    <span class="folder-size" id="totalFolderSize">-</span>
+                </li>
+            `;
+            
+            // 각 폴더별로 용량 계산
+            for (const folder of folders) {
+                try {
+                    // 해당 폴더의 파일 목록 조회
+                    const response = await fetch(`/api/files/list?folder_path=${encodeURIComponent(folder)}`, {
+                        credentials: 'include'
+                    });
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        const totalSize = (data.files || []).reduce((sum, file) => sum + (file.file_size_mb || 0), 0);
+                        
+                        const li = document.createElement('li');
+                        li.className = 'folder-item';
+                        li.onclick = () => selectFolder(folder);
+                        li.innerHTML = `
+                            <span class="folder-name">${folder}</span>
+                            <span class="folder-size">${totalSize.toFixed(2)} MB</span>
+                        `;
+                        folderList.appendChild(li);
+                    }
+                } catch (error) {
+                    console.error(`폴더 ${folder} 용량 로드 에러:`, error);
+                    // 에러 발생 시에도 폴더는 표시
+                    const li = document.createElement('li');
+                    li.className = 'folder-item';
+                    li.onclick = () => selectFolder(folder);
+                    li.innerHTML = `
+                        <span class="folder-name">${folder}</span>
+                        <span class="folder-size">-</span>
+                    `;
+                    folderList.appendChild(li);
+                }
+            }
+            
+            // 전체 파일 크기 계산 (모든 폴더의 합)
+            updateTotalFolderSize();
+        }
+        
+        // 전체 폴더 크기 업데이트
+        async function updateTotalFolderSize() {
+            try {
+                const response = await fetch('/api/files/list', {
+                    credentials: 'include'
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    const totalSize = (data.files || []).reduce((sum, file) => sum + (file.file_size_mb || 0), 0);
+                    document.getElementById('totalFolderSize').textContent = `${totalSize.toFixed(2)} MB`;
+                }
+            } catch (error) {
+                console.error('전체 파일 크기 로드 에러:', error);
+            }
         }
 
         // 폴더 선택
@@ -828,6 +1013,9 @@
                 
                 document.getElementById('uploadProgress').classList.remove('show');
                 
+                // Phase 4: 저장 용량 다시 로드
+                loadStorageInfo();
+                
             } catch (error) {
                 showNotification(error.message, 'error');
                 document.getElementById('uploadProgress').classList.remove('show');
@@ -921,6 +1109,8 @@
                 console.log('파일 삭제 성공:', filename);
                 loadFiles();
                 loadFolders();
+                // Phase 4: 저장 용량 다시 로드
+                loadStorageInfo();
             } catch (error) {
                 console.error('파일 삭제 에러:', error);
                 showNotification(error.message, 'error');

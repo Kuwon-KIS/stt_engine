@@ -12,6 +12,7 @@ import logging
 from app.models.database import FileUpload, Employee
 from app.models.file_schemas import FileUploadResponse, FileListResponse, FolderListResponse
 from app.utils import file_utils
+from app.services.storage_service import StorageService
 from config import UPLOAD_DIR
 
 logger = logging.getLogger(__name__)
@@ -57,23 +58,30 @@ class FileService:
             # 3. 폴더 경로 생성
             folder_path = file_utils.create_folder_path(emp_id, folder_name)
             
-            # 4. 파일 저장
+            # 4. 파일 크기 확인 및 할당량 검증
+            file_content = file.file.read()
+            file_size_bytes = len(file_content)
+            file_utils.validate_file_size(file_size_bytes)
+            
+            # Phase 4: 저장 용량 할당량 확인
+            if db:
+                quota_check = StorageService.check_quota_available(emp_id, file_size_bytes, db)
+                if not quota_check["available"]:
+                    raise HTTPException(status_code=413, detail=quota_check["error"])
+            
+            # 5. 파일 저장
             user_dir = file_utils.get_user_upload_dir(emp_id)
             full_folder_path = user_dir / folder_path
             full_file_path = full_folder_path / filename
-            
-            # 파일 크기 제한 검증 (읽기 전에)
-            file_content = file.file.read()
-            file_utils.validate_file_size(len(file_content))
             
             # 파일 저장
             with open(full_file_path, 'wb') as f:
                 f.write(file_content)
             
-            # 파일 크기 계산
+            # 파일 크기 계산 (MB)
             file_size_mb = file_utils.get_file_size_mb(full_file_path)
             
-            # 5. DB에 기록
+            # 6. DB에 기록 및 사용량 업데이트
             if db:
                 file_record = FileUpload(
                     emp_id=emp_id,
@@ -83,6 +91,10 @@ class FileService:
                     uploaded_at=datetime.utcnow()
                 )
                 db.add(file_record)
+                
+                # Phase 4: 사용량 증가
+                StorageService.add_usage(emp_id, file_size_bytes, db)
+                
                 db.commit()
             
             return FileUploadResponse(
@@ -238,6 +250,18 @@ class FileService:
                 if not employee:
                     raise HTTPException(status_code=401, detail="사용자 정보를 찾을 수 없습니다")
             
+            # Phase 4: 파일 크기 조회 (삭제 전에)
+            file_size_bytes = 0
+            if db:
+                file_record = db.query(FileUpload).filter(
+                    FileUpload.emp_id == emp_id,
+                    FileUpload.filename == filename,
+                    FileUpload.folder_path == folder_path
+                ).first()
+                
+                if file_record:
+                    file_size_bytes = int(file_record.file_size_mb * 1024 * 1024)
+            
             # 파일 경로 검증
             file_path = file_utils.validate_file_path(emp_id, folder_path, filename)
             
@@ -247,7 +271,7 @@ class FileService:
             
             file_utils.delete_file(file_path)
             
-            # DB에서 삭제
+            # DB에서 삭제 및 사용량 차감
             if db:
                 # folder_path가 지정되면 해당 폴더에서만 삭제
                 files_to_delete = db.query(FileUpload).filter(
@@ -258,8 +282,13 @@ class FileService:
                 
                 # 삭제할 레코드 수
                 delete_count = files_to_delete.delete()
+                
+                # Phase 4: 사용량 차감
+                if file_size_bytes > 0:
+                    StorageService.subtract_usage(emp_id, file_size_bytes, db)
+                
                 db.commit()
-                logger.info(f"DB에서 파일 삭제: {delete_count}개 레코드")
+                logger.info(f"DB에서 파일 삭제: {delete_count}개 레코드, {file_size_bytes} bytes 차감")
                 
                 # 폴더가 비어있으면 정리
                 user_dir = file_utils.get_user_upload_dir(emp_id)
