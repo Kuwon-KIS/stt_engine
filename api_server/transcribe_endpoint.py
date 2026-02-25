@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse
 from stt_utils import check_memory_available, check_audio_file
 from utils.performance_monitor import PerformanceMonitor
 from api_server.services.privacy_remover import get_privacy_remover_service
+from api_server.llm_clients import LLMClientFactory
 from api_server.constants import (
     ProcessingStep,
     ClassificationCode,
@@ -226,7 +227,10 @@ async def perform_stt(stt_instance, file_path_obj: Path, language: str, is_strea
 
 async def perform_privacy_removal(
     text: str,
-    prompt_type: str = "privacy_remover_default_v6"
+    prompt_type: str = "privacy_remover_default_v6",
+    llm_type: str = "vllm",
+    vllm_model_name: Optional[str] = None,
+    ollama_model_name: Optional[str] = None
 ) -> Optional[PrivacyRemovalResult]:
     """
     Privacy Removal 수행
@@ -240,12 +244,15 @@ async def perform_privacy_removal(
                     - 'privacy_remover_default' 또는 'privacy_remover_default_v6': 기본 프롬프트
                     - 'privacy_remover_loosed_contact' 또는 'privacy_remover_loosed_contact_v6': 로우즈드 프롬프트
                     (기본값: privacy_remover_default_v6)
+        llm_type: LLM 타입 ('openai', 'vllm', 'ollama') (기본값: 'openai')
+        vllm_model_name: vLLM 사용 시 모델명
+        ollama_model_name: Ollama 사용 시 모델명
     
     Returns:
         PrivacyRemovalResult 객체
     """
     try:
-        logger.info(f"[API/Transcribe] Privacy Removal 시작: prompt_type={prompt_type}, text_len={len(text)}")
+        logger.info(f"[API/Transcribe] Privacy Removal 시작: prompt_type={prompt_type}, llm_type={llm_type}, text_len={len(text)}")
         
         # PrivacyRemoverService 초기화
         privacy_service = get_privacy_remover_service()
@@ -309,41 +316,100 @@ async def perform_privacy_removal(
         )
 
 
-async def perform_classification(text: str, prompt_type: str) -> Optional[ClassificationResult]:
+async def perform_classification(
+    text: str,
+    prompt_type: str,
+    llm_type: str = "vllm",
+    vllm_model_name: Optional[str] = None,
+    ollama_model_name: Optional[str] = None
+) -> Optional[ClassificationResult]:
     """
     Classification 수행
+    
+    Args:
+        text: 분류할 텍스트
+        prompt_type: 프롬프트 타입
+        llm_type: LLM 타입 ('openai', 'vllm', 'ollama') (기본값: 'openai')
+        vllm_model_name: vLLM 사용 시 모델명
+        ollama_model_name: Ollama 사용 시 모델명
     
     Returns:
         ClassificationResult 또는 None
     """
     try:
-        logger.info(f"[API/Transcribe] Classification 시작 (텍스트 길이: {len(text)})")
+        logger.info(f"[API/Transcribe] Classification 시작 (텍스트 길이: {len(text)}, llm_type={llm_type})")
         
-        # TODO: Classification Service 구현
-        # 현재는 임시로 UNKNOWN 반환
-        logger.warning(f"[API/Transcribe] Classification Service가 구현되지 않음")
+        # Classification 프롬프트 생성
+        classification_prompt = f"""다음 텍스트를 분류하세요. 고객 상담 통화의 성격을 파악하고 다음 중 하나로 분류해주세요:
+- TELEMARKETING: 텔레마케팅/영업 통화
+- CUSTOMER_SERVICE: 고객 서비스/기술 지원
+- SALES: 직판 영업
+- SURVEY: 설문조사
+- SCAM: 사기/불법
+- UNKNOWN: 분류 불가
+
+텍스트: {text}
+
+분류 결과를 JSON 형식으로 반환하세요:
+{{"category": "분류", "confidence": 0.0~1.0 사이의 신뢰도}}
+"""
+        
+        # LLM 클라이언트 생성
+        model_name = vllm_model_name if llm_type == "vllm" else (ollama_model_name if llm_type == "ollama" else None)
+        llm_client = LLMClientFactory.create_client(
+            llm_type=llm_type,
+            model_name=model_name
+        )
+        
+        # LLM 호출
+        response = await llm_client.call(
+            prompt=classification_prompt,
+            temperature=0.3,
+            max_tokens=500
+        )
+        
+        logger.debug(f"[API/Transcribe] Classification LLM 응답: {response[:100]}...")
+        
+        # 응답 파싱
+        try:
+            import json
+            result_json = json.loads(response)
+            category = result_json.get("category", "UNKNOWN")
+            confidence = float(result_json.get("confidence", 0.0))
+        except (json.JSONDecodeError, ValueError):
+            logger.warning(f"[API/Transcribe] Classification 응답 파싱 실패: {response}")
+            category = "UNKNOWN"
+            confidence = 0.0
+        
+        logger.info(f"[API/Transcribe] Classification 완료: category={category}, confidence={confidence}")
         
         return ClassificationResult(
-            code=ClassificationCode.UNKNOWN.value,
-            category="분류 불가",
-            confidence=0.0,
-            reason="Service not implemented"
+            code=category,
+            category=category,
+            confidence=confidence,
+            reason="LLM-based classification"
         )
     
     except Exception as e:
         logger.error(f"[API/Transcribe] Classification 오류: {type(e).__name__}: {e}", exc_info=True)
-        return None
+        return ClassificationResult(
+            code=ClassificationCode.UNKNOWN.value,
+            category="분류 오류",
+            confidence=0.0,
+            reason=f"Error: {str(e)}"
+        )
 
 
 def build_transcribe_response(
     stt_result: dict,
-    file_check: dict,
+    file_check: Optional[dict],
     file_size_mb: float,
     memory_info: dict,
     perf_metrics: dict,
     processing_time: float,
     privacy_result: Optional[PrivacyRemovalResult] = None,
     classification_result: Optional[ClassificationResult] = None,
+    element_detection_result: Optional[dict] = None,
     file_path_obj: Optional[Path] = None,
     processing_mode: str = "normal",
 ) -> TranscribeResponse:
@@ -355,7 +421,7 @@ def build_transcribe_response(
         stt=True,
         privacy_removal=privacy_result is not None,
         classification=classification_result is not None,
-        ai_agent=False,
+        element_detection=element_detection_result is not None,
     )
     
     # 메모리 정보
@@ -376,16 +442,27 @@ def build_transcribe_response(
             gpu_percent=perf_dict.get('gpu_percent'),
         )
     
+    # 텍스트 입력의 경우 file_check가 None일 수 있음
+    duration = None
+    if file_check:
+        duration = file_check.get('duration_sec')
+    elif 'duration' in stt_result and stt_result['duration'] == 0:
+        # 텍스트 입력: duration을 None으로 설정
+        duration = None
+    
     return TranscribeResponse(
         success=True,
         text=stt_result.get('text', ''),
         language=stt_result.get('language', 'unknown'),
-        duration=file_check.get('duration_sec'),
+        duration=duration,
         backend=stt_result.get('backend', 'unknown'),
         file_path=str(file_path_obj) if file_path_obj else None,
         file_size_mb=file_size_mb,
         privacy_removal=privacy_result,
         classification=classification_result,
+        element_detection=element_detection_result.get('detection_results') if element_detection_result else None,
+        element_detection_api_type=element_detection_result.get('api_type') if element_detection_result else None,
+        element_detection_llm_type=element_detection_result.get('llm_type') if element_detection_result else None,
         processing_steps=processing_steps,
         processing_time_seconds=processing_time,
         processing_mode=processing_mode,
@@ -461,74 +538,153 @@ async def perform_incomplete_elements_check(
         }
 
 
-async def perform_ai_agent(
+async def perform_element_detection(
     text: str,
-    stt_result: dict = None,
-    agent_type: str = "auto",
+    detection_types: list = None,
+    api_type: str = "external",
+    llm_type: str = "vllm",
+    vllm_model_name: Optional[str] = None,
+    ollama_model_name: Optional[str] = None,
     classification_result: dict = None,
     privacy_removal_result: dict = None,
-    agent_url: Optional[str] = None,
-    chat_thread_id: Optional[str] = None
+    external_api_url: Optional[str] = None
 ) -> dict:
     """
-    AI Agent를 사용하여 텍스트 처리
+    요소 탐지 (불완전판매, 부당권유 판매 등)를 수행
     
     Args:
         text: 처리할 텍스트 (정제되거나 원본 STT 결과)
-        stt_result: STT 처리 결과
-        agent_type: Agent 타입 ("auto", "vllm", "dummy" 등)
+        detection_types: 탐지 대상 목록 (예: ["incomplete_sales", "aggressive_sales"])
+        api_type: API 방식 ("external" = 외부 서비스 호출, "local" = 로컬 LLM 사용)
+        llm_type: LLM 타입 ('openai', 'vllm', 'ollama') - api_type="local"일 때만 사용 (기본값: 'openai')
+        vllm_model_name: vLLM 사용 시 모델명
+        ollama_model_name: Ollama 사용 시 모델명
         classification_result: 분류 결과
         privacy_removal_result: 개인정보 제거 결과
-        agent_url: Agent 서버 URL (선택)
-        chat_thread_id: 채팅 스레드 ID
+        external_api_url: 외부 API 엔드포인트 URL (api_type="external"일 때)
     
     Returns:
         {
             'success': bool,
-            'response': str,        # Agent 응답
-            'agent_type': str,      # 실제 사용된 agent 타입
-            'error': str           # 에러 발생시
+            'detection_results': list,  # 탐지된 요소 목록
+            'api_type': str,           # 사용된 API 방식
+            'llm_type': str,           # 사용된 LLM (local 모드일 때)
+            'error': str               # 에러 발생시
         }
     """
     try:
-        from api_server.services.ai_agent_service import get_ai_agent_service
+        logger.info(f"[Transcribe/ElementDetection] 요소 탐지 시작 (api_type={api_type}, llm_type={llm_type}, detection_types={detection_types}, text_length={len(text)})")
         
-        logger.info(f"[Transcribe/AIAgent] AI Agent 처리 시작 (agent_type={agent_type}, text_length={len(text)})")
+        # detection_types가 지정되지 않았으면 기본값 사용
+        if not detection_types:
+            detection_types = ["incomplete_sales", "aggressive_sales"]
         
-        # AI Agent 서비스 인스턴스 획득
-        ai_agent_service = await get_ai_agent_service()
-        
-        # Agent 처리 (Fallback 자동 처리)
-        result = await ai_agent_service.process(
-            user_query=text,
-            agent_url=agent_url or ai_agent_service.agent_url or "",
-            request_format="text_only",
-            use_streaming=False,
-            chat_thread_id=chat_thread_id
-        )
-        
-        if result.get('success'):
-            logger.info(f"[Transcribe/AIAgent] ✅ Agent 처리 완료 (agent_type={result.get('agent_type')})")
+        # API 타입에 따라 다르게 처리
+        if api_type == "external":
+            # 외부 API 호출
+            logger.info(f"[Transcribe/ElementDetection] 외부 API 호출 시작 (url={external_api_url})")
+            
+            # 외부 API 호출 (현재 더미 구현)
+            # TODO: 실제 외부 API 엔드포인트로 요청 전송
+            detection_results = []
+            for detection_type in detection_types:
+                detection_results.append({
+                    "type": detection_type,
+                    "detected": False,
+                    "confidence": 0.0,
+                    "details": f"External API call pending for {detection_type}"
+                })
+            
+            logger.info(f"[Transcribe/ElementDetection] ✅ 외부 API 처리 완료 (결과_수={len(detection_results)})")
             return {
                 'success': True,
-                'response': result.get('response', ''),
-                'agent_type': result.get('agent_type', agent_type),
-                'chat_thread_id': result.get('chat_thread_id')
+                'detection_results': detection_results,
+                'api_type': 'external',
+                'llm_type': None
             }
+        
+        elif api_type == "local":
+            # 로컬 LLM 사용
+            logger.info(f"[Transcribe/ElementDetection] 로컬 LLM 요소 탐지 시작 (llm_type={llm_type})")
+            
+            # LLM 클라이언트 생성
+            model_name = vllm_model_name if llm_type == "vllm" else (ollama_model_name if llm_type == "ollama" else None)
+            llm_client = LLMClientFactory.create_client(
+                llm_type=llm_type,
+                model_name=model_name
+            )
+            
+            # 요소 탐지 프롬프트 생성
+            detection_prompt = f"""다음 고객 상담 통화 내용을 분석하여 요청된 요소들의 탐지 여부를 판단하세요.
+
+감지 대상:
+{', '.join(detection_types)}
+
+상담 내용:
+{text}
+
+각 요소에 대해 다음 JSON 형식으로 응답하세요:
+{{
+    "detections": [
+        {{"type": "요소명", "detected": true/false, "confidence": 0.0~1.0, "reason": "감지 근거"}}
+    ]
+}}
+"""
+            
+            # LLM 호출
+            response = await llm_client.call(
+                prompt=detection_prompt,
+                temperature=0.3,
+                max_tokens=1000
+            )
+            
+            logger.debug(f"[Transcribe/ElementDetection] LLM 응답: {response[:100]}...")
+            
+            # 응답 파싱
+            detection_results = []
+            try:
+                import json
+                result_json = json.loads(response)
+                detections = result_json.get("detections", [])
+                for detection in detections:
+                    detection_results.append({
+                        "type": detection.get("type", "unknown"),
+                        "detected": detection.get("detected", False),
+                        "confidence": float(detection.get("confidence", 0.0)),
+                        "details": detection.get("reason", "")
+                    })
+            except (json.JSONDecodeError, ValueError):
+                logger.warning(f"[Transcribe/ElementDetection] LLM 응답 파싱 실패: {response}")
+                # 파싱 실패 시 기본값 반환
+                for detection_type in detection_types:
+                    detection_results.append({
+                        "type": detection_type,
+                        "detected": False,
+                        "confidence": 0.0,
+                        "details": "LLM response parsing failed"
+                    })
+            
+            logger.info(f"[Transcribe/ElementDetection] ✅ 로컬 LLM 처리 완료 (llm_type={llm_type}, 결과_수={len(detection_results)})")
+            return {
+                'success': True,
+                'detection_results': detection_results,
+                'api_type': 'local',
+                'llm_type': llm_type
+            }
+        
         else:
-            error_msg = result.get('error', 'Unknown error')
-            logger.error(f"[Transcribe/AIAgent] Agent 처리 실패: {error_msg}")
+            error_msg = f"Unknown api_type: {api_type}. Expected 'external' or 'local'"
+            logger.error(f"[Transcribe/ElementDetection] {error_msg}")
             return {
                 'success': False,
                 'error': error_msg,
-                'agent_type': 'failed'
+                'api_type': api_type
             }
     
     except Exception as e:
         error_msg = f"{type(e).__name__}: {str(e)}"
-        logger.error(f"[Transcribe/AIAgent] AI Agent 처리 중 오류: {error_msg}", exc_info=True)
+        logger.error(f"[Transcribe/ElementDetection] 요소 탐지 중 오류: {error_msg}", exc_info=True)
         return {
             'success': False,
             'error': error_msg,
-            'agent_type': 'error'
-        }
+            'api_type': api_type        }

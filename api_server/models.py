@@ -18,14 +18,14 @@ class ProcessingStepsStatus(BaseModel):
     stt: bool = Field(True, description="STT 완료 여부")
     privacy_removal: bool = Field(False, description="Privacy Removal 완료 여부")
     classification: bool = Field(False, description="Classification 완료 여부")
-    ai_agent: bool = Field(False, description="AI Agent 완료 여부")
+    element_detection: bool = Field(False, description="요소 탐지 완료 여부")
     
     class Config:
         example = {
             "stt": True,
             "privacy_removal": True,
             "classification": False,
-            "ai_agent": False
+            "element_detection": False
         }
 
 
@@ -224,21 +224,19 @@ class TranscribeResponse(BaseModel):
         None,
         description="불완전판매요소 검증 결과"
     )
-    agent_analysis: Optional[str] = Field(
+    
+    # 요소 탐지 결과 (불완전판매, 부당권유 판매 등)
+    element_detection: Optional[List[Dict[str, Any]]] = Field(
         None,
-        description="Agent 분석 결과"
+        description="요소 탐지 결과 (불완전판매, 부당권유 판매 등)"
     )
-    agent_response: Optional[str] = Field(
+    element_detection_api_type: Optional[str] = Field(
         None,
-        description="Agent 응답 텍스트"
+        description="요소 탐지 API 방식 (external, local)"
     )
-    agent_type: Optional[str] = Field(
+    element_detection_llm_type: Optional[str] = Field(
         None,
-        description="사용된 Agent 타입 (external, vllm, dummy)"
-    )
-    chat_thread_id: Optional[str] = Field(
-        None,
-        description="Agent 채팅 스레드 ID"
+        description="요소 탐지 LLM 타입 (local 모드 시: openai, vllm, ollama)"
     )
     
     # 에러 정보
