@@ -65,7 +65,7 @@ class STTService:
             privacy_removal: 개인정보 제거 여부
             classification: 통화 분류 여부
             ai_agent: AI Agent 처리 여부
-            incomplete_elements_check: 불완전판매요소 검증 여부
+            element_detection: 요소 탐지 여부 (항상 enabled)
             agent_url: Agent 서버 URL
             agent_request_format: Agent 요청 형식 (text_only 또는 prompt_based)
         
@@ -151,7 +151,7 @@ class STTService:
                                 
                                 # processing_steps 로깅
                                 steps = result.get("processing_steps", {})
-                                logger.info(f"[STT Service] 처리 단계: STT={steps.get('stt')}, Privacy={steps.get('privacy_removal')}, Classification={steps.get('classification')}, AI={steps.get('ai_agent')}, IncompleteElements={steps.get('incomplete_elements')}")
+                                logger.info(f"[STT Service] 처리 단계: STT={steps.get('stt')}, Privacy={steps.get('privacy_removal')}, Classification={steps.get('classification')}, AI={steps.get('ai_agent')}, ElementDetection={steps.get('element_detection')}")
                                 
                                 # 요소 탐지 결과 로깅
                                 if element_detection and result.get('element_detection'):
@@ -210,7 +210,7 @@ class STTService:
             privacy_removal: 개인정보 제거 여부
             classification: 통화 분류 여부
             ai_agent: AI Agent 처리 여부
-            incomplete_elements_check: 불완전판매요소 검증 여부
+            element_detection: 요소 탐지 여부 (항상 enabled)
             agent_url: Agent 서버 URL
             agent_request_format: Agent 요청 형식 (text_only 또는 prompt_based)
         
@@ -287,11 +287,11 @@ class STTService:
                                 
                                 # processing_steps 로깅
                                 steps = result.get("processing_steps", {})
-                                logger.info(f"[STT Service] 처리 단계 (job: {job.job_id}): STT={steps.get('stt')}, Privacy={steps.get('privacy_removal')}, Classification={steps.get('classification')}, IncompleteElements={steps.get('incomplete_elements')}")
+                                logger.info(f"[STT Service] 처리 단계 (job: {job.job_id}): STT={steps.get('stt')}, Privacy={steps.get('privacy_removal')}, Classification={steps.get('classification')}, ElementDetection={steps.get('element_detection')}")
                                 
-                                # 불완전판매요소 검증 결과 로깅
-                                if incomplete_elements_check and result.get('incomplete_elements'):
-                                    logger.info(f"[STT Service] 불완전판매요소 검증 완료 (job: {job.job_id})")
+                                # 요소 탐지 결과 로깅
+                                if element_detection and result.get('element_detection'):
+                                    logger.info(f"[STT Service] 요소 탐지 완료 (job: {job.job_id})")
                                 
                                 job.progress = 100
                             else:
