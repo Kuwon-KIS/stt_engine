@@ -677,7 +677,7 @@
             <div style="display: flex; align-items: center; gap: 20px;">
                 <h2 style="margin: 0;">분석 결과</h2>
                 <span style="color: #999; font-size: 20px; font-weight: 300;">|</span>
-                <p id="folderInfo" style="color: #666; font-size: 14px; margin: 0;">폴더: 로딩 중...</p>
+                <p id="folderInfo" style="color: #666; font-size: 20px; font-weight: 500; margin: 0;">폴더: 로딩 중...</p>
             </div>
             <div class="analysis-actions">
                 <button class="btn btn-refresh" onclick="refreshProgress()">새로고침</button>
@@ -865,7 +865,9 @@
                     <h3 style="margin-bottom: 10px; font-size: 18px; color: #333;">🎵 오디오</h3>
                     <div class="audio-player">
                         <audio id="detailAudioPlayer" controls preload="metadata" style="width: 100%;">
-                            <source id="detailAudioSource" src="" type="audio/wav">
+                            <source id="detailAudioSource1" src="" type="audio/wav">
+                            <source id="detailAudioSource2" src="" type="audio/mp3">
+                            <source id="detailAudioSource3" src="" type="audio/mpeg">
                             지원하지 않는 브라우저입니다.
                         </audio>
                     </div>
@@ -886,9 +888,6 @@
                         <!-- 키워드 배지가 여기에 동적으로 추가됩니다 -->
                     </div>
                 </div>
-            </div>
-            <div class="modal-footer">
-                <button class="action-button secondary-button" onclick="closeAnalysisDetailModal()">닫기</button>
             </div>
         </div>
     </div>
@@ -994,8 +993,19 @@
                 document.getElementById('totalFiles').textContent = data.total_files || 0;
                 document.getElementById('completedFiles').textContent = data.processed_files || 0;
                 
-                // suspicious_count는 results에서 계산
-                const suspiciousCount = (data.results || []).filter(r => r.risk_level === 'danger').length;
+                // suspicious_count는 results에서 계산 - improper_detection_results의 detected_yn이 "Y"인 파일 카운트
+                const suspiciousCount = (data.results || []).filter(r => {
+                    if (!r.improper_detection_results) return false;
+                    try {
+                        const detectionData = typeof r.improper_detection_results === 'string' 
+                            ? JSON.parse(r.improper_detection_results) 
+                            : r.improper_detection_results;
+                        return detectionData.detected_yn === 'Y';
+                    } catch (e) {
+                        console.error('Detection results 파싱 에러:', e);
+                        return false;
+                    }
+                }).length;
                 document.getElementById('suspiciousCount').textContent = suspiciousCount || 0;
                 
                 // 불완전판매 발견 카드 스타일 업데이트
@@ -1059,35 +1069,108 @@
                 return;
             }
 
-            tbody.innerHTML = filteredResults.map((result, index) => {
-                const statusBadge = getStatusBadge(result.status);
-                
-                // 분석 결과 데이터 파싱
-                let category = '-';
-                let detectionResult = '-';
-                let detectionBadgeClass = 'result-badge';
-                
-                if (result.status === 'completed' && result.improper_detection_results) {
-                    const detection = result.improper_detection_results;
-                    
-                    // 카테고리 추출
-                    if (detection.category) {
-                        category = detection.category;
-                    }
-                    
-                    // detected_yn에 따른 결과 표시
-                    if (detection.detected_yn === 'Y') {
-                        detectionResult = '위반 탐지';
-                        detectionBadgeClass = 'result-badge result-danger';
-                    } else if (detection.detected_yn === 'N') {
-                        detectionResult = '이상 없음';
-                        detectionBadgeClass = 'result-badge result-safe';
-                    }
+            // Map existing rows by filename for efficient lookup
+            const existingRowsMap = new Map();
+            Array.from(tbody.rows).forEach(row => {
+                const fileCell = row.cells[2]; // filename column
+                if (fileCell) {
+                    existingRowsMap.set(fileCell.textContent.trim(), row);
                 }
+            });
+
+            // Build new table body efficiently
+            const newRows = [];
+            filteredResults.forEach((result, index) => {
+                const existingRow = existingRowsMap.get(result.filename);
                 
-                // 오디오 파일 경로 구성
-                const audioUrl = `/api/files/audio/${currentEmpId}/${currentFolderPath}/${encodeURIComponent(result.filename)}`;
-                const audioPlayer = `
+                if (existingRow) {
+                    // Update existing row (skip audio column to prevent flicker)
+                    updateExistingRow(existingRow, result, index);
+                    newRows.push(existingRow);
+                    existingRowsMap.delete(result.filename);
+                } else {
+                    // Create new row
+                    newRows.push(createNewRow(result, index));
+                }
+            });
+
+            // Clear and append all rows
+            tbody.innerHTML = '';
+            newRows.forEach(row => tbody.appendChild(row));
+        }
+
+        function updateExistingRow(row, result, index) {
+            const statusBadge = getStatusBadge(result.status);
+            
+            // Parse detection data
+            let category = '-';
+            let detectionResult = '-';
+            let detectionBadgeClass = 'result-badge';
+            
+            if (result.status === 'completed' && result.improper_detection_results) {
+                const detection = result.improper_detection_results;
+                if (detection.category) category = detection.category;
+                
+                if (detection.detected_yn === 'Y') {
+                    detectionResult = '위반 탐지';
+                    detectionBadgeClass = 'result-badge result-danger';
+                } else if (detection.detected_yn === 'N') {
+                    detectionResult = '이상 없음';
+                    detectionBadgeClass = 'result-badge result-safe';
+                }
+            }
+            
+            const detailButton = result.status === 'completed' 
+                ? `<button onclick="showAnalysisDetail('${result.filename}')" class="btn-view">상세보기</button>` 
+                : '-';
+            
+            // Update cells (skip index 3 which is audio)
+            const isChecked = selectedFiles.has(result.filename) ? 'checked' : '';
+            row.cells[0].innerHTML = `<input type="checkbox" class="file-checkbox" data-filename="${result.filename}" ${isChecked} onchange="handleFileCheckbox('${result.filename}', this.checked)">`;
+            row.cells[1].textContent = index + 1;
+            // cells[2] is filename - no need to update
+            // cells[3] is audio - SKIP to prevent flicker
+            row.cells[4].innerHTML = statusBadge;
+            row.cells[5].textContent = category;
+            row.cells[6].innerHTML = `<span class="${detectionBadgeClass}">${detectionResult}</span>`;
+            row.cells[7].innerHTML = detailButton;
+        }
+
+        function createNewRow(result, index) {
+            const statusBadge = getStatusBadge(result.status);
+            
+            // Parse detection data
+            let category = '-';
+            let detectionResult = '-';
+            let detectionBadgeClass = 'result-badge';
+            
+            if (result.status === 'completed' && result.improper_detection_results) {
+                const detection = result.improper_detection_results;
+                if (detection.category) category = detection.category;
+                
+                if (detection.detected_yn === 'Y') {
+                    detectionResult = '위반 탐지';
+                    detectionBadgeClass = 'result-badge result-danger';
+                } else if (detection.detected_yn === 'N') {
+                    detectionResult = '이상 없음';
+                    detectionBadgeClass = 'result-badge result-safe';
+                }
+            }
+            
+            const audioUrl = `/api/files/audio/${currentEmpId}/${currentFolderPath}/${encodeURIComponent(result.filename)}`;
+            const isChecked = selectedFiles.has(result.filename) ? 'checked' : '';
+            const detailButton = result.status === 'completed' 
+                ? `<button onclick="showAnalysisDetail('${result.filename}')" class="btn-view">상세보기</button>` 
+                : '-';
+            
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td class="checkbox-cell" style="text-align: center;">
+                    <input type="checkbox" class="file-checkbox" data-filename="${result.filename}" ${isChecked} onchange="handleFileCheckbox('${result.filename}', this.checked)">
+                </td>
+                <td style="text-align: center;">${index + 1}</td>
+                <td style="text-align: left;">${result.filename}</td>
+                <td style="text-align: center;">
                     <div class="audio-player">
                         <audio controls preload="metadata">
                             <source src="${audioUrl}" type="audio/wav">
@@ -1096,30 +1179,13 @@
                             지원하지 않는 브라우저입니다.
                         </audio>
                     </div>
-                `;
-
-                // Checkbox - checked if in selectedFiles Set
-                const isChecked = selectedFiles.has(result.filename) ? 'checked' : '';
-                const checkbox = `<input type="checkbox" class="file-checkbox" data-filename="${result.filename}" ${isChecked} onchange="handleFileCheckbox('${result.filename}', this.checked)">`;
-
-                // 분석 내용 버튼 (완료된 경우에만 표시)
-                const detailButton = result.status === 'completed' 
-                    ? `<button onclick="showAnalysisDetail('${result.filename}')" class="btn-view">상세보기</button>` 
-                    : '-';
-
-                return `
-                <tr>
-                    <td class="checkbox-cell" style="text-align: center;">${checkbox}</td>
-                    <td style="text-align: center;">${index + 1}</td>
-                    <td style="text-align: left;">${result.filename}</td>
-                    <td style="text-align: center;">${audioPlayer}</td>
-                    <td style="text-align: center;">${statusBadge}</td>
-                    <td style="text-align: center;">${category}</td>
-                    <td style="text-align: center;"><span class="${detectionBadgeClass}">${detectionResult}</span></td>
-                    <td style="text-align: center;">${detailButton}</td>
-                </tr>
-                `;
-            }).join('');
+                </td>
+                <td style="text-align: center;">${statusBadge}</td>
+                <td style="text-align: center;">${category}</td>
+                <td style="text-align: center;"><span class="${detectionBadgeClass}">${detectionResult}</span></td>
+                <td style="text-align: center;">${detailButton}</td>
+            `;
+            return row;
         }
 
         function applyFilters(results) {
@@ -1136,7 +1202,23 @@
                     if (result.status !== 'completed') {
                         return false; // Hide non-completed files when filtering by risk
                     }
-                    if (result.risk_level !== currentFilters.risk) {
+                    
+                    // Check improper_detection_results to determine risk level
+                    let actualRisk = 'safe'; // default
+                    if (result.improper_detection_results) {
+                        try {
+                            const detectionData = typeof result.improper_detection_results === 'string' 
+                                ? JSON.parse(result.improper_detection_results) 
+                                : result.improper_detection_results;
+                            if (detectionData.detected_yn === 'Y') {
+                                actualRisk = 'danger';
+                            }
+                        } catch (e) {
+                            console.error('Risk filter 파싱 에러:', e);
+                        }
+                    }
+                    
+                    if (actualRisk !== currentFilters.risk) {
                         return false;
                     }
                 }
@@ -1243,9 +1325,10 @@
             
             // 오디오 플레이어 설정
             const audioUrl = `/api/files/audio/${currentEmpId}/${currentFolderPath}/${encodeURIComponent(filename)}`;
-            const audioSource = document.getElementById('detailAudioSource');
             const audioPlayer = document.getElementById('detailAudioPlayer');
-            audioSource.src = audioUrl;
+            document.getElementById('detailAudioSource1').src = audioUrl;
+            document.getElementById('detailAudioSource2').src = audioUrl;
+            document.getElementById('detailAudioSource3').src = audioUrl;
             audioPlayer.load();
             
             // STT 전문 설정
@@ -1325,29 +1408,71 @@
                 
                 // 데이터 배열 생성
                 const wsData = [
-                    ['번호', '파일명', 'STT 변환 텍스트', '분석 상태', '불완전판매 탐지']
+                    ['번호', '파일명', 'STT 전문', '분석 상태', '카테고리', '분석 결과', '분석 내용 (Detected Sentence)', '분석 내용 (Detected Reason)', '분석 내용 (Detected Keyword)']
                 ];
                 
                 // 각 결과를 행으로 추가
                 filteredResults.forEach((result, index) => {
-                    console.log(`File ${index + 1} risk_level:`, result.risk_level); // Debug log
-                    
-                    // risk_level 매핑: detected = 청상, normal/safe = 정상
-                    const riskStatus = result.risk_level === 'detected' ? '청상' : 
-                                      (result.risk_level === 'normal' || result.risk_level === 'safe') ? '정상' : '-';
-                    
                     // status 매핑
                     const statusText = result.status === 'completed' ? '완료' : 
                                       result.status === 'pending' ? '대기중' : 
                                       result.status === 'processing' ? '분석중' : 
                                       result.status === 'failed' ? '실패' : '-';
                     
+                    // improper_detection_results 파싱
+                    let category = '-';
+                    let detectionResult = '-';
+                    let detectedSentences = '-';
+                    let detectedReasons = '-';
+                    let detectedKeywords = '-';
+                    
+                    if (result.status === 'completed' && result.improper_detection_results) {
+                        try {
+                            const detection = typeof result.improper_detection_results === 'string' 
+                                ? JSON.parse(result.improper_detection_results) 
+                                : result.improper_detection_results;
+                            
+                            // 카테고리
+                            if (detection.category) {
+                                category = detection.category;
+                            }
+                            
+                            // 분석 결과
+                            if (detection.detected_yn === 'Y') {
+                                detectionResult = '위반 탐지';
+                            } else if (detection.detected_yn === 'N') {
+                                detectionResult = '이상 없음';
+                            }
+                            
+                            // Detected Sentence
+                            if (detection.detected_sentence && Array.isArray(detection.detected_sentence)) {
+                                detectedSentences = detection.detected_sentence.join(' | ');
+                            }
+                            
+                            // Detected Reason
+                            if (detection.detected_reason && Array.isArray(detection.detected_reason)) {
+                                detectedReasons = detection.detected_reason.join(' | ');
+                            }
+                            
+                            // Detected Keyword
+                            if (detection.detected_keyword && Array.isArray(detection.detected_keyword)) {
+                                detectedKeywords = detection.detected_keyword.join(', ');
+                            }
+                        } catch (e) {
+                            console.error('JSON 파싱 에러:', e);
+                        }
+                    }
+                    
                     wsData.push([
                         index + 1,
                         result.filename || '',
                         result.stt_text || '-',
                         statusText,
-                        riskStatus
+                        category,
+                        detectionResult,
+                        detectedSentences,
+                        detectedReasons,
+                        detectedKeywords
                     ]);
                 });
                 
@@ -1357,10 +1482,14 @@
                 // 열 너비 설정
                 ws['!cols'] = [
                     { wch: 8 },   // 번호
-                    { wch: 25 },  // 파일명
-                    { wch: 80 },  // STT 변환 텍스트
+                    { wch: 30 },  // 파일명
+                    { wch: 80 },  // STT 전문
                     { wch: 12 },  // 분석 상태
-                    { wch: 15 }   // 불완전판매 탐지
+                    { wch: 15 },  // 카테고리
+                    { wch: 15 },  // 분석 결과
+                    { wch: 50 },  // Detected Sentence
+                    { wch: 50 },  // Detected Reason
+                    { wch: 30 }   // Detected Keyword
                 ];
                 
                 // 워크북에 워크시트 추가
@@ -1387,28 +1516,75 @@
                 const csvRows = [];
                 
                 // 헤더 추가
-                csvRows.push(['번호', '파일명', 'STT 변환 텍스트', '분석 상태', '불완전판매 탐지'].join(','));
+                csvRows.push(['번호', '파일명', 'STT 전문', '분석 상태', '카테고리', '분석 결과', '분석 내용 (Detected Sentence)', '분석 내용 (Detected Reason)', '분석 내용 (Detected Keyword)'].join(','));
                 
                 // 각 결과를 행으로 추가
                 filteredResults.forEach((result, index) => {
-                    // risk_level 매핑: detected = 청상, normal/safe = 정상
-                    const riskStatus = result.risk_level === 'detected' ? '청상' : 
-                                      (result.risk_level === 'normal' || result.risk_level === 'safe') ? '정상' : '-';
-                    
                     // status 매핑
                     const statusText = result.status === 'completed' ? '완료' : 
                                       result.status === 'pending' ? '대기중' : 
                                       result.status === 'processing' ? '분석중' : 
                                       result.status === 'failed' ? '실패' : '-';
                     
+                    // improper_detection_results 파싱
+                    let category = '-';
+                    let detectionResult = '-';
+                    let detectedSentences = '-';
+                    let detectedReasons = '-';
+                    let detectedKeywords = '-';
+                    
+                    if (result.status === 'completed' && result.improper_detection_results) {
+                        try {
+                            const detection = typeof result.improper_detection_results === 'string' 
+                                ? JSON.parse(result.improper_detection_results) 
+                                : result.improper_detection_results;
+                            
+                            // 카테고리
+                            if (detection.category) {
+                                category = detection.category;
+                            }
+                            
+                            // 분석 결과
+                            if (detection.detected_yn === 'Y') {
+                                detectionResult = '위반 탐지';
+                            } else if (detection.detected_yn === 'N') {
+                                detectionResult = '이상 없음';
+                            }
+                            
+                            // Detected Sentence
+                            if (detection.detected_sentence && Array.isArray(detection.detected_sentence)) {
+                                detectedSentences = detection.detected_sentence.join(' | ');
+                            }
+                            
+                            // Detected Reason
+                            if (detection.detected_reason && Array.isArray(detection.detected_reason)) {
+                                detectedReasons = detection.detected_reason.join(' | ');
+                            }
+                            
+                            // Detected Keyword
+                            if (detection.detected_keyword && Array.isArray(detection.detected_keyword)) {
+                                detectedKeywords = detection.detected_keyword.join(', ');
+                            }
+                        } catch (e) {
+                            console.error('JSON 파싱 에러:', e);
+                        }
+                    }
+                    
                     const sttText = (result.stt_text || '-').replace(/"/g, '""');
+                    const detectedSentencesEscaped = detectedSentences.replace(/"/g, '""');
+                    const detectedReasonsEscaped = detectedReasons.replace(/"/g, '""');
+                    const detectedKeywordsEscaped = detectedKeywords.replace(/"/g, '""');
                     
                     const row = [
                         index + 1,
                         `"${result.filename || ''}"`,
                         `"${sttText}"`,
                         statusText,
-                        riskStatus
+                        category,
+                        detectionResult,
+                        `"${detectedSentencesEscaped}"`,
+                        `"${detectedReasonsEscaped}"`,
+                        `"${detectedKeywordsEscaped}"`
                     ];
                     csvRows.push(row.join(','));
                 });
