@@ -347,6 +347,7 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
     detection_types = form_data.get('detection_types', '')  # CSV: "incomplete_sales,aggressive_sales"
     detection_api_type = form_data.get('detection_api_type', 'external')  # external or local
     detection_llm_type = form_data.get('detection_llm_type', 'openai')  # openai, vllm, ollama
+    agent_url = form_data.get('agent_url', '')  # Element Detection 외부 API URL
     privacy_prompt_type = form_data.get('privacy_prompt_type', 'privacy_remover_default_v6')
     classification_prompt_type = form_data.get('classification_prompt_type', 'classification_default_v1')
     
@@ -503,6 +504,7 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
         
         if element_detection_enabled:
             logger.info(f"[API] 요소 탐지 처리 시작 (detection_types={detection_types}, api_type={detection_api_type})")
+            logger.info(f"[API] agent_url 값: {repr(agent_url)}")
             from api_server.transcribe_endpoint import perform_element_detection
             
             # 정제된 텍스트 또는 원본 사용
@@ -511,6 +513,11 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
             # detection_types를 리스트로 파싱 (CSV 형식 지원)
             detection_types_list = [t.strip() for t in detection_types.split(',') if t.strip()] if detection_types else []
             
+            # vLLM/Ollama 엔드포인트 URL 설정
+            import os
+            vllm_base_url = os.getenv("VLLM_BASE_URL", "http://localhost:8001/v1/chat/completions")
+            ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/api/generate")
+            
             element_response = await perform_element_detection(
                 text=detection_text,
                 detection_types=detection_types_list,
@@ -518,8 +525,11 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
                 llm_type=detection_llm_type,
                 vllm_model_name=vllm_model_name,
                 ollama_model_name=ollama_model_name,
+                vllm_base_url=vllm_base_url,
+                ollama_base_url=ollama_base_url,
                 classification_result=classification_result,
-                privacy_removal_result=privacy_result
+                privacy_removal_result=privacy_result,
+                external_api_url=agent_url
             )
             
             if element_response.get('success'):

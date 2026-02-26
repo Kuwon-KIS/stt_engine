@@ -105,7 +105,7 @@ class STTService:
                 data.add_field("element_detection", str(element_detection).lower())
                 
                 # Agent 관련 설정
-                if element_detection and agent_url:
+                if agent_url:  # element_detection과 무관하게 agent_url이 있으면 전달
                     data.add_field("agent_url", agent_url)
                     data.add_field("agent_request_format", agent_request_format)
                 
@@ -247,7 +247,7 @@ class STTService:
                 data.add_field("element_detection", str(element_detection).lower())
                 
                 # Agent 관련 설정
-                if element_detection and agent_url:
+                if agent_url:  # element_detection과 무관하게 agent_url이 있으면 전달
                     data.add_field("agent_url", agent_url)
                     data.add_field("agent_request_format", agent_request_format)
                 
