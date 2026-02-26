@@ -566,7 +566,15 @@ async def _call_external_api(
     external_api_url: Optional[str]
 ) -> Optional[dict]:
     """
-    외부 AI Agent API 호출 시도
+    외부 AI Agent API 호출 시도 (KIS Agent API 형식)
+    
+    외부 API 요청 형식:
+    {
+        "chat_thread_id": "",
+        "parameters": {
+            "user_query": "분석할 텍스트"
+        }
+    }
     
     외부 API 응답 형식:
     {
@@ -577,9 +585,9 @@ async def _call_external_api(
     }
     
     Args:
-        text: 처리할 텍스트
+        text: 처리할 텍스트 (고객 상담 내용)
         detection_types: 탐지 대상 목록
-        external_api_url: 외부 API 엔드포인트 URL
+        external_api_url: 외부 API 엔드포인트 URL (예: https://agent-api.kis.zone/v2_2/api/agent_before_check/messages)
     
     Returns:
         성공 시 dict, 실패 시 None
@@ -594,11 +602,15 @@ async def _call_external_api(
         
         logger.info(f"[Transcribe/ElementDetection] 외부 AI Agent 호출 시작 (url={external_api_url})")
         
-        # 요청 준비
+        # 요청 준비 (KIS Agent API 형식) - 순수 텍스트만 전달
         payload = {
-            "text": text,
-            "detection_types": detection_types,
+            "chat_thread_id": "",
+            "parameters": {
+                "user_query": text
+            }
         }
+        
+        logger.debug(f"[Transcribe/ElementDetection] 외부 API 요청 본문: {json_lib.dumps(payload, ensure_ascii=False)[:200]}...")
         
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
@@ -609,22 +621,50 @@ async def _call_external_api(
         
         if response.status_code != 200:
             logger.warning(f"[Transcribe/ElementDetection] 외부 API 호출 실패 (status={response.status_code})")
+            logger.warning(f"[Transcribe/ElementDetection] 응답 본문: {response.text[:500]}")
             return None
         
         result = response.json()
         logger.info(f"[Transcribe/ElementDetection] ✅ 외부 API 호출 성공")
+        logger.debug(f"[Transcribe/ElementDetection] 응답: {json_lib.dumps(result, ensure_ascii=False)[:200]}...")
         
         # 외부 API 응답을 표준 형식으로 변환
         # 응답 형식: {"detected_yn": "Y"/"N", "detected_sentences": list, "detected_reasons": list, "detected_keywords": list}
         detection_results = []
-        detected_yn = result.get("detected_yn", "N").upper()
+        
+        # API 응답이 직접 detection 객체인 경우와 message 필드에 포함된 경우 모두 처리
+        if isinstance(result, dict):
+            # 직접 응답 형식인 경우
+            if "detected_yn" in result:
+                detection_data = result
+            # message 필드에 포함된 경우 (경우에 따라)
+            elif "message" in result:
+                try:
+                    message_str = result.get("message", "{}")
+                    if isinstance(message_str, str):
+                        detection_data = json_lib.loads(message_str)
+                    else:
+                        detection_data = message_str
+                except:
+                    logger.warning("[Transcribe/ElementDetection] message 필드 파싱 실패, 전체 응답 사용")
+                    detection_data = result
+            else:
+                # 응답 구조가 다른 경우, 전체 응답을 사용
+                detection_data = result
+        else:
+            logger.warning(f"[Transcribe/ElementDetection] 예상하지 못한 응답 형식: {type(result)}")
+            return None
+        
+        detected_yn = detection_data.get("detected_yn", "N").upper()
         
         detection_results.append({
             "detected_yn": detected_yn,
-            "detected_sentences": result.get("detected_sentences", []),
-            "detected_reasons": result.get("detected_reasons", []),
-            "detected_keywords": result.get("detected_keywords", [])
+            "detected_sentences": detection_data.get("detected_sentences", []),
+            "detected_reasons": detection_data.get("detected_reasons", []),
+            "detected_keywords": detection_data.get("detected_keywords", [])
         })
+        
+        logger.info(f"[Transcribe/ElementDetection] 탐지 결과: detected_yn={detected_yn}")
         
         return {
             'detection_results': detection_results,
@@ -633,6 +673,7 @@ async def _call_external_api(
     
     except Exception as e:
         logger.warning(f"[Transcribe/ElementDetection] 외부 API 호출 중 오류: {type(e).__name__}: {str(e)}")
+        logger.warning(f"[Transcribe/ElementDetection] 오류 상세: {str(e)}", exc_info=True)
         return None
 
 
