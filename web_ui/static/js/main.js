@@ -343,13 +343,12 @@ async function transcribeFile() {
         
         // 처리 옵션 (NEW)
         const classification = document.getElementById("classification-checkbox")?.checked || false;
-        const incompleteElementsCheck = document.getElementById("incomplete-elements-check-checkbox")?.checked || false;
         const agentUrl = document.getElementById("agent-url-input")?.value || "";
         const agentRequestFormat = document.getElementById("agent-request-format-select")?.value || "text_only";
         
         console.log("[Transcribe] 처리 옵션:", { 
             classification, 
-            incomplete_elements_check: incompleteElementsCheck,
+            element_detection: true,
             agent_url: agentUrl,
             agent_request_format: agentRequestFormat
         });
@@ -362,7 +361,6 @@ async function transcribeFile() {
         formData.append('is_stream', isStream ? 'true' : 'false');
         formData.append('privacy_removal', 'false');
         formData.append('classification', classification ? 'true' : 'false');
-        formData.append('incomplete_elements_check', incompleteElementsCheck ? 'true' : 'false');
         formData.append('element_detection', 'true');  // ✅ 요소 탐지 활성화
         formData.append('detection_api_type', 'local');  // vLLM 사용
         formData.append('detection_llm_type', 'vllm');  // vLLM 타입
@@ -423,9 +421,9 @@ function displayResult(result) {
     }
     
     // 불완전판매요소 검증 결과 표시 (NEW)
-    if (result.incomplete_elements) {
-        console.log("[Result] Incomplete Elements:", result.incomplete_elements);
-        displayIncompleteElementsResults(result.incomplete_elements);
+    if (result.element_detection) {
+        console.log("[Result] Element Detection:", result.element_detection);
+        displayElementDetectionResults(result.element_detection);
     }
     
     // 성능 메트릭 표시
@@ -529,21 +527,21 @@ function displayClassificationResults(classification) {
 }
 
 /**
- * 불완전판매요소 검증 결과 표시 (NEW)
+ * 요소 탐지 결과 표시 (NEW)
  */
-function displayIncompleteElementsResults(incompleteElements) {
-    const section = document.getElementById("incomplete-elements-result-section");
+function displayElementDetectionResults(elementDetection) {
+    const section = document.getElementById("element-detection-result-section");
     if (!section) return;
     
-    // 기본 정보 표시
-    const result = incompleteElements.result || incompleteElements.agent_type || "-";
-    const details = incompleteElements.details || incompleteElements.description || "-";
-    
-    document.getElementById("incomplete-result").textContent = result;
-    document.getElementById("incomplete-details").textContent = details;
+    // 결과 표시
+    const results = elementDetection || {};
+    section.innerHTML = `
+        <h4>🔍 요소 탐지 결과</h4>
+        <pre>${JSON.stringify(results, null, 2)}</pre>
+    `;
     
     section.style.display = "block";
-    console.log("[Incomplete Elements Results] 표시됨");
+    console.log("[Element Detection Results] 표시됨");
 }
 
 // 결과 액션

@@ -80,13 +80,9 @@
                             <input type="checkbox" id="classification-checkbox">
                             음성 내용 분류
                         </label>
-                        <label style="display: block; margin-bottom: 8px;">
-                            <input type="checkbox" id="incomplete-elements-check-checkbox">
-                            불완전판매요소 검증
-                        </label>
                         <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #ddd;">
                             <label style="display: block; margin-bottom: 4px; font-size: 12px; color: #666;">
-                                불완전판매요소 검증 옵션:
+                                요소 탐지 옵션:
                             </label>
                             <label style="display: block; margin-bottom: 4px;">
                                 <input type="text" id="agent-url-input" placeholder="Agent 서버 URL (선택사항)" style="width: 100%; padding: 6px; font-size: 12px; border: 1px solid #ccc; border-radius: 3px;">
@@ -154,12 +150,9 @@
                 </div>
 
                 <!-- 불완전판매요소 검증 결과 (NEW) -->
-                <div id="incomplete-elements-result-section" class="result-card" style="display: none;">
-                    <h3>불완전판매요소 검증 결과</h3>
-                    <div>
-                        <p><strong>결과:</strong> <span id="incomplete-result">-</span></p>
-                        <p><strong>상세:</strong> <span id="incomplete-details">-</span></p>
-                    </div>
+                <div id="element-detection-result-section" class="result-card" style="display: none;">
+                    <h3>요소 탐지 결과</h3>
+                    <div style="font-family: monospace; white-space: pre-wrap; word-break: break-word;"></div>
                 </div>
 
                 <div class="metrics">
