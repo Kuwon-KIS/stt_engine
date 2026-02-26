@@ -53,9 +53,9 @@ AI_AGENTS = {
         "url": os.getenv("IMPROPER_DETECTION_AGENT_URL", "http://localhost:8003"),
         "timeout": int(os.getenv("IMPROPER_DETECTION_AGENT_TIMEOUT", 120))
     },
-    "incomplete_detection": {
-        "url": os.getenv("INCOMPLETE_DETECTION_AGENT_URL", "http://localhost:8004"),
-        "timeout": int(os.getenv("INCOMPLETE_DETECTION_AGENT_TIMEOUT", 120))
+    "element_detection": {
+        "url": os.getenv("ELEMENT_DETECTION_AGENT_URL", "http://localhost:8004"),
+        "timeout": int(os.getenv("ELEMENT_DETECTION_AGENT_TIMEOUT", 120))
     }
 }
 
