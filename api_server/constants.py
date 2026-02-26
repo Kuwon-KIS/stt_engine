@@ -200,3 +200,19 @@ STREAM_OVERLAP_DURATION = 12
 # 기본 언어
 DEFAULT_LANGUAGE = "ko"
 SUPPORTED_LANGUAGES = ["ko", "en", "ja", "zh", "es", "fr", "de", "it", "pt", "ru"]
+
+
+# ============================================================================
+# LLM 및 API Endpoint 설정
+# ============================================================================
+
+# vLLM 설정
+VLLM_BASE_URL = "http://localhost:8001/v1/chat/completions"
+VLLM_MODEL_NAME = "qwen2.5-7b"
+
+# Ollama 설정
+OLLAMA_BASE_URL = "http://localhost:11434/api/generate"
+OLLAMA_MODEL_NAME = "qwen2.5"
+
+# 외부 API 설정 (없으면 None)
+EXTERNAL_API_URL = None  # 예: "http://localhost:8002/detect"

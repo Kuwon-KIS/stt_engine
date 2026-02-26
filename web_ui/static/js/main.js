@@ -354,16 +354,30 @@ async function transcribeFile() {
             agent_request_format: agentRequestFormat
         });
         
-        const result = await apiCall("/transcribe/", "POST", {
-            file_id: uploadResult.file_id,
-            language: language,
-            backend: backend,
-            is_stream: isStream,
-            privacy_removal: false,                             // 개인정보 제거 기능 제거
-            classification: classification,                      // NEW
-            incomplete_elements_check: incompleteElementsCheck, // NEW
-            agent_url: agentUrl,                                // NEW
-            agent_request_format: agentRequestFormat            // NEW
+        // FormData로 전송 (API가 form_data.get() 사용)
+        const formData = new FormData();
+        formData.append('file_id', uploadResult.file_id);
+        formData.append('language', language);
+        if (backend) formData.append('backend', backend);
+        formData.append('is_stream', isStream ? 'true' : 'false');
+        formData.append('privacy_removal', 'false');
+        formData.append('classification', classification ? 'true' : 'false');
+        formData.append('incomplete_elements_check', incompleteElementsCheck ? 'true' : 'false');
+        formData.append('element_detection', 'true');  // ✅ 요소 탐지 활성화
+        formData.append('detection_api_type', 'local');  // vLLM 사용
+        formData.append('detection_llm_type', 'vllm');  // vLLM 타입
+        formData.append('vllm_model_name', '/model/qwen30_thinking_2507');  // Qwen 모델
+        if (agentUrl) formData.append('agent_url', agentUrl);
+        formData.append('agent_request_format', agentRequestFormat);
+        
+        const result = await fetch('/transcribe/', {
+            method: 'POST',
+            body: formData
+        }).then(res => res.json()).then(json => {
+            if (!json || (json.error || json.detail)) {
+                throw new Error(json.error || json.detail || '요청 실패');
+            }
+            return json;
         });
 
         hideLoading();

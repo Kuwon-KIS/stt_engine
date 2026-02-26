@@ -350,6 +350,10 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
     privacy_prompt_type = form_data.get('privacy_prompt_type', 'privacy_remover_default_v6')
     classification_prompt_type = form_data.get('classification_prompt_type', 'classification_default_v1')
     
+    # DEBUG: FormData 내용 로깅
+    logger.info(f"[DEBUG] FormData Keys: {list(form_data.keys())}")
+    logger.info(f"[DEBUG] element_detection value: {repr(element_detection)} (type: {type(element_detection).__name__})")
+    
     # 처리 시간 측정
     start_time = time.time()
     perf_monitor = PerformanceMonitor()

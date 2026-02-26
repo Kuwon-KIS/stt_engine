@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
     libsndfile1 \
     git \
     curl \
+    jq \
     && rm -rf /var/lib/apt/lists/*
 
 # Python 패키지 업그레이드

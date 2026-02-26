@@ -523,7 +523,7 @@ class PrivacyRemoverService:
         
         # LLM 모델: 기본값은 vLLM (Qwen3-30B-A3B-Thinking)
         # 또는 환경변수 LLM_MODEL_NAME으로 override 가능
-        self.model_name = os.getenv("LLM_MODEL_NAME", "Qwen3-30B-A3B-Thinking-2507-FP8")
+        self.model_name = os.getenv("LLM_MODEL_NAME") or os.getenv("QWEN_MODEL_NAME") or "/model/qwen30_thinking_2507"
         self.llm_client = None
         self.prompt_processor = SimplePromptProcessor(prompts_dir)
         self._initialized = False

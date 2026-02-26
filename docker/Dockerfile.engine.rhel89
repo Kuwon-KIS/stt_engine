@@ -53,6 +53,7 @@ RUN yum install -y \
     openssl \
     curl \
     wget \
+    jq \
     \
     # Audio/Media 처리 (Python librosa로 대체)
     libsndfile \
