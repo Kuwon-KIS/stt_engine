@@ -431,6 +431,7 @@ def build_transcribe_response(
     privacy_result: Optional[PrivacyRemovalResult] = None,
     classification_result: Optional[ClassificationResult] = None,
     element_detection_result: Optional[dict] = None,
+    element_detection_enabled: bool = False,
     file_path_obj: Optional[Path] = None,
     processing_mode: str = "normal",
 ) -> TranscribeResponse:
@@ -442,7 +443,7 @@ def build_transcribe_response(
         stt=True,
         privacy_removal=privacy_result is not None,
         classification=classification_result is not None,
-        element_detection=element_detection_result is not None,
+        element_detection=element_detection_enabled,
     )
     
     # 메모리 정보

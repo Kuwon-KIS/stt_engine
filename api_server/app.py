@@ -543,6 +543,7 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
             privacy_result=privacy_result,
             classification_result=classification_result,
             element_detection_result=element_result,
+            element_detection_enabled=element_detection_enabled,
             file_path_obj=file_path_obj,
             processing_mode="streaming" if is_streaming else "normal"
         )
