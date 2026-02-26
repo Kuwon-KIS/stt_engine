@@ -703,7 +703,7 @@ class AnalysisService:
                         logger.info(f"[process_analysis_sync] STT API 호출 시작: {filename}")
                         logger.info(f"[process_analysis_sync]   - file_path: {file_path}")
                         logger.info(f"[process_analysis_sync]   - privacy_removal: True (항상 수행)")
-                        logger.info(f"[process_analysis_sync]   - incomplete_elements_check: True (항상 수행)")
+                        logger.info(f"[process_analysis_sync]   - element_detection: True (항상 수행)")
                         logger.info(f"[process_analysis_sync]   - ai_agent: {include_classification} (요청에 따라)")
                         
                         stt_result = await stt_service.transcribe_local_file(
@@ -713,7 +713,7 @@ class AnalysisService:
                             privacy_removal=True,  # privacy_removal 항상 수행
                             classification=False,
                             ai_agent=include_classification,  # agent는 사용자 요청에 따라
-                            incomplete_elements_check=True  # element_detection 항상 수행
+                            element_detection=True  # element_detection 항상 수행
                         )
                         
                         # === TEST MODE: Simulate failure on fallback (dummy response) ===
@@ -739,12 +739,12 @@ class AnalysisService:
                                 logger.info(f"[process_analysis_sync]   - privacy_removal: {processing_steps['privacy_removal']}")
                             
                             # Element Detection 결과 로깅
-                            if processing_steps.get('incomplete_elements'):
-                                logger.info(f"[process_analysis_sync]   - incomplete_elements: {processing_steps['incomplete_elements']}")
-                                incomplete_elem = stt_result.get('incomplete_elements', {})
-                                if incomplete_elem:
-                                    logger.info(f"[process_analysis_sync]     - agent_type: {incomplete_elem.get('agent_type')}")
-                                    logger.info(f"[process_analysis_sync]     - detected_sentences: {len(incomplete_elem.get('detected_sentences', []))}")
+                            if processing_steps.get('element_detection'):
+                                logger.info(f"[process_analysis_sync]   - element_detection: {processing_steps['element_detection']}")
+                                element_elem = stt_result.get('element_detection', {})
+                                if element_elem:
+                                    logger.info(f"[process_analysis_sync]     - agent_type: {element_elem.get('agent_type')}")
+                                    logger.info(f"[process_analysis_sync]     - detected_sentences: {len(element_elem.get('detected_sentences', []))}")
                             
                             # AI Agent 결과 로깅 (ai_agent=True인 경우)
                             if include_classification and processing_steps.get('ai_agent'):
@@ -771,10 +771,10 @@ class AnalysisService:
                                 # Agent 결과가 있으면 사용, 없으면 더미 데이터 사용
                                 detection_result = None
                                 
-                                # 1. Agent 결과 확인 (incomplete_elements 또는 ai_agent_result)
-                                if include_classification and stt_result.get('incomplete_elements'):
-                                    # Agent가 제공한 불완전판매 탐지 결과
-                                    incomplete_data = stt_result.get('incomplete_elements', {})
+                                # 1. Agent 결과 확인 (element_detection 또는 ai_agent_result)
+                                if include_classification and stt_result.get('element_detection'):
+                                    # Agent가 제공한 요소 탐지 결과
+                                    element_data = stt_result.get('element_detection', {})
                                     agent_result = incomplete_data.get('result', {})
                                     
                                     # Agent 결과를 우리 형식으로 변환

@@ -500,8 +500,8 @@ function displayProcessingSteps(steps) {
         <div style="padding: 8px; background: ${steps.classification ? '#d4edda' : '#f8d7da'}; border-radius: 4px;">
             <span>${steps.classification ? '✅' : '❌'} 음성 내용 분류</span>
         </div>
-        <div style="padding: 8px; background: ${steps.incomplete_elements ? '#d4edda' : '#f8d7da'}; border-radius: 4px;">
-            <span>${steps.incomplete_elements ? '✅' : '❌'} 불완전판매요소 검증</span>
+        <div style="padding: 8px; background: ${steps.element_detection ? '#d4edda' : '#f8d7da'}; border-radius: 4px;">
+            <span>${steps.element_detection ? '✅' : '❌'} 요소 탐지</span>
         </div>
     `;
     
@@ -672,28 +672,27 @@ startBatchBtn?.addEventListener("click", async () => {
         startBatchBtn.disabled = true;
         startBatchBtn.textContent = "처리 중...";
 
-        // 처리 옵션 (NEW)
+        // 처리 옵션
         const classification = document.getElementById("classification-checkbox")?.checked || false;
-        const incompleteElementsCheck = document.getElementById("incomplete-elements-check-checkbox")?.checked || false;
         const agentUrl = document.getElementById("agent-url-input")?.value || "";
         const agentRequestFormat = document.getElementById("agent-request-format-select")?.value || "text_only";
         
         console.log("[배치] 처리 옵션:", { 
             classification, 
-            incomplete_elements_check: incompleteElementsCheck,
             agent_url: agentUrl,
-            agent_request_format: agentRequestFormat
+            agent_request_format: agentRequestFormat,
+            element_detection: true
         });
 
         const result = await apiCall("/batch/start/", "POST", {
             extension: batchExtensionInput.value || ".wav",
             language: batchLanguageSelect.value,
             parallel_count: parseInt(batchParallelInput.value) || 2,
-            privacy_removal: false,                             // 개인정보 제거 기능 제거
-            classification: classification,                      // NEW
-            incomplete_elements_check: incompleteElementsCheck, // NEW
-            agent_url: agentUrl,                                // NEW
-            agent_request_format: agentRequestFormat            // NEW
+            privacy_removal: false,
+            classification: classification,
+            element_detection: true,
+            agent_url: agentUrl,
+            agent_request_format: agentRequestFormat
         });
 
         currentBatchId = result.batch_id;
