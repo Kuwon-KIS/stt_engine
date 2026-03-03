@@ -2,6 +2,52 @@
 
 OpenAI의 Whisper 모델을 사용하여 음성을 텍스트로 변환하는 REST API 서버입니다.
 
+## 📁 문서 구조
+
+```
+docs/
+├── api/                          # API 서버 관련 문서
+│   ├── ELEMENT_DETECTION_*.md    # Element Detection 분석 및 가이드
+│   ├── API_REFACTORING_SUMMARY.md
+│   ├── API_TESTING_GUIDE.md
+│   └── PRIVACY_REMOVAL_IMPLEMENTATION_VALIDATION.md
+│
+├── deployment/                   # 배포 가이드
+│   ├── RHEL89_BUILD_GUIDE.md     # RHEL 8.9 빌드 가이드
+│   ├── DOCKER_DEPLOYMENT_GUIDE.md
+│   ├── FASTER_WHISPER_TURBO_FIX.md
+│   ├── MODEL_DOWNLOAD_AND_DEPLOYMENT.md
+│   └── MODEL_DOWNLOAD_OPTIONS.md
+│
+├── guides/                       # 사용 및 설정 가이드
+│   ├── API_USAGE_GUIDE.md        # API 사용법
+│   ├── API_SERVER_RESTRUCTURING_GUIDE.md
+│   ├── BATCH_PROCESSING_GUIDE.md
+│   ├── BATCH_PROCESSING_PATH_FIX.md
+│   ├── DB_CLEANUP_GUIDE.md
+│   ├── DOCKER_MODEL_MOUNT_GUIDE.md
+│   ├── LOCAL_DEVELOPMENT_GUIDE.md
+│   ├── LOCAL_DEVELOPMENT_MAC.md
+│   ├── SERVER_DEPLOYMENT_GUIDE.md
+│   ├── SETUP_WEB_UI.md
+│   ├── WEB_UI_ARCHITECTURE.md
+│   ├── WEB_UI_DOCKER_DEPLOYMENT_COMPLETE.md
+│   ├── WEB_UI_PRIVACY_REMOVAL_INTEGRATION.md
+│   └── IMPLEMENTATION_CHECKLIST.md
+│
+├── troubleshooting/              # 문제 해결 (추가 예정)
+│
+├── ARCHIVE/
+│   └── milestones/               # 완료된 마일스톤 문서 (과거 기록)
+│       ├── PHASE2_COMPLETION.md
+│       ├── PHASE3_*.md
+│       └── ...
+│
+└── README.md                     # 이 파일
+```
+
+---
+
 ## 🎯 주요 기능
 
 - **Whisper 기반 STT**: OpenAI의 whisper-large-v3-turbo 모델 사용
