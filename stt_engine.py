@@ -1170,11 +1170,11 @@ class WhisperSTT:
                     - "cuda": NVIDIA GPU (기본)
                     - "cpu": CPU
             
-            preset: 미리 설정된 프로필 (다른 옵션 무시)
+            preset: 미리 설정된 프로필
                     - "speed": faster-whisper + int8 (가장 빠름)
                     - "balanced": faster-whisper + float16 (균형)
                     - "accuracy": transformers + float32 (최고 정확도) ⭐ 권장
-                    - "default": 원래 설정 복원
+                    - "custom": backend/compute_type/device를 사용자 지정값으로 사용
         
         Returns:
             {
@@ -1197,33 +1197,43 @@ class WhisperSTT:
         """
         import gc
         
-        # Preset 처리 (다른 옵션 무시)
+        # Preset 처리
         if preset:
             preset = preset.lower().strip()
             logger.info(f"📋 프리셋 모드: {preset}")
             
-            presets = {
-                "speed": {"backend": "faster-whisper", "compute_type": "int8", "device": self.device},
-                "balanced": {"backend": "faster-whisper", "compute_type": "float16", "device": self.device},
-                "accuracy": {"backend": "transformers", "compute_type": "float32", "device": self.device},
-                "default": {"backend": None, "compute_type": "int8", "device": "cuda"}
-            }
-            
-            if preset not in presets:
-                error_msg = f"지원하지 않는 프리셋: {preset}. 사용 가능: {', '.join(presets.keys())}"
-                logger.error(f"❌ {error_msg}")
-                return {
-                    "status": "error",
-                    "message": error_msg,
-                    "current_backend": self._get_current_backend_name()
+            # "custom"이 아니면 프리셋 설정 적용
+            if preset != "custom":
+                presets = {
+                    "speed": {"backend": "faster-whisper", "compute_type": "int8", "device": self.device},
+                    "balanced": {"backend": "faster-whisper", "compute_type": "float16", "device": self.device},
+                    "accuracy": {"backend": "transformers", "compute_type": "float32", "device": self.device}
                 }
-            
-            preset_config = presets[preset]
-            backend = preset_config["backend"]
-            compute_type = preset_config["compute_type"]
-            device = preset_config["device"]
-            
-            logger.info(f"   → {preset.upper()} 프리셋: backend={backend}, compute_type={compute_type}, device={device}")
+                
+                if preset not in presets:
+                    error_msg = f"지원하지 않는 프리셋: {preset}. 사용 가능: {', '.join(presets.keys())} 또는 'custom'"
+                    logger.error(f"❌ {error_msg}")
+                    return {
+                        "status": "error",
+                        "message": error_msg,
+                        "current_backend": self._get_current_backend_name()
+                    }
+                
+                preset_config = presets[preset]
+                backend = preset_config["backend"]
+                compute_type = preset_config["compute_type"]
+                device = preset_config["device"]
+                
+                logger.info(f"   📌 {preset.upper()} 프리셋 설정:")
+                logger.info(f"      backend={backend}")
+                logger.info(f"      compute_type={compute_type}")
+                logger.info(f"      device={device}")
+            else:
+                # custom: 사용자가 지정한 backend/compute_type/device 사용
+                logger.info(f"   📌 CUSTOM 모드 (사용자 지정값 사용):")
+                logger.info(f"      backend={backend}")
+                logger.info(f"      compute_type={compute_type}")
+                logger.info(f"      device={device}")
         
         # 기존 백엔드 언로드 (메모리 정리)
         if self.backend is not None:

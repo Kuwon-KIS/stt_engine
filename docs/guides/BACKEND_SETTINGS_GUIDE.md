@@ -91,14 +91,50 @@ curl -X POST http://localhost:8003/backend/reload \
 
 ---
 
-### 4️⃣ 기본값 복원 (DEFAULT)
-**초기 설정으로 돌아가기**
+### 4️⃣ 커스텀 설정 (CUSTOM)
+**사용자가 backend/device/compute_type을 개별 지정**
 
 ```bash
 curl -X POST http://localhost:8003/backend/reload \
   -H "Content-Type: application/json" \
-  -d '{"preset": "default"}'
+  -d '{"preset": "custom", "backend": "faster-whisper", "compute_type": "float32", "device": "cuda"}'
 ```
+
+**설정:**
+- 사용자가 각 옵션을 개별 지정
+- 백엔드: `faster-whisper` | `transformers` | `openai-whisper`
+- 정밀도: `int8` | `float16` | `float32` (faster-whisper만 적용)
+- 디바이스: `cuda` | `cpu`
+- **권장: 고급 사용자, 세밀한 조정 필요 시**
+
+---
+
+## 🚀 환경변수를 통한 초기화 (Docker 시작 시)
+
+### 프리셋 지정
+```bash
+docker run -e STT_PRESET=accuracy ...
+```
+
+**지원 값:**
+- `accuracy` (기본): transformers + float32 (최고 정확도)
+- `balanced`: faster-whisper + float16
+- `speed`: faster-whisper + int8 (가장 빠름)
+- `custom`: STT_DEVICE, STT_COMPUTE_TYPE, STT_BACKEND 환경변수 사용
+
+### 커스텀 모드로 세밀한 설정
+```bash
+docker run \
+  -e STT_PRESET=custom \
+  -e STT_BACKEND=faster-whisper \
+  -e STT_COMPUTE_TYPE=float32 \
+  -e STT_DEVICE=cpu \
+  ...
+```
+
+**주의:**
+- `STT_PRESET=custom`이 아니면 STT_DEVICE, STT_COMPUTE_TYPE은 무시됩니다.
+- 프리셋이 모든 설정을 결정합니다: `accuracy` → transformers+float32, `speed` → faster-whisper+int8
 
 ---
 

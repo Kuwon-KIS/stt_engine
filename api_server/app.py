@@ -104,6 +104,45 @@ try:
     logger.info(f"   Device: {device}")
     print(f"✅ STT 모델 로드 완료 (Backend: {backend_type}, Device: {device})")
     
+    # 초기 프리셋 설정 (환경변수 STT_PRESET으로 지정 가능, 기본값: accuracy)
+    initial_preset = os.getenv("STT_PRESET", "accuracy")
+    if initial_preset:
+        initial_preset_lower = initial_preset.lower()
+        logger.info(f"🔄 초기 프리셋 적용 중: {initial_preset_lower}")
+        
+        try:
+            # preset="custom"인 경우, device와 compute_type을 환경변수에서 읽음
+            if initial_preset_lower == "custom":
+                custom_device = os.getenv("STT_DEVICE", device)
+                custom_compute_type = os.getenv("STT_COMPUTE_TYPE", compute_type)
+                custom_backend = os.getenv("STT_BACKEND")
+                
+                logger.info(f"   📌 CUSTOM 모드 설정:")
+                logger.info(f"      STT_DEVICE={custom_device}")
+                logger.info(f"      STT_COMPUTE_TYPE={custom_compute_type}")
+                logger.info(f"      STT_BACKEND={custom_backend}")
+                
+                preset_result = stt.reload_backend(
+                    preset="custom",
+                    backend=custom_backend,
+                    device=custom_device,
+                    compute_type=custom_compute_type
+                )
+            else:
+                # 미리정의된 프리셋 (speed/balanced/accuracy)
+                preset_result = stt.reload_backend(preset=initial_preset_lower)
+            
+            if preset_result.get("status") == "success":
+                logger.info(f"✅ 프리셋 적용 완료: {initial_preset_lower}")
+                logger.info(f"   현재 백엔드: {preset_result.get('current_backend')}")
+                logger.info(f"   디바이스: {preset_result.get('device')}")
+                logger.info(f"   컴퓨트 타입: {preset_result.get('compute_type')}")
+                print(f"✅ 초기 프리셋 적용: {initial_preset_lower} ({preset_result.get('current_backend')})")
+            else:
+                logger.warning(f"⚠️  프리셋 적용 실패: {preset_result.get('message')}")
+        except Exception as e:
+            logger.warning(f"⚠️  프리셋 적용 중 오류: {type(e).__name__}: {e}")
+    
 except FileNotFoundError as e:
     logger.error(f"❌ 모델 파일을 찾을 수 없음: {e}")
     logger.error(f"  확인 사항:")
