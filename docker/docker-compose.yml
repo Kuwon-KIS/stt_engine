@@ -21,7 +21,7 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - HF_HOME=/app/models
-      - STT_DEVICE=cpu                     # GPU 사용 시 cuda로 변경
+      - STT_DEVICE=auto                   # auto: 실행 시점에 CUDA 자동 감지 (GPU 있으면 cuda, 없으면 cpu)
     
     restart: unless-stopped
     

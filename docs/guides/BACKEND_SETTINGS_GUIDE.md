@@ -111,7 +111,7 @@ curl -X POST http://localhost:8003/backend/reload \
 
 ## 🚀 환경변수를 통한 초기화 (Docker 시작 시)
 
-### 프리셋 지정
+### 프리셋 지정 (권장)
 ```bash
 docker run -e STT_PRESET=accuracy ...
 ```
@@ -121,6 +121,30 @@ docker run -e STT_PRESET=accuracy ...
 - `balanced`: faster-whisper + float16
 - `speed`: faster-whisper + int8 (가장 빠름)
 - `custom`: STT_DEVICE, STT_COMPUTE_TYPE, STT_BACKEND 환경변수 사용
+
+### 디바이스 자동 감지 (기본값)
+```bash
+# 기본값: auto (실행 시점에 GPU 자동 감지)
+docker run -e STT_PRESET=accuracy stt-engine:v1.9.7
+
+# 운영환경 (GPU 있음)
+docker run --gpus all -e STT_PRESET=accuracy stt-engine:v1.9.7
+# → 자동으로 CUDA 감지하여 GPU 사용
+
+# 빌드환경 (GPU 없음)
+docker run -e STT_PRESET=accuracy stt-engine:v1.9.7
+# → 자동으로 CPU 감지하여 CPU 사용
+
+# 강제로 CPU 사용 (GPU가 있어도)
+docker run --gpus all -e STT_DEVICE=cpu -e STT_PRESET=accuracy stt-engine:v1.9.7
+```
+
+**STT_DEVICE 값:**
+- `auto` (기본): 실행 시점에 CUDA 자동 감지
+  - GPU 있음 → cuda
+  - GPU 없음 → cpu
+- `cuda`: NVIDIA GPU 사용 (GPU 없으면 에러)
+- `cpu`: CPU 사용 (권장: 디버깅, 낮은 사양 환경)
 
 ### 커스텀 모드로 세밀한 설정
 ```bash

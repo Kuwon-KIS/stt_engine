@@ -74,7 +74,7 @@ try:
     docker_model_path = Path("/app/models/openai_whisper-large-v3-turbo")
     local_model_path = Path(__file__).parent.parent / "models" / "openai_whisper-large-v3-turbo"
     model_path = docker_model_path if docker_model_path.exists() else local_model_path
-    device = os.getenv("STT_DEVICE", "cpu")
+    device = os.getenv("STT_DEVICE", "auto")
     
     # 환경변수로 compute_type 지정 가능 (기본값: device에 따라 자동)
     compute_type = os.getenv("STT_COMPUTE_TYPE")
@@ -84,7 +84,9 @@ try:
     logger.info(f"STT 모델 로드 시작 (다중 백엔드)")
     logger.info(f"  모델: openai_whisper-large-v3-turbo")
     logger.info(f"  경로: {model_path}")
-    logger.info(f"  디바이스: {device}")
+    logger.info(f"  디바이스 설정: {device}")
+    if device == "auto":
+        logger.info(f"     → 실행 시점에 CUDA 자동 감지 (GPU 있으면 cuda, 없으면 cpu)")
     logger.info(f"  Compute Type: {compute_type}")
     logger.info(f"  우선순위:")
     logger.info(f"    1. faster-whisper (CTranslate2)")
