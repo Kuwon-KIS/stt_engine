@@ -193,78 +193,101 @@ async def get_current_backend():
 @app.post("/backend/reload")
 async def reload_backend(request_body: dict = Body(None)):
     """
-    백엔드를 재로드합니다.
+    백엔드를 재로드하고 옵션을 변경합니다.
     
-    Parameters:
-    - backend: 로드할 백엔드 (선택사항, JSON body에서)
-               - "faster-whisper": faster-whisper 사용
-               - "transformers": transformers 사용
-               - "openai-whisper": OpenAI Whisper 사용
-               - null/생략: 기본 순서대로 자동 선택 (faster-whisper → transformers → openai-whisper)
+    Parameters (JSON body에서):
+    
+    1️⃣ 프리셋 모드 (권장):
+       - preset: "speed" | "balanced" | "accuracy" | "default"
+         * "speed": faster-whisper + int8 (가장 빠름)
+         * "balanced": faster-whisper + float16 (균형)
+         * "accuracy": transformers + float32 (최고 정확도) ⭐ 권장
+         * "default": 기본값 복원
+    
+    2️⃣ 커스텀 모드:
+       - backend: "faster-whisper" | "transformers" | "openai-whisper"
+       - compute_type: "int8" | "float16" | "float32" (faster-whisper만)
+       - device: "cuda" | "cpu"
     
     Returns:
-    - status: "success" | "error"
-    - message: 처리 결과 메시지
-    - loaded_backend: 로드된 백엔드 이름
-    - backend_info: 로드 후 백엔드 정보
+    {
+        "status": "success" | "error",
+        "current_backend": 로드된 백엔드 이름,
+        "device": 사용 디바이스,
+        "compute_type": 계산 정밀도,
+        "message": 상세 메시지,
+        "backend_info": 전체 백엔드 정보
+    }
     
     예시 (curl):
-    - curl -X POST http://localhost:8003/backend/reload -H "Content-Type: application/json" -d '{"backend": "transformers"}'
-    - curl -X POST http://localhost:8003/backend/reload -H "Content-Type: application/json" -d '{}'
+    - 정확도 우선: curl -X POST http://localhost:8003/backend/reload -H "Content-Type: application/json" -d '{"preset": "accuracy"}'
+    - 속도 우선: curl -X POST http://localhost:8003/backend/reload -H "Content-Type: application/json" -d '{"preset": "speed"}'
+    - 커스텀: curl -X POST http://localhost:8003/backend/reload -H "Content-Type: application/json" -d '{"backend": "transformers", "device": "cuda", "compute_type": "float32"}'
     """
     if stt is None:
         raise HTTPException(status_code=503, detail="STT 모델이 로드되지 않음")
     
-    # JSON body에서 backend 파라미터 추출
-    backend = None
-    if request_body and isinstance(request_body, dict):
-        backend = request_body.get('backend')
+    # JSON body에서 파라미터 추출
+    request_body = request_body or {}
+    preset = request_body.get('preset')
+    backend = request_body.get('backend')
+    compute_type = request_body.get('compute_type')
+    device = request_body.get('device')
     
     try:
         # 현재 백엔드 정보 로깅
-        old_backend = stt.get_backend_info()['current_backend']
+        old_backend_info = stt.get_backend_info()
+        old_backend = old_backend_info['current_backend']
         
-        # 백엔드 재로드
-        logger.info(f"[API] 백엔드 재로드 시작: {backend or '자동 선택'}")
-        loaded_backend = stt.reload_backend(backend)
-        logger.info(f"[API] 백엔드 재로드 완료: {old_backend} → {loaded_backend}")
+        # 백엔드 재로드 (프리셋 또는 커스텀 옵션 포함)
+        logger.info(f"[API] 백엔드 재로드 시작")
+        if preset:
+            logger.info(f"  프리셋: {preset}")
+        else:
+            if backend:
+                logger.info(f"  백엔드: {backend}")
+            if compute_type:
+                logger.info(f"  Compute Type: {compute_type}")
+            if device:
+                logger.info(f"  디바이스: {device}")
+        
+        result = stt.reload_backend(
+            backend=backend,
+            compute_type=compute_type,
+            device=device,
+            preset=preset
+        )
+        
+        # reload_backend가 반환하는 결과 확인
+        if result.get('status') == 'error':
+            logger.error(f"[API] 백엔드 재로드 실패: {result['message']}")
+            raise HTTPException(
+                status_code=400,
+                detail=result
+            )
+        
+        logger.info(f"[API] 백엔드 재로드 완료: {old_backend} → {result['current_backend']}")
         
         # 재로드 후 백엔드 정보
         new_backend_info = stt.get_backend_info()
         
         return {
             "status": "success",
-            "message": f"백엔드가 {loaded_backend}로 변경되었습니다",
+            "message": f"백엔드가 변경되었습니다",
             "previous_backend": old_backend,
-            "loaded_backend": loaded_backend,
-            "backend_info": new_backend_info
+            "previous_settings": {
+                "device": old_backend_info.get('device'),
+                "compute_type": old_backend_info.get('compute_type')
+            },
+            "current_backend": result['current_backend'],
+            "current_device": result['device'],
+            "current_compute_type": result['compute_type'],
+            "backend_info": new_backend_info,
+            "details": result['message']
         }
     
-    except ValueError as e:
-        error_msg = str(e)
-        logger.error(f"[API] 백엔드 재로드 실패: {error_msg}")
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "status": "error",
-                "message": error_msg,
-                "supported_backends": ["faster-whisper", "transformers", "openai-whisper"]
-            }
-        )
-    
-    except RuntimeError as e:
-        error_msg = str(e)
-        logger.error(f"[API] 백엔드 재로드 실패: {error_msg}")
-        backend_info = stt.get_backend_info()
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "status": "error",
-                "message": error_msg,
-                "current_backend": backend_info['current_backend'],
-                "available_backends": backend_info['available_backends']
-            }
-        )
+    except HTTPException:
+        raise
     
     except Exception as e:
         logger.error(f"[API] 예상치 못한 오류: {type(e).__name__}: {str(e)}", exc_info=True)

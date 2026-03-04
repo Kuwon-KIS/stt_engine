@@ -20,7 +20,8 @@ docs/
 │   └── MODEL_DOWNLOAD_OPTIONS.md
 │
 ├── guides/                       # 사용 및 설정 가이드
-│   ├── API_USAGE_GUIDE.md        # API 사용법
+│   ├── BACKEND_SETTINGS_GUIDE.md  # ⭐ STT 백엔드 설정 (정확도/속도 조정)
+│   ├── API_USAGE_GUIDE.md         # API 사용법
 │   ├── API_SERVER_RESTRUCTURING_GUIDE.md
 │   ├── BATCH_PROCESSING_GUIDE.md
 │   ├── BATCH_PROCESSING_PATH_FIX.md
@@ -109,6 +110,22 @@ Whisper Large Turbo v3 모델 (가중치 로드)
 - CUDA 12.4+ (GPU 사용 시, CUDA 11.8 호환도 가능)
 - Docker & Docker Compose
 - 최소 4GB VRAM (권장 8GB 이상)
+
+## ⚙️ 백엔드 설정 (중요!)
+
+> **정확도와 속도를 조정하려면**: [BACKEND_SETTINGS_GUIDE.md](guides/BACKEND_SETTINGS_GUIDE.md) 참고
+
+주요 프리셋:
+- **정확도 우선** (권장): transformers + float32
+- **균형** (일반적): faster-whisper + float16
+- **속도 우선**: faster-whisper + int8
+
+```bash
+# 정확도 우선 모드로 변경
+curl -X POST http://localhost:8003/backend/reload \
+  -H "Content-Type: application/json" \
+  -d '{"preset": "accuracy"}'
+```
 
 ## 🚀 빠른 시작 (Docker)
 
@@ -290,11 +307,21 @@ docker-compose logs -f stt-engine
 docker stats stt-engine vllm-server
 ```
 
+## 📚 주요 문서
+
+- **[BACKEND_SETTINGS_GUIDE.md](guides/BACKEND_SETTINGS_GUIDE.md)** - STT 백엔드 설정 및 최적화 (⭐ 가장 중요!)
+- **[API_USAGE_GUIDE.md](guides/API_USAGE_GUIDE.md)** - REST API 사용법
+- **[LOCAL_DEVELOPMENT_GUIDE.md](guides/LOCAL_DEVELOPMENT_GUIDE.md)** - 로컬 개발 환경 설정
+- **[LOCAL_DEVELOPMENT_MAC.md](guides/LOCAL_DEVELOPMENT_MAC.md)** - Mac 환경 설정
+- **[SERVER_DEPLOYMENT_GUIDE.md](guides/SERVER_DEPLOYMENT_GUIDE.md)** - 서버 배포
+- **[BATCH_PROCESSING_GUIDE.md](guides/BATCH_PROCESSING_GUIDE.md)** - 배치 처리
+- **[DOCKER_MODEL_MOUNT_GUIDE.md](guides/DOCKER_MODEL_MOUNT_GUIDE.md)** - Docker 모델 마운트
+
 ## ⚠️ 주의사항
 
 1. **모델 다운로드**: 첫 실행 시 모델이 상당히 큼 (수 GB)이므로 시간이 걸릴 수 있습니다.
 2. **GPU 메모리**: GPU를 사용할 경우 충분한 VRAM이 필요합니다 (최소 8GB 권장).
-3. **vLLM 서버**: STT와 vLLM을 함께 사용하려면 vLLM 서버가 반드시 실행 중이어야 합니다.
+3. **백엔드 선택**: 정확도가 중요한 경우 [BACKEND_SETTINGS_GUIDE.md](guides/BACKEND_SETTINGS_GUIDE.md)에서 정확도 모드를 선택하세요.
 
 ## 🛠️ 문제 해결
 
@@ -310,7 +337,22 @@ python download_model.py
 # CPU 모드로 실행
 export WHISPER_DEVICE=cpu
 python stt_engine.py
+
+# 또는 정확도 모드 대신 속도 모드 사용
+curl -X POST http://localhost:8003/backend/reload \
+  -H "Content-Type: application/json" \
+  -d '{"preset": "speed"}'
 ```
+
+### faster-whisper에서 반복 단어 문제
+```bash
+# 정확도 모드로 전환 (권장)
+curl -X POST http://localhost:8003/backend/reload \
+  -H "Content-Type: application/json" \
+  -d '{"preset": "accuracy"}'
+```
+
+자세한 내용은 [BACKEND_SETTINGS_GUIDE.md](guides/BACKEND_SETTINGS_GUIDE.md) 참고
 
 ### vLLM 서버 연결 실패
 ```bash

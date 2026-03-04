@@ -317,6 +317,9 @@ class WhisperSTT:
                                   f"2. 모델 경로가 올바른가? (기본값: models/openai_whisper-large-v3-turbo)\n"
                                   f"3. 운영서버인가? (오프라인 배포인 경우 모델을 이미지에 포함시켜야 함)")
         
+        # 🔑 OpenAI Whisper용 심링크 자동 생성 (오프라인 환경 지원)
+        self._create_whisper_symlinks()
+        
         self.device = device if device != "auto" else ("cuda" if self._is_cuda_available() else "cpu")
         self.compute_type = compute_type
         self.backend = None
@@ -386,6 +389,55 @@ class WhisperSTT:
                 "4. Docker 마운트 확인 (운영서버):\n"
                 "   docker exec stt-engine ls -lh /app/models/ctranslate2_model/"
             )
+    
+    def _create_whisper_symlinks(self) -> None:
+        """
+        OpenAI Whisper용 symlink 자동 생성
+        
+        whisper.load_model()은 다음 경로 구조를 기대함:
+        {WHISPER_CACHE}/{model_name}/model.bin
+        
+        현재 경로:
+        /app/models/openai_whisper-large-v3-turbo/model.bin
+        
+        필요한 경로:
+        /app/models/large-v3-turbo/model.bin (symlink 또는 복사)
+        """
+        try:
+            model_path = Path(self.model_path)
+            model_name = model_path.name
+            
+            # 모델명 정규화
+            # openai_whisper-large-v3-turbo → large-v3-turbo
+            model_base_name = model_name.replace("openai_whisper-", "").replace("openai-whisper-", "")
+            
+            if model_base_name == model_name:
+                # 이미 정규화된 이름 (예: large-v3-turbo)
+                return
+            
+            # symlink 대상 경로
+            parent_dir = model_path.parent
+            symlink_path = parent_dir / model_base_name
+            
+            # 이미 존재하면 스킵
+            if symlink_path.exists():
+                print(f"ℹ️  심링크 이미 존재: {symlink_path}")
+                return
+            
+            # symlink 생성 시도
+            try:
+                symlink_path.symlink_to(model_path)
+                print(f"✅ Whisper용 심링크 생성: {model_base_name} → {model_name}")
+            except (FileExistsError, OSError) as e:
+                # symlink 실패: 복사로 대체
+                import shutil
+                print(f"⚠️  심링크 생성 실패 ({type(e).__name__}), 파일 복사로 대체...")
+                shutil.copytree(model_path, symlink_path, dirs_exist_ok=True)
+                print(f"✅ 파일 복사 완료: {model_base_name}")
+        except Exception as e:
+            print(f"⚠️  Whisper symlink/복사 실패: {type(e).__name__}: {e}")
+            print(f"   → 계속 진행 (transformers/faster-whisper 사용 가능)")
+    
     
     def _try_faster_whisper(self):
         """faster-whisper로 모델 로드 시도 (로컬 모델만 사용, 상세 진단 포함)"""
@@ -759,9 +811,27 @@ class WhisperSTT:
                     logger.debug(f"[transformers] 세그먼트 {segment_idx} 추론 중 (device: {self.device}, dtype: {model_dtype})...")
                     try:
                         with torch.no_grad():
+                            # 🎯 정확도 최우선 파라미터 (시간 로스 허용)
+                            logger.debug(f"[transformers] generate() 파라미터:")
+                            logger.debug(f"  - num_beams=5 (빔 서치, 5배 정확한 탐색)")
+                            logger.debug(f"  - early_stopping=True (안정적 결과)")
+                            logger.debug(f"  - temperature=0.0 (Greedy 선택)")
+                            logger.debug(f"  - repetition_penalty=1.2 (중복 방지)")
+                            logger.debug(f"  - no_repeat_ngram_size=2 (2-gram 반복 방지)")
+                            
                             predicted_ids = self.backend.model.generate(
                                 input_features, 
-                                language=language_to_use
+                                language=language_to_use,
+                                # === 정확도 향상 ===
+                                num_beams=5,              # 빔 서치 (기본 1) - 5배 더 정확한 탐색
+                                early_stopping=True,      # 조기 종료로 안정성 확보
+                                length_penalty=1.0,       # 길이 패널티 (기본값)
+                                temperature=0.0,          # 0 = greedy (최고 확신 선택)
+                                # === 반복 방지 ===
+                                repetition_penalty=1.2,   # 중복 단어 억제
+                                # === 선택사항 ===
+                                max_length=448,           # 최대 시퀀스 길이 (안전하게 설정)
+                                no_repeat_ngram_size=2    # 2-gram 반복 방지 추가
                             )
                         logger.debug(f"✓ 추론 완료 (predicted_ids shape: {predicted_ids.shape})")
                     except RuntimeError as e:
@@ -854,49 +924,90 @@ class WhisperSTT:
     
     def _try_whisper(self):
         """
-        OpenAI Whisper로 모델 로드 시도
+        OpenAI Whisper로 모델 로드 시도 (원본 공식 구현)
         
-        ⚠️ 공식 모델만 지원 (tiny, base, small, medium, large)
-        large-v3-turbo는 OpenAI 공식 모델이 아니므로 불가능합니다.
+        ✅ 공식 모델 지원: tiny, base, small, medium, large, large-v1, large-v2, large-v3, large-v3-turbo, turbo
+        ✅ 오프라인 환경: /app/models 경로에서 자동 감지
         """
         try:
-            print(f"🔄 OpenAI Whisper 시도... (공식 모델만 지원)")
+            print(f"🔄 OpenAI Whisper 시도... (공식 Whisper API)")
             
             import whisper
+            import os
             
-            # OpenAI Whisper 지원 모델 확인
+            # OpenAI Whisper 지원 모델 확인 (동적으로 호출)
             supported_models = whisper.available_models()
             
             model_path = Path(self.model_path)
             model_name = model_path.name
             
-            # large-v3-turbo는 OpenAI 공식 모델이 아님
-            if "turbo" in model_name.lower() or "v3-turbo" in model_name.lower():
-                print(f"   ⚠️  '{model_name}'은(는) OpenAI 공식 모델이 아님")
-                print(f"       지원 모델: {supported_models}")
+            # 모델명 정규화
+            # openai_whisper-large-v3-turbo → large-v3-turbo
+            model_base_name = model_name.replace("openai_whisper-", "").replace("openai-whisper-", "")
+            
+            # 지원 여부 확인
+            is_supported = model_base_name in supported_models
+            
+            if not is_supported:
+                print(f"   ⚠️  '{model_base_name}'은(는) OpenAI Whisper에서 지원하지 않음")
+                print(f"       지원 모델: {', '.join(supported_models)}")
                 return
             
-            # 공식 모델인지 확인
-            if not any(m in model_name for m in ['tiny', 'base', 'small', 'medium', 'large']):
-                print(f"   ⚠️  '{model_name}'은(는) 공식 모델이 아님")
-                print(f"       지원 모델: {supported_models}")
-                return
+            print(f"   📂 모델 경로: {model_path}")
             
-            # 로드 시도
-            model = whisper.load_model("large", device=self.device)
+            # 🔑 로컬 모델 경로 자동 감지 (인터넷 불필요)
+            if model_path.exists():
+                print(f"   ✓ 로컬 모델 파일 발견 (오프라인 모드)")
+                
+                # 검증: model.bin 파일 확인
+                model_bin = model_path / "model.bin"
+                if not model_bin.exists():
+                    print(f"   ❌ model.bin 파일이 없음: {model_bin}")
+                    return
+                
+                print(f"   ✓ model.bin 확인됨")
+                
+                # ✅ whisper.load_model()에 download_root 파라미터로 전달 (환경변수 아님!)
+                cache_parent = str(model_path.parent)
+                print(f"   → download_root 파라미터로 전달: {cache_parent}")
+                
+                # 심링크 생성 시도 (whisper.load_model()이 모델명으로 찾기 위해)
+                cache_target = Path(cache_parent) / model_base_name
+                if not cache_target.exists() and cache_target.parent == model_path.parent:
+                    try:
+                        cache_target.symlink_to(model_path)
+                        print(f"   ✓ 심링크 생성: {model_base_name} → {model_path.name}")
+                    except (FileExistsError, OSError, PermissionError) as e:
+                        print(f"   ℹ️  심링크 생성 실패 ({type(e).__name__}), 파일 복사 시도...")
+                        try:
+                            import shutil
+                            shutil.copytree(model_path, cache_target, dirs_exist_ok=True)
+                            print(f"   ✓ 파일 복사 완료: {model_base_name}")
+                        except Exception as copy_err:
+                            print(f"   ⚠️  파일 복사도 실패: {copy_err}")
+                
+                # whisper.load_model() 호출 with download_root
+                print(f"   → whisper.load_model('{model_base_name}', download_root='{cache_parent}')")
+                model = whisper.load_model(model_base_name, device=self.device, download_root=cache_parent)
+                print(f"   ✓ 로드 성공")
+            else:
+                # 모델 경로 없음: 기본 캐시 시도 (인터넷 필요)
+                print(f"   🔗 로컬 모델 없음, whisper 기본 캐시 사용 (~/.cache/whisper)")
+                model = whisper.load_model(model_base_name, device=self.device)
             
             self.backend = type('WhisperBackend', (), {
                 'model': model,
                 'device': self.device,
                 'transcribe': self._transcribe_with_whisper,
-                '_backend_type': 'openai-whisper'  # 백엔드 타입 식별자 추가
+                '_backend_type': 'openai-whisper'
             })()
-            self.whisper_available = True  # 플래그 설정
+            self.whisper_available = True
             
-            print(f"   ✅ OpenAI Whisper 모델 로드 성공! (large)")
+            print(f"   ✅ OpenAI Whisper 로드 성공! ({model_base_name})")
             
         except Exception as e:
-            print(f"   ❌ OpenAI Whisper 로드 실패: {type(e).__name__}")
+            print(f"   ❌ OpenAI Whisper 로드 실패: {type(e).__name__}: {str(e)[:150]}")
+            print(f"      → transformers 백엔드로 폴백 시도...")
     
     def _transcribe_with_whisper(self, audio_path: str, language: Optional[str] = None) -> Dict:
         """OpenAI Whisper를 사용한 음성 인식"""
@@ -1034,7 +1145,10 @@ class WhisperSTT:
             "loaded": True
         }
     
-    def reload_backend(self, backend: Optional[str] = None) -> str:
+    def reload_backend(self, backend: Optional[str] = None, 
+                       compute_type: Optional[str] = None,
+                       device: Optional[str] = None,
+                       preset: Optional[str] = None) -> Dict:
         """
         백엔드를 동적으로 재로드합니다.
         기존 백엔드를 언로드하고 새 백엔드를 로드합니다.
@@ -1044,30 +1158,72 @@ class WhisperSTT:
                     - "faster-whisper": faster-whisper 사용
                     - "transformers": transformers 사용
                     - "openai-whisper": OpenAI Whisper 사용
-                    - None (기본값): 기본 순서대로 자동 선택 (faster-whisper → transformers → openai-whisper)
+                    - None (기본값): 기본 순서대로 자동 선택
+            
+            compute_type: 정확도/속도 설정 (faster-whisper만 적용)
+                    - "int8" (기본): 양자화, 가장 빠름, 정확도 조금 낮음
+                    - "float16": 중간, 정확도 좋음
+                    - "float32": 최대 정확도, 가장 느림
+                    - "auto": 자동 선택
+            
+            device: 연산 장치
+                    - "cuda": NVIDIA GPU (기본)
+                    - "cpu": CPU
+            
+            preset: 미리 설정된 프로필 (다른 옵션 무시)
+                    - "speed": faster-whisper + int8 (가장 빠름)
+                    - "balanced": faster-whisper + float16 (균형)
+                    - "accuracy": transformers + float32 (최고 정확도) ⭐ 권장
+                    - "default": 원래 설정 복원
         
         Returns:
-            로드된 백엔드 이름
+            {
+                "status": "success" or "error",
+                "current_backend": 로드된 백엔드 이름,
+                "device": 사용 디바이스,
+                "compute_type": 적용된 컴퓨트 타입,
+                "message": 상세 메시지
+            }
             
-        Raises:
-            ValueError: 지원하지 않는 백엔드 요청
-            RuntimeError: 백엔드 로드 실패
-        
         예시:
-            stt = WhisperSTT(model_path)  # faster-whisper 로드
+            # 정확도 우선 모드 (transformers + float32)
+            result = stt.reload_backend(preset="accuracy")
             
-            # 100개 파일 처리
-            for f in files[:100]:
-                stt.transcribe(f)
+            # 속도 우선 모드 (faster-whisper + int8)
+            result = stt.reload_backend(preset="speed")
             
-            # transformers로 변경
-            stt.reload_backend("transformers")
-            
-            # 다른 100개 파일 처리
-            for f in files[100:]:
-                stt.transcribe(f)
+            # 커스텀 설정
+            result = stt.reload_backend(backend="transformers", device="cuda", compute_type="float32")
         """
         import gc
+        
+        # Preset 처리 (다른 옵션 무시)
+        if preset:
+            preset = preset.lower().strip()
+            logger.info(f"📋 프리셋 모드: {preset}")
+            
+            presets = {
+                "speed": {"backend": "faster-whisper", "compute_type": "int8", "device": self.device},
+                "balanced": {"backend": "faster-whisper", "compute_type": "float16", "device": self.device},
+                "accuracy": {"backend": "transformers", "compute_type": "float32", "device": self.device},
+                "default": {"backend": None, "compute_type": "int8", "device": "cuda"}
+            }
+            
+            if preset not in presets:
+                error_msg = f"지원하지 않는 프리셋: {preset}. 사용 가능: {', '.join(presets.keys())}"
+                logger.error(f"❌ {error_msg}")
+                return {
+                    "status": "error",
+                    "message": error_msg,
+                    "current_backend": self._get_current_backend_name()
+                }
+            
+            preset_config = presets[preset]
+            backend = preset_config["backend"]
+            compute_type = preset_config["compute_type"]
+            device = preset_config["device"]
+            
+            logger.info(f"   → {preset.upper()} 프리셋: backend={backend}, compute_type={compute_type}, device={device}")
         
         # 기존 백엔드 언로드 (메모리 정리)
         if self.backend is not None:
@@ -1075,14 +1231,28 @@ class WhisperSTT:
             try:
                 # 메모리 명시적 해제
                 if hasattr(self.backend, 'model'):
-                    del self.backend.model
+                    try:
+                        del self.backend.model
+                    except:
+                        pass
                 if hasattr(self.backend, 'processor'):
-                    del self.backend.processor
+                    try:
+                        del self.backend.processor
+                    except:
+                        pass
                 if hasattr(self.backend, '_transformers_model'):
-                    del self.backend._transformers_model
+                    try:
+                        del self.backend._transformers_model
+                    except:
+                        pass
                 
                 del self.backend
                 self.backend = None
+                
+                # 모든 플래그 초기화 (이전 상태 제거)
+                self.faster_whisper_available = False
+                self.transformers_available = False
+                self.whisper_available = False
                 
                 # GPU 메모리 정리
                 gc.collect()
@@ -1092,9 +1262,23 @@ class WhisperSTT:
                 except:
                     pass
                 
-                logger.info(f"✓ 기존 백엔드 언로드 완료")
+                logger.info(f"✓ 기존 백엔드 언로드 완료 + 플래그 초기화")
             except Exception as e:
                 logger.warning(f"⚠️  기존 백엔드 언로드 중 오류: {e}")
+                # 강제 초기화
+                self.backend = None
+                self.faster_whisper_available = False
+                self.transformers_available = False
+                self.whisper_available = False
+        
+        # 옵션 적용
+        if device:
+            self.device = device.lower()
+            logger.info(f"📍 Device 변경: {self.device}")
+        
+        if compute_type:
+            self.compute_type = compute_type.lower()
+            logger.info(f"🔢 Compute Type 변경: {self.compute_type}")
         
         # 새 백엔드 로드
         if backend:
@@ -1113,65 +1297,143 @@ class WhisperSTT:
             
             backend_canonical = backend_aliases.get(backend)
             if not backend_canonical:
-                logger.error(f"❌ 지원하지 않는 백엔드: {backend}")
-                logger.info(f"   지원 백엔드: faster-whisper, transformers, openai-whisper")
-                raise ValueError(f"지원하지 않는 백엔드: {backend}")
+                error_msg = f"지원하지 않는 백엔드: {backend}. 지원: faster-whisper, transformers, openai-whisper"
+                logger.error(f"❌ {error_msg}")
+                return {
+                    "status": "error",
+                    "message": error_msg,
+                    "current_backend": self._get_current_backend_name()
+                }
             
-            # 요청된 백엔드 로드
-            if backend_canonical == "faster-whisper" and FASTER_WHISPER_AVAILABLE:
-                logger.info(f"→ faster-whisper 로드 중...")
-                self._try_faster_whisper()
-                if self.backend is not None:
-                    logger.info(f"✅ faster-whisper 로드 성공")
-                    return "faster-whisper"
+            # 요청된 백엔드만 로드 시도
+            try:
+                if backend_canonical == "faster-whisper":
+                    if not FASTER_WHISPER_AVAILABLE:
+                        raise RuntimeError("faster-whisper 패키지가 설치되지 않음")
+                    logger.info(f"→ faster-whisper 로드 중... (compute_type={self.compute_type}, device={self.device})")
+                    self._try_faster_whisper()
+                    if self.backend is not None and self.faster_whisper_available:
+                        logger.info(f"✅ faster-whisper 로드 성공")
+                        return {
+                            "status": "success",
+                            "current_backend": "faster-whisper",
+                            "device": self.device,
+                            "compute_type": self.compute_type,
+                            "message": "faster-whisper 로드 완료"
+                        }
+                    raise RuntimeError("faster-whisper 로드 실패")
+                
+                elif backend_canonical == "transformers":
+                    if not TRANSFORMERS_AVAILABLE:
+                        raise RuntimeError("transformers 패키지가 설치되지 않음")
+                    logger.info(f"→ transformers 로드 중... (device={self.device})")
+                    self._try_transformers()
+                    if self.backend is not None and self.transformers_available:
+                        logger.info(f"✅ transformers 로드 성공")
+                        return {
+                            "status": "success",
+                            "current_backend": "transformers",
+                            "device": self.device,
+                            "compute_type": "float32 (transformers는 compute_type 미지원)",
+                            "message": "transformers 로드 완료"
+                        }
+                    raise RuntimeError("transformers 로드 실패")
+                
+                elif backend_canonical == "openai-whisper":
+                    if not WHISPER_AVAILABLE:
+                        raise RuntimeError("openai-whisper 패키지가 설치되지 않음")
+                    logger.info(f"→ openai-whisper 로드 중...")
+                    self._try_whisper()
+                    if self.backend is not None and self.whisper_available:
+                        logger.info(f"✅ openai-whisper 로드 성공")
+                        return {
+                            "status": "success",
+                            "current_backend": "openai-whisper",
+                            "device": self.device,
+                            "compute_type": "N/A",
+                            "message": "openai-whisper 로드 완료"
+                        }
+                    raise RuntimeError("openai-whisper 로드 실패")
             
-            elif backend_canonical == "transformers" and TRANSFORMERS_AVAILABLE:
-                logger.info(f"→ transformers 로드 중...")
-                self._try_transformers()
-                if self.backend is not None:
-                    logger.info(f"✅ transformers 로드 성공")
-                    return "transformers"
-            
-            elif backend_canonical == "openai-whisper" and WHISPER_AVAILABLE:
-                logger.info(f"→ openai-whisper 로드 중...")
-                self._try_whisper()
-                if self.backend is not None:
-                    logger.info(f"✅ openai-whisper 로드 성공")
-                    return "openai-whisper"
-            
-            # 요청된 백엔드를 로드할 수 없음
-            logger.error(f"❌ '{backend_canonical}' 백엔드를 로드할 수 없습니다")
-            logger.error(f"   패키지 설치 여부 확인: pip install {backend_canonical}")
-            raise RuntimeError(f"'{backend_canonical}' 백엔드 로드 실패")
+            except Exception as e:
+                error_msg = f"{backend_canonical} 로드 실패: {type(e).__name__}: {str(e)[:100]}"
+                logger.error(f"❌ {error_msg}")
+                return {
+                    "status": "error",
+                    "message": error_msg,
+                    "current_backend": self._get_current_backend_name()
+                }
         
         else:
             # 기본 순서대로 자동 로드
             logger.info(f"→ 백엔드 자동 선택 (기본 순서)")
             
             if FASTER_WHISPER_AVAILABLE:
-                logger.info(f"→ faster-whisper 로드 중...")
-                self._try_faster_whisper()
-                if self.backend is not None:
-                    logger.info(f"✅ faster-whisper 로드 성공")
-                    return "faster-whisper"
+                try:
+                    logger.info(f"→ faster-whisper 로드 중...")
+                    self._try_faster_whisper()
+                    if self.backend is not None:
+                        logger.info(f"✅ faster-whisper 로드 성공")
+                        return {
+                            "status": "success",
+                            "current_backend": "faster-whisper",
+                            "device": self.device,
+                            "compute_type": self.compute_type,
+                            "message": "faster-whisper 로드 완료 (자동 선택)"
+                        }
+                except Exception as e:
+                    logger.warning(f"⚠️  faster-whisper 로드 실패: {e}")
             
             if self.backend is None and TRANSFORMERS_AVAILABLE:
-                logger.info(f"→ transformers 로드 중...")
-                self._try_transformers()
-                if self.backend is not None:
-                    logger.info(f"✅ transformers 로드 성공")
-                    return "transformers"
+                try:
+                    logger.info(f"→ transformers 로드 중...")
+                    self._try_transformers()
+                    if self.backend is not None:
+                        logger.info(f"✅ transformers 로드 성공")
+                        return {
+                            "status": "success",
+                            "current_backend": "transformers",
+                            "device": self.device,
+                            "compute_type": "float32",
+                            "message": "transformers 로드 완료 (자동 선택)"
+                        }
+                except Exception as e:
+                    logger.warning(f"⚠️  transformers 로드 실패: {e}")
             
             if self.backend is None and WHISPER_AVAILABLE:
-                logger.info(f"→ openai-whisper 로드 중...")
-                self._try_whisper()
-                if self.backend is not None:
-                    logger.info(f"✅ openai-whisper 로드 성공")
-                    return "openai-whisper"
+                try:
+                    logger.info(f"→ openai-whisper 로드 중...")
+                    self._try_whisper()
+                    if self.backend is not None:
+                        logger.info(f"✅ openai-whisper 로드 성공")
+                        return {
+                            "status": "success",
+                            "current_backend": "openai-whisper",
+                            "device": self.device,
+                            "compute_type": "N/A",
+                            "message": "openai-whisper 로드 완료 (자동 선택)"
+                        }
+                except Exception as e:
+                    logger.warning(f"⚠️  openai-whisper 로드 실패: {e}")
             
             # 모든 백엔드 로드 실패
-            logger.error(f"❌ 모든 백엔드 로드 실패")
-            raise RuntimeError(f"사용 가능한 백엔드가 없습니다")
+            error_msg = "모든 백엔드 로드 실패"
+            logger.error(f"❌ {error_msg}")
+            return {
+                "status": "error",
+                "message": error_msg,
+                "current_backend": None
+            }
+    
+    def _get_current_backend_name(self) -> Optional[str]:
+        """현재 로드된 백엔드 이름 반환"""
+        if self.faster_whisper_available:
+            return "faster-whisper"
+        elif self.transformers_available:
+            return "transformers"
+        elif self.whisper_available:
+            return "openai-whisper"
+        return None
     
     def transcribe(self, audio_path: str, language: Optional[str] = None, backend: Optional[str] = None, **kwargs) -> Dict:
         """
