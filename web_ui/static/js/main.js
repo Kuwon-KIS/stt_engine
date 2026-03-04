@@ -338,7 +338,6 @@ async function transcribeFile() {
 
         // STT 처리
         const language = languageSelect.value;
-        const backend = backendSelect.value || undefined;
         const isStream = streamingCheckbox.checked;
         
         // 처리 옵션 (NEW)
@@ -357,7 +356,6 @@ async function transcribeFile() {
         const formData = new FormData();
         formData.append('file_id', uploadResult.file_id);
         formData.append('language', language);
-        if (backend) formData.append('backend', backend);
         formData.append('is_stream', isStream ? 'true' : 'false');
         formData.append('privacy_removal', 'false');
         formData.append('classification', classification ? 'true' : 'false');
