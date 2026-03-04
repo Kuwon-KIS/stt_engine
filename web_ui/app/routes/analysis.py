@@ -118,25 +118,50 @@ async def get_progress(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/results/{job_id}", response_model=AnalysisResultListResponse)
+@router.get("/results/{job_id}")
 async def get_results(
     job_id: str,
     request: Request,
+    page: int = 1,
+    page_size: int = 20,
     db: Session = Depends(get_db)
 ):
     """
-    분석 결과 조회
+    분석 결과 조회 (페이지네이션 지원)
     
     Args:
         job_id: 분석 작업 ID
+        page: 페이지 번호 (기본값: 1)
+        page_size: 페이지 크기 (기본값: 20)
     
     Returns:
-        AnalysisResultListResponse
+        {
+            "job_id": str,
+            "page": int,
+            "page_size": int,
+            "total_count": int,
+            "total_pages": int,
+            "results": [...]
+        }
     """
     # 세션에서 사번 추출
     emp_id = request.session.get("emp_id")
     if not emp_id:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다")
+    
+    try:
+        # 페이지 범위 검증
+        if page < 1:
+            page = 1
+        if page_size < 1 or page_size > 100:
+            page_size = 20
+        
+        result = AnalysisService.get_results(job_id, emp_id, page, page_size, db)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/rerun", status_code=202)

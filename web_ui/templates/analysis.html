@@ -929,6 +929,9 @@
         let currentIncludeClassification = false;
         let currentIncludeValidation = false;
 
+        let currentPage = 1;
+        let totalPages = 1;
+
         async function initPage() {
             // URL에서 job_id 추출
             const params = new URLSearchParams(window.location.search);
@@ -948,7 +951,10 @@
             }
 
             // 초기 진행률 확인
-            checkProgress();
+            await checkProgress();
+            
+            // 첫 페이지 결과 로드
+            await loadResultsPage(1);
 
             // 2초마다 진행률 업데이트
             progressInterval = setInterval(checkProgress, 2000);
@@ -964,8 +970,6 @@
                 }
 
                 console.log('분석 진행 상황:', data);
-                console.log('Results 데이터:', data.results);
-                console.log('Results 개수:', data.results ? data.results.length : 0);
 
                 // 폴더 정보 업데이트
                 if (data.folder_path) {
@@ -978,11 +982,10 @@
                 document.getElementById('progressFill').style.width = `${progress}%`;
                 document.getElementById('progressText').textContent = `${progress}% (${data.processed_files}/${data.total_files})`;
                 
-                // 현재 처리 중인 파일들 표시 (배열일 수 있음)
+                // 현재 처리 중인 파일들 표시
                 if (data.current_file && data.current_file.length > 0) {
                     const currentFileEl = document.getElementById('currentFile');
                     if (currentFileEl) {
-                        // current_file이 배열이므로 join으로 처리
                         const fileList = Array.isArray(data.current_file) ? data.current_file.join(', ') : data.current_file;
                         currentFileEl.textContent = `현재 처리: ${fileList}`;
                         currentFileEl.style.display = 'block';
@@ -992,29 +995,6 @@
                 // 통계 업데이트
                 document.getElementById('totalFiles').textContent = data.total_files || 0;
                 document.getElementById('completedFiles').textContent = data.processed_files || 0;
-                
-                // suspicious_count는 results에서 계산 - improper_detection_results의 detected_yn이 "Y"인 파일 카운트
-                const suspiciousCount = (data.results || []).filter(r => {
-                    if (!r.improper_detection_results) return false;
-                    try {
-                        const detectionData = typeof r.improper_detection_results === 'string' 
-                            ? JSON.parse(r.improper_detection_results) 
-                            : r.improper_detection_results;
-                        return detectionData.detected_yn === 'Y';
-                    } catch (e) {
-                        console.error('Detection results 파싱 에러:', e);
-                        return false;
-                    }
-                }).length;
-                document.getElementById('suspiciousCount').textContent = suspiciousCount || 0;
-                
-                // 불완전판매 발견 카드 스타일 업데이트
-                const suspiciousCard = document.getElementById('suspiciousCard');
-                if (suspiciousCount > 0) {
-                    suspiciousCard.classList.add('warning');
-                } else {
-                    suspiciousCard.classList.remove('warning');
-                }
 
                 // 상태별 UI 업데이트
                 if (data.status === 'pending' || data.status === 'processing') {
@@ -1026,57 +1006,111 @@
                     document.getElementById('completedText').textContent = `${data.total_files}개 파일 처리 완료`;
                     clearInterval(progressInterval);
                     showNotification('분석이 완료되었습니다', 'success');
+                    // 완료되면 마지막 페이지 결과 로드
+                    await loadResultsPage(totalPages);
                 } else if (data.status === 'failed') {
                     document.getElementById('loadingSection').style.display = 'none';
                     document.getElementById('completedSection').style.display = 'none';
                     showNotification('분석 중 오류가 발생했습니다', 'error');
                     clearInterval(progressInterval);
                 }
-
-                // ALWAYS render results (even if empty) for real-time updates
-                renderResults(data.results || []);
             } catch (error) {
                 console.error('진행률 조회 에러:', error);
             }
         }
 
-        function renderResults(results) {
-            console.log('renderResults 호출됨, results:', results);
-            console.log('results 길이:', results ? results.length : 'null/undefined');
-            
-            // Store all results globally
-            allResults = results || [];
-            
-            // Apply filters
-            const filteredResults = applyFilters(allResults);
-            console.log('filteredResults 길이:', filteredResults.length);
-            
-            // Update filter stats
-            updateFilterStats(filteredResults.length, allResults.length);
-            
-            // Show filter section if we have results
-            if (allResults.length > 0) {
-                document.getElementById('filterSection').style.display = 'flex';
+        async function loadResultsPage(page) {
+            try {
+                if (page < 1) page = 1;
+                const data = await apiCall(`/api/analysis/results/${currentJobId}?page=${page}&page_size=20`, 'GET');
+                
+                if (!data) {
+                    console.error('결과 조회 실패');
+                    return;
+                }
+
+                console.log('분석 결과 페이지:', data);
+                currentPage = data.page;
+                totalPages = data.total_pages;
+                
+                // 의심 파일 개수 계산
+                let suspiciousCount = 0;
+                if (data.results) {
+                    suspiciousCount = data.results.filter(r => {
+                        if (!r.improper_detection_results) return false;
+                        try {
+                            const detectionData = typeof r.improper_detection_results === 'string' 
+                                ? JSON.parse(r.improper_detection_results) 
+                                : r.improper_detection_results;
+                            return detectionData.detected_yn === 'Y';
+                        } catch (e) {
+                            return false;
+                        }
+                    }).length;
+                }
+                
+                // 불완전판매 발견 카드 스타일 업데이트 (첫 페이지만)
+                if (page === 1) {
+                    const suspiciousCard = document.getElementById('suspiciousCard');
+                    if (suspiciousCount > 0) {
+                        suspiciousCard.classList.add('warning');
+                    } else {
+                        suspiciousCard.classList.remove('warning');
+                    }
+                    document.getElementById('suspiciousCount').textContent = suspiciousCount || 0;
+                }
+                
+                // 결과 렌더링
+                renderResults(data.results || [], page);
+            } catch (error) {
+                console.error('결과 로드 에러:', error);
             }
-            
-            // Update selection UI (count, button state, etc.)
-            updateSelectionUI();
+        }
+
+        function renderResults(results, page = currentPage) {
+            console.log(`renderResults 호출됨 (페이지 ${page}), results 길이:`, results ? results.length : 0);
             
             const tbody = document.getElementById('analysisTableBody');
             
-            if (filteredResults.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="8" class="empty-state">필터 조건에 맞는 결과가 없습니다</td></tr>';
+            if (page === 1) {
+                // 첫 페이지면 테이블 초기화
+                allResults = results || [];
+                tbody.innerHTML = '';
+                document.getElementById('filterSection').style.display = results.length > 0 ? 'flex' : 'none';
+            } else {
+                // 다음 페이지면 추가
+                allResults.push(...(results || []));
+            }
+            
+            // 필터 적용
+            const filteredResults = applyFilters(allResults);
+            updateFilterStats(filteredResults.length, allResults.length);
+            updateSelectionUI();
+            
+            if (filteredResults.length === 0 && page === 1) {
+                tbody.innerHTML = '<tr><td colspan="8" class="empty-state">분석 결과가 없습니다</td></tr>';
                 return;
             }
 
-            // Map existing rows by filename for efficient lookup
-            const existingRowsMap = new Map();
-            Array.from(tbody.rows).forEach(row => {
-                const fileCell = row.cells[2]; // filename column
-                if (fileCell) {
-                    existingRowsMap.set(fileCell.textContent.trim(), row);
-                }
+            // 현재 페이지의 결과만 렌더링
+            const startIndex = (page - 1) * 20;
+            const pageResults = filteredResults.slice(startIndex, startIndex + 20);
+            
+            pageResults.forEach((result, index) => {
+                const row = createNewRow(result, startIndex + index);
+                tbody.appendChild(row);
             });
+            
+            // 페이지네이션 UI 추가
+            updatePaginationUI();
+        }
+
+        function updatePaginationUI() {
+            // 페이지 정보 표시 (테이블 하단에 추가 가능)
+            console.log(`현재 페이지: ${currentPage} / ${totalPages}`);
+            if (currentPage < totalPages) {
+                // 다음 페이지 버튼 표시 (선택사항)
+            }
 
             // Build new table body efficiently
             const newRows = [];
@@ -1236,7 +1270,7 @@
             currentFilters = { status: 'all', risk: 'all' };
             document.getElementById('statusFilter').value = 'all';
             document.getElementById('riskFilter').value = 'all';
-            renderResults(allResults);
+            renderResults(allResults, currentPage);
         }
 
         // Setup filter event listeners
@@ -1247,16 +1281,19 @@
             if (statusFilter) {
                 statusFilter.addEventListener('change', (e) => {
                     currentFilters.status = e.target.value;
-                    renderResults(allResults);
+                    renderResults(allResults, currentPage);
                 });
             }
             
             if (riskFilter) {
                 riskFilter.addEventListener('change', (e) => {
                     currentFilters.risk = e.target.value;
-                    renderResults(allResults);
+                    renderResults(allResults, currentPage);
                 });
             }
+            
+            // 페이지 로드
+            initPage();
         });
 
         function getStatusBadge(status) {
@@ -1765,11 +1802,6 @@
             };
             return classMap[status] || 'badge-pending';
         }
-
-        // 페이지 로드
-        document.addEventListener('DOMContentLoaded', async () => {
-            await initPage();
-        });
 
         // 모달 외부 클릭 시 닫기
         document.addEventListener('click', function(event) {

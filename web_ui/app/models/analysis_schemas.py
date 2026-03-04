@@ -47,7 +47,7 @@ class AnalysisStartResponse(BaseModel):
 
 
 class AnalysisProgressResponse(BaseModel):
-    """분석 진행률 응답"""
+    """분석 진행률 응답 - progress 정보만 포함 (결과는 별도 API로)"""
     job_id: str = Field(..., description="분석 작업 ID")
     folder_path: Optional[str] = Field(None, description="분석 대상 폴더 경로")
     status: str = Field(..., description="상태 (pending, processing, completed, failed)")
@@ -59,7 +59,6 @@ class AnalysisProgressResponse(BaseModel):
     started_at: datetime = Field(..., description="시작 시간")
     updated_at: datetime = Field(..., description="업데이트 시간")
     estimated_time_remaining: Optional[int] = Field(None, description="예상 남은 시간 (초)")
-    results: Optional[List[dict]] = Field(default_factory=list, description="분석 결과 목록")
 
 
 class TranscriptionResult(BaseModel):
@@ -96,8 +95,30 @@ class AnalysisResult(BaseModel):
     duration: float = Field(..., description="처리 소요 시간 (초)")
 
 
+class AnalysisResultsPageResponse(BaseModel):
+    """분석 결과 페이지 응답 - pagination 지원"""
+    job_id: str = Field(..., description="분석 작업 ID")
+    page: int = Field(..., description="현재 페이지 (1부터 시작)")
+    page_size: int = Field(..., description="페이지 크기")
+    total_count: int = Field(..., description="전체 결과 수")
+    total_pages: int = Field(..., description="전체 페이지 수")
+    results: List[dict] = Field(default_factory=list, description="페이지내 분석 결과")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "job_id": "job_123456",
+                "page": 1,
+                "page_size": 20,
+                "total_count": 150,
+                "total_pages": 8,
+                "results": []
+            }
+        }
+
+
 class AnalysisResultListResponse(BaseModel):
-    """분석 결과 목록 응답"""
+    """분석 결과 목록 응답 (레거시)"""
     job_id: str = Field(..., description="분석 작업 ID")
     folder_path: str = Field(..., description="폴더 경로")
     status: str = Field(..., description="전체 상태")

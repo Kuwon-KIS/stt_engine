@@ -35,6 +35,24 @@ def setup_logging():
     file_handler.setFormatter(formatter)
     root_logger.addHandler(file_handler)
     
+    # 성능 모니터링 로거 (별도 파일)
+    perf_logger = logging.getLogger("performance")
+    perf_logger.setLevel(logging.INFO)
+    
+    perf_handler = logging.handlers.RotatingFileHandler(
+        LOG_DIR / "performance.log",
+        maxBytes=10*1024*1024,  # 10MB
+        backupCount=5
+    )
+    perf_formatter = logging.Formatter("%(asctime)s - %(message)s")
+    perf_handler.setFormatter(perf_formatter)
+    perf_logger.addHandler(perf_handler)
+    
+    # 콘솔에도 성능 로그 출력
+    perf_console = logging.StreamHandler()
+    perf_console.setFormatter(perf_formatter)
+    perf_logger.addHandler(perf_console)
+    
     return root_logger
 
 
@@ -45,3 +63,4 @@ setup_logging()
 def get_logger(name: str) -> logging.Logger:
     """로거 인스턴스 반환"""
     return logging.getLogger(name)
+

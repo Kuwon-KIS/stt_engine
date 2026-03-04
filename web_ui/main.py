@@ -10,12 +10,16 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from pathlib import Path
 import logging
 
 # 커스텀 로거 설정
 from utils.logger import get_logger
 logger = get_logger(__name__)
+
+# 성능 모니터링 로거
+perf_logger = logging.getLogger("performance")
 
 # 설정 및 서비스 임포트
 from config import (
@@ -39,12 +43,33 @@ from app.services.stt_service import stt_service
 # from app.services.batch_service import batch_service, FileStatus
 # from app.services.job_queue import transcribe_queue, JobStatus
 
+
+# === 성능 모니터링 미들웨어 ===
+class PerformanceMiddleware(BaseHTTPMiddleware):
+    """API 응답 시간 측정"""
+    async def dispatch(self, request: Request, call_next):
+        start_time = time.time()
+        response = await call_next(request)
+        process_time = time.time() - start_time
+        
+        # API 요청만 로깅
+        if request.url.path.startswith("/api/"):
+            perf_logger.info(
+                f"{request.method} {request.url.path} - {response.status_code} - {process_time:.3f}s"
+            )
+        
+        return response
+
+
 # FastAPI 앱 생성
 app = FastAPI(
     title="KIS 불완전판매 예방 녹취 분석 시스템",
     version="1.0.0",
     description="금융상품 판매 사전 녹취 음성을 텍스트로 변환하여 불완전판매 예방 및 규정 준수 검토"
 )
+
+# === 성능 모니터링 미들웨어 추가 ===
+app.add_middleware(PerformanceMiddleware)
 
 # === Phase 1: SessionMiddleware 등록 (CORS 이전에 등록) ===
 app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET_KEY)

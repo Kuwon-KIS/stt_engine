@@ -218,7 +218,7 @@ class AnalysisService:
         db: Session
     ) -> AnalysisProgressResponse:
         """
-        분석 진행률 조회
+        분석 진행률 조회 (progress 정보만 반환 - 경량화)
         
         Args:
             job_id: 분석 작업 ID
@@ -226,7 +226,7 @@ class AnalysisService:
             db: DB 세션
         
         Returns:
-            AnalysisProgressResponse
+            AnalysisProgressResponse (results 필드 없음)
         """
         try:
             # DB에서 분석 작업 조회
@@ -245,84 +245,27 @@ class AnalysisService:
             # Get currently processing files (set) from in-memory tracker
             current_processing_files = AnalysisService._current_processing.get(job_id, set())
             
-            # 분석 결과 조회
-            results = db.query(AnalysisResult).filter(
-                AnalysisResult.job_id == job_id
-            ).all()
+            # 분석 결과 개수만 조회 (전체 데이터 로드 안 함)
+            completed_count = db.query(AnalysisResult).filter(
+                AnalysisResult.job_id == job_id,
+                AnalysisResult.status == 'completed'
+            ).count()
             
-            # Count completed and processing files from DB status field
-            completed_files = sum(1 for r in results if r.status == 'completed')
-            processing_files = sum(1 for r in results if r.status == 'processing')
-            processed_files = completed_files + processing_files
+            processing_count = db.query(AnalysisResult).filter(
+                AnalysisResult.job_id == job_id,
+                AnalysisResult.status == 'processing'
+            ).count()
             
             # 현재 상태에 따라 진행률 계산
             if job.status == "pending":
                 progress = 0
             elif job.status == "processing":
-                # For processing jobs: calculate progress based on actual file statuses
-                progress = int(((completed_files + processing_files * 0.5) / total_files * 100)) if total_files > 0 else 0
+                # For processing jobs: calculate progress based on counts
+                progress = int(((completed_count + processing_count * 0.5) / total_files * 100)) if total_files > 0 else 0
             elif job.status == "completed":
                 progress = 100
             else:
-                progress = int((processed_files / total_files * 100)) if total_files > 0 else 0
-            
-            # Build results dictionary for quick lookup
-            results_dict = {result.file_id: result for result in results}
-            
-            # 결과 데이터 준비 - include ALL files with their statuses
-            results_list = []
-            suspicious_count = 0
-            
-            # Iterate through all files to show status for each
-            for filename in file_ids:
-                result = results_dict.get(filename)
-                
-                if result and result.status == 'completed':
-                    # File has completed analysis results
-                    file_status = result.status  # 'completed'
-                    
-                    # Get confidence from metadata
-                    confidence = result.stt_metadata.get("confidence", 0.5) if result.stt_metadata else 0.5
-                    
-                    # Determine risk level based on detection results, NOT confidence
-                    # Check improper_detection_results and incomplete_detection_results
-                    risk_level = None
-                    if result.improper_detection_results:
-                        improper_detected = result.improper_detection_results.get("detected", False)
-                        if improper_detected:
-                            risk_level = "danger"  # 위반 탐지
-                    
-                    if result.incomplete_detection_results and not risk_level:
-                        incomplete_detected = result.incomplete_detection_results.get("detected", False)
-                        if incomplete_detected:
-                            risk_level = "warning"  # 의심
-                    
-                    # Default to safe if no issues detected
-                    if not risk_level:
-                        risk_level = "safe"  # 이상없음
-                    
-                    result_dict = {
-                        "filename": result.file_id,
-                        "stt_text": result.stt_text,
-                        "status": file_status,
-                        "confidence": confidence,
-                        "risk_level": risk_level,
-                        "improper_detection_results": result.improper_detection_results
-                    }
-                else:
-                    # File is pending, processing, or failed - no risk assessment yet
-                    file_status = result.status if result else "pending"
-                    
-                    result_dict = {
-                        "filename": filename,
-                        "stt_text": None,
-                        "status": file_status,
-                        "confidence": None,
-                        "risk_level": None,
-                        "improper_detection_results": None
-                    }
-                
-                results_list.append(result_dict)
+                progress = int(((completed_count + processing_count) / total_files * 100)) if total_files > 0 else 0
             
             return AnalysisProgressResponse(
                 job_id=job_id,
@@ -331,12 +274,11 @@ class AnalysisService:
                 progress=progress,
                 current_file=list(current_processing_files) if current_processing_files else [],
                 total_files=total_files,
-                processed_files=completed_files,
+                processed_files=completed_count,
                 error_message=None,
                 started_at=job.started_at,
                 updated_at=job.completed_at or datetime.utcnow(),
-                estimated_time_remaining=None,
-                results=results_list
+                estimated_time_remaining=None
             )
         
         except ValueError as e:
@@ -348,18 +290,22 @@ class AnalysisService:
     def get_results(
         job_id: str,
         emp_id: str,
-        db: Session
-    ) -> AnalysisResultListResponse:
+        page: int = 1,
+        page_size: int = 20,
+        db: Session = None
+    ):
         """
-        분석 결과 조회
+        분석 결과 조회 (페이지네이션 지원)
         
         Args:
             job_id: 분석 작업 ID
             emp_id: 사번
+            page: 페이지 번호 (1부터 시작)
+            page_size: 페이지 크기
             db: DB 세션
         
         Returns:
-            AnalysisResultListResponse
+            {"results": [...], "page": 1, "page_size": 20, "total_count": 100, "total_pages": 5}
         """
         try:
             # 분석 작업 조회
@@ -371,61 +317,63 @@ class AnalysisService:
             if not job:
                 raise ValueError("작업을 찾을 수 없습니다")
             
-            # 분석 결과 조회
+            # 전체 결과 개수
+            total_count = db.query(AnalysisResult).filter(
+                AnalysisResult.job_id == job_id
+            ).count()
+            
+            # 전체 페이지 수 계산
+            total_pages = (total_count + page_size - 1) // page_size
+            
+            # 페이지 범위 검증
+            if page < 1:
+                page = 1
+            if page > total_pages and total_pages > 0:
+                page = total_pages
+            
+            # 오프셋 계산
+            offset = (page - 1) * page_size
+            
+            # 페이지네이션으로 결과 조회
             results = db.query(AnalysisResult).filter(
                 AnalysisResult.job_id == job_id
-            ).all()
+            ).order_by(AnalysisResult.id).offset(offset).limit(page_size).all()
             
-            # 결과 변환
-            result_list = []
+            # 결과 변환 - 프론트엔드에서 사용할 포맷
+            results_list = []
             for r in results:
-                transcription = None
-                if r.transcription_text:
-                    transcription = TranscriptionResult(
-                        filename=r.filename,
-                        text=r.transcription_text,
-                        confidence=r.transcription_confidence or 0.0,
-                        duration=r.audio_duration or 0.0
-                    )
-                
-                classification = None
-                if r.classification_category:
-                    classification = ClassificationResult(
-                        category=r.classification_category,
-                        confidence=r.classification_confidence or 0.0,
-                        keywords=r.classification_keywords or []
-                    )
-                
-                validation = None
-                if r.validation_risk_level:
-                    validation = ValidationResult(
-                        issues_found=r.validation_issues_found or False,
-                        risk_level=r.validation_risk_level,
-                        issues=r.validation_issues or []
-                    )
-                
-                result_list.append({
-                    "job_id": job_id,
-                    "filename": r.filename,
+                result_dict = {
+                    "filename": r.file_id,
+                    "stt_text": r.stt_text,
                     "status": r.status,
-                    "transcription": transcription,
-                    "classification": classification,
-                    "validation": validation,
-                    "processed_at": r.processed_at,
-                    "duration": r.processing_duration or 0.0
-                })
+                    "confidence": None,
+                    "risk_level": None,
+                    "improper_detection_results": r.improper_detection_results
+                }
+                
+                # stt_metadata에서 confidence 추출
+                if r.stt_metadata:
+                    result_dict["confidence"] = r.stt_metadata.get("confidence", 0.5)
+                
+                # improper_detection_results 기반 risk_level 결정
+                if r.improper_detection_results:
+                    if r.improper_detection_results.get("detected_yn") == "Y":
+                        result_dict["risk_level"] = "danger"
+                    else:
+                        result_dict["risk_level"] = "safe"
+                else:
+                    result_dict["risk_level"] = None if r.status != "completed" else "safe"
+                
+                results_list.append(result_dict)
             
-            return AnalysisResultListResponse(
-                job_id=job_id,
-                folder_path=job.folder_path,
-                status=job.status,
-                total_files=job.total_files,
-                completed_files=job.completed_files,
-                failed_files=job.failed_files,
-                results=result_list,
-                started_at=job.started_at,
-                completed_at=job.completed_at
-            )
+            return {
+                "job_id": job_id,
+                "page": page,
+                "page_size": page_size,
+                "total_count": total_count,
+                "total_pages": total_pages,
+                "results": results_list
+            }
         
         except ValueError as e:
             raise ValueError(str(e))
