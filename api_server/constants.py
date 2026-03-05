@@ -194,8 +194,10 @@ MAX_BATCH_FILES = 100
 MAX_FILE_SIZE_MB = 500
 
 # 스트리밍 청크 설정 (초)
+# 30초 청크 + 3초 오버랩 (10%) = 세그멘트 경계 중복 최소화
+# accuracy 모드의 높은 정확도로 충분함
 STREAM_CHUNK_DURATION = 30
-STREAM_OVERLAP_DURATION = 12
+STREAM_OVERLAP_DURATION = 3  # 기존 12초에서 변경 (40% → 10%)
 
 # 기본 언어
 DEFAULT_LANGUAGE = "ko"

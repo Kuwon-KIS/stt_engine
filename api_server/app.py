@@ -55,9 +55,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# 스트리밍 청크 설정 (30초 시간 기반 + 12초 overlap)
+# 스트리밍 청크 설정 (30초 청크 + 3초 overlap = 10% 중복)
+# 변경 사유: 세그멘트 경계의 중복 문제 해결 (12초 → 3초)
+# accuracy 모드에서는 높은 정확도로 인해 3초 오버랩만으로도 충분함
 STREAM_CHUNK_DURATION = 30  # 초
-STREAM_OVERLAP_DURATION = 12  # 초 (40% overlap)
+STREAM_OVERLAP_DURATION = 3   # 초 (10% overlap)
 STREAM_CHUNK_SIZE = 10 * 1024 * 1024  # 폴백용 (deprecated)
 
 app = FastAPI(
@@ -1335,9 +1337,10 @@ def merge_chunk_results(chunks_info: list) -> dict:
 
 async def _transcribe_streaming(file_path: str, language: str, file_size_mb: float):
     """
-    스트리밍 모드로 파일 처리 (30초 청크 + 12초 overlap)
+    스트리밍 모드로 파일 처리 (30초 청크 + 3초 overlap = 10% 중복)
     - 30초 시간 기반 청크 분할
-    - 12초(40%) overlap으로 경계 부분 정확도 향상
+    - 3초(10%) overlap으로 중복 최소화 + 경계 부분 정확도 유지
+    - accuracy 모드에서 높은 정확도로 인해 3초 오버랩만으로도 충분
     - 각 청크 독립 처리 후 overlap 부분 병합
     """
     logger.info(f"[STREAM] 스트리밍 모드 시작 (Overlap 기반)")
