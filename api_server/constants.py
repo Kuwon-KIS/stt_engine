@@ -135,7 +135,7 @@ PROFILE_STEPS: Dict[str, List[ProcessingStep]] = {
         ProcessingStep.STT,
         ProcessingStep.PRIVACY_REMOVAL,
         ProcessingStep.CLASSIFICATION,
-        ProcessingStep.AI_AGENT,
+        ProcessingStep.ELEMENT_DETECTION,  # AI Agent 대신 Element Detection 사용
     ],
 }
 
