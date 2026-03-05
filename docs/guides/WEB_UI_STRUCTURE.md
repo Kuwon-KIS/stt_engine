@@ -80,10 +80,10 @@
         ↓
     index.html 로드
         ↓
-    main.js (uploadFile, transcribeFile, startBatch)
+    main.js (uploadFile, transcribeFile) [LEGACY]
         ↓
     POST /transcribe/ → API 서버
-        ├─ privacy_removal='false' ❌
+        ├─ privacy_removal='false' ❌ (hard-coded)
         ├─ element_detection 설정 (무시됨)
         └─ 결과 표시 (index.html)
 
@@ -94,13 +94,21 @@
         ↓
     common.js + startAnalysis()
         ↓
-    POST /api/analysis/start → Web UI 서버
-        ├─ privacy_removal=true ✅
-        ├─ element_detection=true ✅
-        ├─ classification 선택
-        └─ DB 저장 + 분석 페이지로 이동
-            ↓
-        analysis.html (결과 조회)
+    POST /api/analysis/start (privacy_removal=true, element_detection=true)
+        ↓
+    Web UI Server → AnalysisService.process_analysis_sync()
+        ├─ for each file:
+        │   └─ stt_service.transcribe_local_file(
+        │       privacy_removal=True ✅
+        │       element_detection=True ✅
+        │     )
+        │
+        └─ POST /transcribe/ → API 서버
+            ├─ privacy_removal="true" (문자열 → True boolean 변환)
+            ├─ element_detection="true"
+            └─ 개인정보 제거 (vLLM + Qwen)
+                
+        DB 저장 + analysis.html (결과 조회)
 ```
 
 ---
@@ -110,44 +118,88 @@
 | 기능 | index.html | upload.html |
 |------|-----------|-----------|
 | **UI 타입** | 파일 업로드 | 폴더 관리 |
-| **Privacy Removal** | ❌ false | ✅ true (vLLM) |
+| **Privacy Removal** | ❌ false (hard-coded) | ✅ True (항상 활성) |
+| **LLM 타입** | ⚠️ vllm (설정만) | ✅ vllm (실제 호출) |
 | **동시 처리** | ❌ 1개 | ✅ 최대 2개 |
 | **이력 추적** | ❌ 없음 | ✅ DB 저장 |
-| **Element Detection** | ⚠️ 설정만 | ✅ 자동 실행 |
-| **추천도** | 🟡 레거시 | 🟢 현재 표준 |
+| **Element Detection** | ⚠️ 설정만 무시 | ✅ 자동 실행 |
+| **Fallback** | - | ✅ Regex (vLLM 실패 시) |
+| **추천도** | 🔴 deprecated | 🟢 권장 |
 
 ---
 
-## 🔐 Privacy Removal 설정 비교
+## 🔐 Privacy Removal 호출 비교
 
-### index.html (/transcribe/)
+### index.html (/transcribe/) - ❌ 개인정보 미보호
+
+**코드** (web_ui/static/js/main.js:387):
 ```javascript
-formData.append('privacy_removal', 'false');  // ❌ 항상 미실행
+formData.append('privacy_removal', 'false');  // ❌ Hard-coded false
+formData.append('privacy_llm_type', 'vllm');  // 설정만 함 (무시됨)
 ```
 
-**API 서버 처리**:
+**API 서버 처리** (api_server/transcribe_endpoint.py:58):
 ```python
-privacy_removal_enabled = privacy_removal.lower() in ['true', '1', 'yes', 'on']
-# false → privacy_removal_enabled = False
-# → Privacy Removal 단계 스킵
+self.privacy_removal = privacy_removal.lower() in ['true', '1', 'yes', 'on']
+# 'false' → False
+# → perform_privacy_removal() 호출 안 됨
 ```
 
-**결과**: 개인정보가 **제거되지 않음** ❌
+**처리 흐름**:
+```
+STT 완료 → [Privacy Removal 단계 스킵] → Element Detection → 완료
+          ❌ 개인정보 제거 안 됨
+```
 
 ---
 
-### upload.html (/api/analysis/start)
-```python
-# web_ui/app/services/analysis_service.py:667-673
+### upload.html (/api/analysis/start) - ✅ 개인정보 보호
 
+**코드** (web_ui/app/services/analysis_service.py:661):
+```python
 stt_result = await stt_service.transcribe_local_file(
-    file_path=str(file_path),
-    language="ko",
-    is_stream=False,
-    privacy_removal=True,  # ✅ 항상 True
-    classification=False,
-    ai_agent=include_classification,
-    element_detection=True  # ✅ 항상 True
+    privacy_removal=True,  # ✅ Python boolean (True)
+    element_detection=True
+)
+```
+
+**FormData 변환** (web_ui/app/services/stt_service.py:141):
+```python
+data.add_field("privacy_removal", str(privacy_removal).lower())
+# True → "true" (문자열)
+```
+
+**API 서버 파싱** (api_server/transcribe_endpoint.py:58):
+```python
+self.privacy_removal = privacy_removal.lower() in ['true', '1', 'yes', 'on']
+# "true" → True
+# → perform_privacy_removal() 호출됨 ✅
+```
+
+**처리 흐름**:
+```
+STT 완료 
+    ↓
+Privacy Removal (vLLM + Qwen)
+    ├─ LLM 호출 성공 → JSON 파싱 → 개인정보 제거 ✅
+    └─ LLM 호출 실패 → Regex Fallback → 기본 패턴 제거 ✅
+    ↓
+Element Detection → Classification (선택) → 완료
+```
+
+**vLLM 설정값** (api_server/transcribe_endpoint.py:228-273):
+```python
+async def perform_privacy_removal(
+    text: str,
+    prompt_type: str = "privacy_remover_default_v6",
+    llm_type: str = "vllm",  # ✅ 기본값
+    vllm_model_name: Optional[str] = None  # ✅ "/model/qwen30_thinking_2507" 전달됨
+):
+    # LLMClientFactory → QwenClient 라우팅 ✅
+    # vLLM API: http://localhost:8001/v1 ✅
+    # Temperature: 0.3, Max tokens: 32768 ✅
+    # Fallback: Regex (LLM 실패 시) ✅
+```
 )
 ```
 

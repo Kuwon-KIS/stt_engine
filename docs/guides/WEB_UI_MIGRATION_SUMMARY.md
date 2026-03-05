@@ -139,65 +139,125 @@
 - 항상 실행: Yes (폴더 분석 시)
 - 폴백 메커니즘: Regex (vLLM 불가용 시)
 
-**실행 경로**:
+**🔄 현행 호출 경로** (upload.html):
+
 ```
-Web UI: /api/analysis/start
+Web UI (upload.html)
     ↓
-AnalysisService.process_analysis_sync()
+startAnalysis() → POST /api/analysis/start (privacy_removal=true, element_detection=true)
     ↓
-stt_service.transcribe_local_file(privacy_removal=True)
-    ↓
-api_server/transcribe_endpoint.py: perform_privacy_removal()
-    ↓
-api_server/services/privacy_remover.py: PrivacyRemoverService.process_text()
-    ├─ LLMClientFactory.create_client(model_name='/model/qwen30_thinking_2507')
-    │   └─ QwenClient (OpenAI SDK wrapper with custom base_url)
-    ├─ vLLM 서버 호출 (http://localhost:8001/v1)
-    └─ 실패 시 → Regex 폴백 (자동)
+Web UI Server: AnalysisService.process_analysis_sync()
+    ├─ for each file:
+    │   ├─ stt_service.transcribe_local_file(
+    │   │   file_path="/app/data/uploads/...",
+    │   │   privacy_removal=True,        ✅ 항상 True
+    │   │   element_detection=True,      ✅ 항상 True
+    │   │   classification=user_choice
+    │   │ )
+    │   └─ await stt_service.transcribe_local_file()
+    │
+    └─ STT API Server (포트 8003): POST /transcribe
+         ├─ file_path → FormData
+         ├─ privacy_removal → "true" (문자열)
+         │   ↓
+         │   TranscribeRequest.__init__()
+         │   → self.privacy_removal = "true".lower() in ['true', '1', 'yes', 'on']
+         │   → True (boolean 변환) ✅
+         │
+         └─ perform_privacy_removal()
+             ├─ llm_type="vllm" (기본값)
+             ├─ vllm_model_name="/model/qwen30_thinking_2507"
+             ├─ prompt_type="privacy_remover_default_v6"
+             └─ PrivacyRemoverService.process_text()
+                 ├─ LLMClientFactory.create_client("Qwen...") 
+                 │   → 모델명에 'qwen' 감지
+                 │   → return QwenClient(model_name)  ✅
+                 │
+                 └─ await QwenClient.generate_response()
+                     ├─ api_base = "http://localhost:8001/v1" ✅
+                     ├─ model = "Qwen3-30B-A3B-Thinking-2507-FP8"
+                     ├─ temperature = 0.3
+                     ├─ max_tokens = 32768
+                     └─ response = await self.client.chat.completions.create(...)
+                         ├─ 성공: JSON 파싱 → privacy_removal 결과 ✅
+                         ├─ JSON 파싱 실패: Regex fallback → 기본 패턴으로 제거 ✅
+                         └─ LLM 연결 실패: RuntimeError → Regex fallback ✅
 ```
 
-**폴백 메커니즘**:
+**파라미터 명세** (현행 호출값):
+
+| 항목 | 설정값 | 위치 | 비고 |
+|------|--------|------|------|
+| privacy_removal | **True** (boolean) | analysis_service.py:661 | ✅ 항상 활성화 |
+| privacy_removal (API 입력) | **"true"** (문자열) | stt_service.py:141 | FormData로 변환 |
+| llm_type | **"vllm"** | transcribe_endpoint.py:232 | 기본값 |
+| vllm_model_name | **/model/qwen30_thinking_2507** | analysis_service.py:667 | Qwen 모델 |
+| api_base | **http://localhost:8001/v1** | privacy_remover.py:306 | vLLM 엔드포인트 |
+| temperature | **0.3** | transcribe_endpoint.py:272 | 낮은 변동성 |
+| max_tokens | **32768** | transcribe_endpoint.py:271 | 충분한 토큰 |
+| prompt_type | **privacy_remover_default_v6** | transcribe_endpoint.py:268 | 기본 프롬프트 |
+
+**폴백 체인**:
 ```python
 try:
-    # vLLM 서버 호출
-    response = await self.client.chat.completions.create(...)
-except RuntimeError:
-    # vLLM 불가용 시 자동 폴백
-    logger.warning("Regex fallback으로 전환")
-    fallback_result = self._regex_fallback(usertxt)
-    # 원본 텍스트 반환 (개인정보 노출)
+    # 1️⃣ vLLM API 호출
+    response = await QwenClient.generate_response(...)
+except (RuntimeError, ConnectionError, TimeoutError) as e:
+    # 2️⃣ LLM 호출 실패 → Regex 자동 전환
+    logger.warning("[PrivacyRemover] Regex fallback으로 전환")
+    try:
+        fallback_result = self._regex_fallback(usertxt)  # 기본 패턴 적용
+        return {
+            'success': False,
+            'privacy_exist': fallback_result['privacy_exist'],
+            'exist_reason': f"[Fallback] {str(e)[:50]}",
+            'privacy_rm_usertxt': fallback_result['privacy_rm_usertxt']
+        }
+    except Exception as fallback_error:
+        # 3️⃣ Regex도 실패 → 원본 반환
+        logger.error("[PrivacyRemover] Regex fallback도 실패")
+        return {
+            'success': False,
+            'privacy_exist': 'N',
+            'exist_reason': f"[Error] {str(e)[:40]}",
+            'privacy_rm_usertxt': usertxt  # 원본 반환
+        }
 ```
 
 **환경 상황별 동작**:
-| 환경 | vLLM 서버 | Privacy Removal | 동작 |
-|------|---------|-----------------|------|
-| 운영 (EC2) | ✅ 실행 중 | ✅ vLLM + Qwen | 개인정보 제거 ✅ |
-| 개발 (MacBook) | ❌ 미실행 | ⚠️ Regex 폴백 | 원본 텍스트 반환 |
-| EC2 빌드 | ❌ 불가용 | ⚠️ Regex 폴백 | 원본 텍스트 반환 |
+| 환경 | vLLM 서버 | Privacy Removal | 폴백 | 결과 |
+|------|---------|-----------------|------|------|
+| 운영 (EC2) | ✅ 실행 중 | ✅ vLLM + Qwen | - | 개인정보 제거 ✅ |
+| 개발 (MacBook) | ❌ 미실행 | ⚠️ Regex | success=False | 기본 패턴 제거 |
+| EC2 빌드 | ❌ 불가용 | ⚠️ Regex | success=False | 기본 패턴 제거 |
 
 ---
 
 ## 🗑️ 레거시 코드 현황
 
-### main.js (976 라인)
+### main.js (1054 라인) - 파일 업로드 기반 UI
+
+**레거시 파라미터** (호출되지 않음):
+- `privacy_removal: 'false'` (라인 387) ❌ 항상 비활성화
+- `privacy_llm_type: 'vllm'` (라인 388) - 설정해도 privacy_removal=false이므로 무시
+- `privacy_prompt_type: 'privacy_remover_default_v6'` - 무시됨
 
 **레거시 섹션** (사용 안 함):
 - 글로벌 변수: `selectedFile`, `currentFileId`, `currentBatchId`, `batchProgressInterval`
 - DOM 요소: `dropZone`, `fileInput`, `browseBtn`, `fileInfo`, `transcribeBtn`, `languageSelect`, `backendSelect`, `streamingCheckbox`, `setGlobalBackendCheckbox`
 - 함수:
-  - `initializeFileUploadHandlers()` - 드래그 & 드롭 이벤트
-  - `handleFileSelect()` - 파일 선택 처리
-  - `uploadFile()` - 파일 업로드
-  - `transcribeFile()` - STT 처리 (privacy_removal='false')
-  - `displayResult()`, `displayProcessingSteps()`, `displayClassificationResults()`, `displayElementDetectionResults()`
-  - 배치 처리: `loadBatchFiles()`, `renderBatchTable()`, `startBatch()`, `startBatchProgressMonitoring()`, `updateProgress()`
+  - `initializeFileUploadHandlers()` - [LEGACY] 드래그 & 드롭 이벤트
+  - `handleFileSelect()` - [LEGACY] 파일 선택 처리
+  - `uploadFile()` - [LEGACY] 파일 업로드
+  - `transcribeFile()` - [LEGACY] STT 처리 (privacy_removal='false') ⚠️ **개인정보 미보호**
+  - `displayResult()`, `displayProcessingSteps()` - [LEGACY] 결과 표시
+  - 배치 처리: `loadBatchFiles()`, `renderBatchTable()`, `startBatch()` - [LEGACY] 비작동
 
 **유지 섹션** (계속 사용):
 - 유틸리티: `apiCall()`, `formatFileSize()`, `formatTime()`, `showNotification()`
 - 백엔드 설정: `fetchGlobalBackendInfo()`, `setGlobalBackend()`
 
-**상태**:
-- ⚠️ 코드는 아직 main.js에 존재
+**상태**: [LEGACY] - 마이그레이션 경고 추가됨 (라인 1-20)
 - ⚠️ 어떤 HTML에서 main.js를 import하는지 확인 필요
 - 📝 정리 권장사항: 주석 처리 후 문서화 (즉시 삭제보다 안전)
 

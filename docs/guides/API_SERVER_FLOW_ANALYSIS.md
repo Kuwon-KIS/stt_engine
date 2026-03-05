@@ -65,39 +65,79 @@ Web UI (main.js) - 더 이상 사용되지 않음
 | `STT_DEVICE` | env | "auto" | 디바이스 (auto, cuda, cpu) |
 | `STT_COMPUTE_TYPE` | env | 자동 | 정밀도 (int8, float16, float32) |
 
-**코드 위치**: `api_server/app.py:76-100`
-
-**상태 확인**:
-```python
-device = os.getenv("STT_DEVICE", "auto")  # ✅ auto로 자동 감지
-compute_type = os.getenv("STT_COMPUTE_TYPE")
-if compute_type is None:
-    compute_type = "float16" if device == "cuda" else "float32"  # ✅ 기본값 설정됨
-```
-
-**점검 사항**:
-- [ ] STT_DEVICE=auto 환경변수 설정 확인
-- [ ] STT_PRESET=accuracy 환경변수 설정 확인
-- [ ] 모델 로드 시 프리셋 자동 적용 (초기화: app.py:105-140)
+**확인 위치**: `api_server/app.py:76-100`
 
 ---
 
-### **2️⃣ Privacy Removal 단계**
+### **2️⃣ Privacy Removal 단계** ⭐ 현행 값
 
-| 설정값 | 출처 | 기본값 | 용도 |
-|--------|------|--------|------|
-| `privacy_removal` | FormData | "false" | 활성화 여부 |
-| `privacy_llm_type` | FormData | "vllm" | LLM 타입 (vllm, ollama) |
-| `privacy_prompt_type` | FormData | "privacy_remover_default_v6" | 프롬프트 타입 |
-| `vllm_model_name` | FormData | "/model/qwen30_thinking_2507" | vLLM 모델명 (Qwen) |
-| `VLLM_BASE_URL` | env | "http://localhost:8001/v1/chat/completions" | vLLM 엔드포인트 |
+| 설정값 | 출처 | 기본값 | 현행 호출값 | 용도 |
+|--------|------|--------|-------------|------|
+| **`privacy_removal`** | FormData | "false" | ✅ **"true"** (upload.html) | 활성화 여부 |
+| **`privacy_llm_type`** | FormData | "vllm" | ✅ **"vllm"** | LLM 타입 |
+| **`privacy_prompt_type`** | FormData | "privacy_remover_default_v6" | ✅ **"privacy_remover_default_v6"** | 프롬프트 타입 |
+| **`vllm_model_name`** | FormData | None | ✅ **"/model/qwen30_thinking_2507"** | vLLM 모델 |
+| `QWEN_API_BASE` | env | "http://localhost:8001/v1" | ✅ vLLM 서버 | 엔드포인트 |
+| `temperature` | 코드 | 0.3 | ✅ 0.3 | 창의성 |
+| `max_tokens` | 코드 | 32768 | ✅ 32768 | 최대 토큰 |
 
-**코드 위치**: `api_server/transcribe_endpoint.py:228-340`
+**호출 코드**:
 
-**동작 흐름**:
+**Web UI 측** (web_ui/app/services/analysis_service.py:661):
 ```python
-async def perform_privacy_removal():
+stt_result = await stt_service.transcribe_local_file(
+    file_path=str(file_path),
+    language="ko",
+    is_stream=False,
+    privacy_removal=True,  # ✅ 항상 활성화
+    classification=False,
+    ai_agent=include_classification,
+    element_detection=True
+)
+```
+
+**API 서버 측** (api_server/transcribe_endpoint.py:228-273):
+```python
+async def perform_privacy_removal(
+    text: str,
+    prompt_type: str = "privacy_remover_default_v6",
+    llm_type: str = "vllm",  # ✅ 기본값 vllm
+    vllm_model_name: Optional[str] = None,  # /model/qwen30_thinking_2507
+    ...
+):
     privacy_service = get_privacy_remover_service()
+    result = await privacy_service.process_text(
+        usertxt=text,
+        prompt_type=normalized_prompt_type,
+        max_tokens=32768,  # ✅ 32768
+        temperature=0.3,   # ✅ 0.3
+        model_name=model_name  # ✅ Qwen 모델 전달
+    )
+```
+
+**LLM 라우팅** (api_server/services/privacy_remover.py:26-62):
+```python
+class LLMClientFactory:
+    @staticmethod
+    def create_client(model_name: str):
+        model_lower = model_name.lower()
+        if 'qwen' in model_lower:
+            logger.info(f"Qwen 클라이언트 생성: {model_name}")
+            return QwenClient(model_name)  # ✅ Qwen → QwenClient
+```
+
+**vLLM 연결** (api_server/services/privacy_remover.py:290-318):
+```python
+class QwenClient:
+    def __init__(self, model_name: str):
+        api_base = os.getenv("QWEN_API_BASE") or "http://localhost:8001/v1"  # ✅ 기본값
+        self.client = openai.OpenAI(api_key=api_key, base_url=api_base)
+```
+
+**Fallback 메커니즘**:
+1. **JSON 파싱 실패** → Regex fallback (api_server/services/privacy_remover.py:630-650)
+2. **LLM 연결 실패** → Regex fallback (api_server/services/privacy_remover.py:654-680)
+3. **모든 실패** → 원본 텍스트 반환
     result = await privacy_service.process_text(
         usertxt=text,
         prompt_type=normalized_prompt_type,  # ✅ 자동 정규화 (v6로 통일)

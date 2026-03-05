@@ -37,6 +37,10 @@ async def transcribe_v2(
     # === 개인정보 처리 ===
     privacy_removal: str = Form("false"),
     privacy_prompt_type: str = Form("privacy_remover_default_v6"),
+    # === 개인정보 처리 ===
+    privacy_removal: str = Form("false"),
+    privacy_llm_type: str = Form("vllm"),              # ✅ 기본값 vllm
+    privacy_prompt_type: str = Form("privacy_remover_default_v6"),  # ✅ 기본 프롬프트
     
     # === 통화 분류 ===
     classification: str = Form("false"),
@@ -58,19 +62,120 @@ async def transcribe_v2(
 
 ---
 
+## 3. 현행 LLM 호출 옵션 처리
+
+### Privacy Removal 옵션 (현재 사용 방식)
+
+**파라미터 명세** (api_server/transcribe_endpoint.py:46-50):
+```python
+privacy_removal: str = Form("false")              # 기본값 false (API 기본)
+privacy_llm_type: str = Form("vllm")              # ✅ 기본값: vllm
+privacy_prompt_type: str = Form("privacy_remover_default_v6")  # ✅ 기본값
+```
+
+**Web UI 호출** (web_ui/app/services/analysis_service.py:661):
+```python
+stt_result = await stt_service.transcribe_local_file(
+    file_path=str(file_path),
+    language="ko",
+    is_stream=False,
+    privacy_removal=True,  # ✅ Python boolean True
+    classification=False,
+    ai_agent=include_classification,
+    element_detection=True
+)
+```
+
+**FormData 변환** (web_ui/app/services/stt_service.py:141):
+```python
+data.add_field("privacy_removal", str(privacy_removal).lower())
+# True → "true" (문자열로 변환)
+```
+
+**API 서버 파싱** (api_server/transcribe_endpoint.py:58):
+```python
+self.privacy_removal = privacy_removal.lower() in ['true', '1', 'yes', 'on']
+# "true" → True (boolean 변환) ✅
+```
+
+**LLM 라우팅** (api_server/services/privacy_remover.py:26-62):
+```python
+class LLMClientFactory:
+    @staticmethod
+    def create_client(model_name: str):
+        model_lower = model_name.lower()
+        if 'qwen' in model_lower:
+            logger.info(f"Qwen 클라이언트 생성: {model_name}")
+            return QwenClient(model_name)  # ✅ 모델명 감지 후 라우팅
+```
+
+**vLLM 설정** (api_server/services/privacy_remover.py:290-318):
+```python
+class QwenClient:
+    def __init__(self, model_name: str):
+        api_key = os.getenv("QWEN_API_KEY") or os.getenv("OPENAI_API_KEY") or "dummy"
+        api_base = os.getenv("QWEN_API_BASE") or "http://localhost:8001/v1"  # ✅ vLLM 기본값
+        
+        if not api_base.endswith('/v1'):
+            api_base = api_base + '/v1'
+        
+        self.client = openai.OpenAI(api_key=api_key, base_url=api_base)
+        self.model_name = model_name
+        self.api_base = api_base
+```
+
+**처리 파라미터** (api_server/transcribe_endpoint.py:268-273):
+```python
+result = await privacy_service.process_text(
+    usertxt=text,
+    prompt_type=normalized_prompt_type,    # "privacy_remover_default_v6"
+    max_tokens=32768,                      # ✅ 고정값
+    temperature=0.3,                       # ✅ 저온도 (일관성)
+    model_name=model_name                  # "/model/qwen30_thinking_2507"
+)
+```
+
+**현행 호출 흐름**:
+```
+upload.html: privacy_removal=True (boolean)
+    ↓
+stt_service: str(True).lower() = "true"
+    ↓
+API FormData: privacy_removal="true" (문자열)
+    ↓
+TranscribeRequest: "true" → True (boolean)
+    ↓
+perform_privacy_removal(llm_type="vllm", ...)
+    ↓
+LLMClientFactory.create_client("Qwen...") → QwenClient
+    ↓
+QwenClient.generate_response()
+    ├─ api_base: http://localhost:8001/v1
+    ├─ model: Qwen3-30B-A3B-Thinking-2507-FP8
+    ├─ temperature: 0.3
+    ├─ max_tokens: 32768
+    └─ response JSON 파싱
+        ├─ 성공: privacy_removal 결과 반환
+        └─ 실패: Regex fallback 자동 전환 ✅
+```
+
+---
+
 ## 3. LLM 호출 옵션 처리 방식
 
 ### 문제점
 현재 각 단계별로 **프롬프트 타입이 고정**되어 있음:
-- Privacy Removal: `privacy_prompt_type`
-- Classification: `classification_prompt_type`
+- Privacy Removal: `privacy_prompt_type="privacy_remover_default_v6"` (고정)
+- Classification: `classification_prompt_type="classification_default_v1"` (고정)
 - AI Agent: 별도 옵션 없음
 
 ### 해결책: 옵션 기반 플로우
 
-#### 방식 1: 프롬프트 기반 (현재)
+#### 방식 1: 프롬프트 기반 (현재 ✅)
 ```
-text + prompt_type 
+text + prompt_type + llm_type + model_name
+    ↓
+LLMClientFactory로 클라이언트 라우팅
     ↓
 LLM에 프롬프트와 함께 전송
     ↓
@@ -78,6 +183,7 @@ LLM에 프롬프트와 함께 전송
 ```
 
 **장점**: 정확한 응답 형식 보장  
+**현행**: vLLM Qwen으로 통일, Fallback으로 안정성 확보 ✅
 **단점**: 프롬프트 변경 시 API 수정 필요
 
 #### 방식 2: 옵션 기반 (권장)
