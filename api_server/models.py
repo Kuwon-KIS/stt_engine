@@ -285,7 +285,7 @@ class TranscribeResponse(BaseModel):
                 "stt": True,
                 "privacy_removal": True,
                 "classification": True,
-                "ai_agent": False
+                "element_detection": False
             },
             "processing_time_seconds": 8.5,
             "processing_mode": "normal",
@@ -332,7 +332,7 @@ class ErrorResponse(BaseModel):
                 "stt": False,
                 "privacy_removal": False,
                 "classification": False,
-                "ai_agent": False
+                "element_detection": False
             }
         }
 

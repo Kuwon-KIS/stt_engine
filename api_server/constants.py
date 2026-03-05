@@ -17,7 +17,7 @@ class ProcessingStep(str, Enum):
     STT = "stt"                          # 필수: Speech-to-Text (faster-whisper)
     PRIVACY_REMOVAL = "privacy_removal"  # 선택: 개인정보 제거 (vLLM)
     CLASSIFICATION = "classification"    # 선택: 통화 카테고리 분류 (vLLM)
-    AI_AGENT = "ai_agent"               # 선택: AI Agent 기반 정보 추출
+    ELEMENT_DETECTION = "element_detection"  # 선택: 요소 탐지 (불완전판매/부당권유 등)
 
 
 # ============================================================================

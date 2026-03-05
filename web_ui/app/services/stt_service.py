@@ -45,7 +45,6 @@ class STTService:
         backend: str = None,
         privacy_removal: bool = False,
         classification: bool = False,
-        ai_agent: bool = False,
         element_detection: bool = True,
         agent_url: str = "",
         agent_request_format: str = "text_only"
@@ -64,9 +63,8 @@ class STTService:
             backend: 백엔드 선택 (faster-whisper, transformers, openai-whisper)
             privacy_removal: 개인정보 제거 여부
             classification: 통화 분류 여부
-            ai_agent: AI Agent 처리 여부
             element_detection: 요소 탐지 여부 (항상 enabled)
-            agent_url: Agent 서버 URL
+            agent_url: Agent 서버 URL (element_detection용)
             agent_request_format: Agent 요청 형식 (text_only 또는 prompt_based)
         
         Returns:
@@ -75,7 +73,7 @@ class STTService:
         try:
             logger.info(f"[STT Service] 파일 처리 시작: {file_path}")
             logger.info(f"  - 언어: {language}, 스트림: {is_stream}, 백엔드: {backend}")
-            logger.info(f"  - 처리 단계: Privacy={privacy_removal}, Classification={classification}, AI={ai_agent}, ElementDetection={element_detection}")
+            logger.info(f"  - 처리 단계: Privacy={privacy_removal}, Classification={classification}, ElementDetection={element_detection}")
             if element_detection and agent_url:
                 logger.info(f"  - Agent URL: {agent_url}, Format: {agent_request_format}")
             
@@ -101,11 +99,10 @@ class STTService:
                 # 처리 단계 옵션 추가
                 data.add_field("privacy_removal", str(privacy_removal).lower())
                 data.add_field("classification", str(classification).lower())
-                data.add_field("ai_agent", str(ai_agent).lower())
                 data.add_field("element_detection", str(element_detection).lower())
                 
                 # Agent 관련 설정
-                if agent_url:  # element_detection과 무관하게 agent_url이 있으면 전달
+                if agent_url:  # element_detection을 위한 외부 AI Agent URL
                     data.add_field("agent_url", agent_url)
                     data.add_field("agent_request_format", agent_request_format)
                 
@@ -151,7 +148,7 @@ class STTService:
                                 
                                 # processing_steps 로깅
                                 steps = result.get("processing_steps", {})
-                                logger.info(f"[STT Service] 처리 단계: STT={steps.get('stt')}, Privacy={steps.get('privacy_removal')}, Classification={steps.get('classification')}, AI={steps.get('ai_agent')}, ElementDetection={steps.get('element_detection')}")
+                                logger.info(f"[STT Service] 처리 단계: STT={steps.get('stt')}, Privacy={steps.get('privacy_removal')}, Classification={steps.get('classification')}, ElementDetection={steps.get('element_detection')}")
                                 
                                 # 요소 탐지 결과 로깅
                                 if element_detection and result.get('element_detection'):
@@ -200,7 +197,7 @@ class STTService:
             logger.error(f"[STT Service] 백엔드 정보 조회 실패: {e}")
             return {}
     
-    async def process_transcribe_job(self, job, privacy_removal: bool = False, classification: bool = False, ai_agent: bool = False, element_detection: bool = True, agent_url: str = "", agent_request_format: str = "text_only") -> dict:
+    async def process_transcribe_job(self, job, privacy_removal: bool = False, classification: bool = False, element_detection: bool = True, agent_url: str = "", agent_request_format: str = "text_only") -> dict:
         """
         비동기 작업 큐에서 호출되는 메서드
         job 객체의 상태를 업데이트하면서 처리
@@ -209,7 +206,7 @@ class STTService:
             job: TranscribeJob 객체
             privacy_removal: 개인정보 제거 여부
             classification: 통화 분류 여부
-            ai_agent: AI Agent 처리 여부
+            ai_agent: 요소 탐지 여부
             element_detection: 요소 탐지 여부 (항상 enabled)
             agent_url: Agent 서버 URL
             agent_request_format: Agent 요청 형식 (text_only 또는 prompt_based)
@@ -220,7 +217,7 @@ class STTService:
         try:
             logger.info(f"[STT Service] 비동기 처리 시작: {job.job_id}")
             logger.info(f"  - 파일: {job.file_path}")
-            logger.info(f"  - 처리 단계: Privacy={privacy_removal}, Classification={classification}, AI={ai_agent}, ElementDetection={element_detection}")
+            logger.info(f"  - 처리 단계: Privacy={privacy_removal}, Classification={classification}, ElementDetection={element_detection}")
             if element_detection and agent_url:
                 logger.info(f"  - Agent URL: {agent_url}, Format: {agent_request_format}")
             
@@ -243,7 +240,6 @@ class STTService:
                 data.add_field("is_stream", str(job.is_stream).lower())
                 data.add_field("privacy_removal", str(privacy_removal).lower())
                 data.add_field("classification", str(classification).lower())
-                data.add_field("ai_agent", str(ai_agent).lower())
                 data.add_field("element_detection", str(element_detection).lower())
                 
                 # Agent 관련 설정
@@ -500,7 +496,7 @@ class STTService:
                 "stt": True,  # ✅ boolean으로 수정
                 "privacy_removal": False,
                 "classification": False,
-                "ai_agent": False
+                "element_detection": False
             },
             "file_path": file_path,
             "_note": "⚠️ STT API 미응답으로 Dummy 응답이 반환되었습니다. STT 엔진이 실행 중인지 확인하세요.",

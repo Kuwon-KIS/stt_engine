@@ -647,12 +647,12 @@ class AnalysisService:
                         user_dir = get_user_upload_dir(emp_id)
                         file_path = user_dir / folder_path / filename
                         
-                        # STT API 호출 (순서: STT → privacy_removal → element_detection → agent)
+                        # STT API 호출 (순서: STT → privacy_removal → element_detection)
                         logger.info(f"[process_analysis_sync] STT API 호출 시작: {filename}")
                         logger.info(f"[process_analysis_sync]   - file_path: {file_path}")
                         logger.info(f"[process_analysis_sync]   - privacy_removal: True (항상 수행)")
                         logger.info(f"[process_analysis_sync]   - element_detection: True (항상 수행)")
-                        logger.info(f"[process_analysis_sync]   - ai_agent: {include_classification} (요청에 따라)")
+                        logger.info(f"[process_analysis_sync]   - classification: {include_classification} (요청에 따라)")
                         
                         stt_result = await stt_service.transcribe_local_file(
                             file_path=str(file_path),
@@ -660,7 +660,6 @@ class AnalysisService:
                             is_stream=False,
                             privacy_removal=True,  # privacy_removal 항상 수행
                             classification=False,
-                            ai_agent=include_classification,  # agent는 사용자 요청에 따라
                             element_detection=True  # element_detection 항상 수행
                         )
                         
@@ -693,10 +692,6 @@ class AnalysisService:
                                 if element_elem:
                                     logger.info(f"[process_analysis_sync]     - agent_type: {element_elem.get('agent_type')}")
                                     logger.info(f"[process_analysis_sync]     - detected_sentences: {len(element_elem.get('detected_sentences', []))}")
-                            
-                            # AI Agent 결과 로깅 (ai_agent=True인 경우)
-                            if include_classification and processing_steps.get('ai_agent'):
-                                logger.info(f"[process_analysis_sync]   - ai_agent: {processing_steps['ai_agent']}")
                         else:
                             error_msg = stt_result.get('message', stt_result.get('error', 'Unknown error'))
                             logger.warning(f"[process_analysis_sync]   - error: {error_msg}")

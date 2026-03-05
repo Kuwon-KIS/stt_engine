@@ -45,7 +45,7 @@ class TranscribeRequestParams:
         is_stream: str = Form("false"),
         privacy_removal: str = Form("false"),
         classification: str = Form("false"),
-        incomplete_elements_check: str = Form("false"),
+        element_detection: str = Form("true"),
         agent_url: str = Form(""),
         agent_request_format: str = Form("text_only"),
         export: Optional[str] = None,
@@ -57,8 +57,8 @@ class TranscribeRequestParams:
         self.is_stream = is_stream.lower() in ['true', '1', 'yes', 'on']
         self.privacy_removal = privacy_removal.lower() in ['true', '1', 'yes', 'on']
         self.classification = classification.lower() in ['true', '1', 'yes', 'on']
-        self.incomplete_elements_check = incomplete_elements_check.lower() in ['true', '1', 'yes', 'on']
-        self.agent_url = agent_url  # Agent 서버 URL
+        self.element_detection = element_detection.lower() in ['true', '1', 'yes', 'on']
+        self.agent_url = agent_url  # Agent 서버 URL (element_detection용)
         self.agent_request_format = agent_request_format  # 'text_only' 또는 'prompt_based'
         self.export = export
         self.privacy_prompt_type = privacy_prompt_type
@@ -77,12 +77,8 @@ class TranscribeRequestParams:
                 steps.append(ProcessingStep.PRIVACY_REMOVAL)
             steps.append(ProcessingStep.CLASSIFICATION)
         
-        if self.ai_agent:
-            if ProcessingStep.PRIVACY_REMOVAL not in steps:
-                steps.append(ProcessingStep.PRIVACY_REMOVAL)
-            if ProcessingStep.CLASSIFICATION not in steps:
-                steps.append(ProcessingStep.CLASSIFICATION)
-            steps.append(ProcessingStep.AI_AGENT)
+        if self.element_detection:
+            steps.append(ProcessingStep.ELEMENT_DETECTION)
         
         return steps
 

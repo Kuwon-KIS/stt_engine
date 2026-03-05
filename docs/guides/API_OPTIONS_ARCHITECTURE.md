@@ -114,7 +114,7 @@ class LLMClientFactory:
 class QwenClient:
     def __init__(self, model_name: str):
         api_key = os.getenv("QWEN_API_KEY") or os.getenv("OPENAI_API_KEY") or "dummy"
-        api_base = os.getenv("QWEN_API_BASE") or "http://localhost:8001/v1"  # ✅ vLLM 기본값
+        api_base = os.getenv("VLLM_QWEN_API_BASE") or "http://localhost:8001/v1"  # ✅ vLLM 기본값
         
         if not api_base.endswith('/v1'):
             api_base = api_base + '/v1'

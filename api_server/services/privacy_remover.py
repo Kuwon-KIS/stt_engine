@@ -300,8 +300,8 @@ class QwenClient:
         try:
             import openai
             # Qwen은 OpenAI 호환 API 사용 (vLLM, Ollama, 또는 Qwen 공식 API)
-            api_key = os.getenv("QWEN_API_KEY") or os.getenv("OPENAI_API_KEY") or "dummy"
-            api_base = os.getenv("QWEN_API_BASE") or os.getenv("OPENAI_API_BASE") or "http://localhost:8001/v1"
+            api_key = os.getenv("VLLM_QWEN_API_KEY") or os.getenv("OPENAI_API_KEY") or "dummy"
+            api_base = os.getenv("VLLM_QWEN_API_BASE") or os.getenv("OPENAI_API_BASE") or "http://localhost:8001/v1"
             
             # vLLM 또는 Ollama의 /v1 엔드포인트 사용
             if not api_base.endswith('/v1'):
