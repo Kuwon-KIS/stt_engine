@@ -222,6 +222,17 @@ COPY --chown=stt-user:stt-user requirements.txt /app/
 COPY --chown=stt-user:stt-user api_server/ /app/api_server/
 COPY --chown=stt-user:stt-user utils/ /app/utils/
 
+# ============================================================================
+# Step 12-1: 프롬프트 파일 복사 (Element Detection + Privacy Removal)
+# ============================================================================
+# 통합 프롬프트 디렉토리 - 모든 프롬프트 파일이 한곳에 관리됨
+# - element_detection_qwen.prompt: Element Detection vLLM용 프롬프트
+# - privacy_remover_default_v6.prompt: Privacy Removal 기본 프롬프트
+# - privacy_remover_loosed_contact_v6.prompt: Privacy Removal 확장 프롬프트
+# - 기타 버전별 프롬프트 파일들
+
+COPY --chown=stt-user:stt-user api_server/services/prompts/ /app/api_server/services/prompts/
+
 # Python 환경 변수
 ENV PYTHONUNBUFFERED=1
 ENV HF_HOME=/app/models
