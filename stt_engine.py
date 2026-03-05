@@ -323,6 +323,7 @@ class WhisperSTT:
         self.device = device if device != "auto" else ("cuda" if self._is_cuda_available() else "cpu")
         self.compute_type = compute_type
         self.backend = None
+        self.preset = None  # 현재 선택된 프리셋 저장용
         
         # 사용 가능한 백엔드 추적용 플래그
         self.faster_whisper_available = False
@@ -753,7 +754,26 @@ class WhisperSTT:
             
             # Whisper 최대 입력: 30초 (480,000 샘플 @ 16kHz)
             max_samples = 30 * sr  # 480,000 샘플
-            hop_length = max_samples // 2  # 15초 오버랩
+            
+            # 프리셋에 따라 동적으로 오버랩 조정
+            from api_server.constants import PRESET_SEGMENT_CONFIG
+            
+            # 현재 프리셋 또는 기본값(accuracy) 사용
+            current_preset = self.preset or "accuracy"
+            if current_preset == "custom" or current_preset not in PRESET_SEGMENT_CONFIG:
+                current_preset = "accuracy"
+            
+            preset_config = PRESET_SEGMENT_CONFIG.get(current_preset, PRESET_SEGMENT_CONFIG["accuracy"])
+            overlap_seconds = preset_config["overlap_duration"]
+            overlap_samples = int(overlap_seconds * sr)
+            
+            # hop_length 계산: 세그먼트 사이의 이동 거리
+            hop_length = max_samples - overlap_samples
+            
+            logger.info(f"[transformers] 세그멘트 설정 (프리셋: {current_preset})")
+            logger.info(f"  - 세그먼트 크기: 30초 ({max_samples:,} 샘플)")
+            logger.info(f"  - 오버랩: {overlap_seconds}초 ({overlap_samples:,} 샘플)")
+            logger.info(f"  - 이동거리(hop_length): {hop_length/sr:.1f}초 ({hop_length:,} 샘플)")
             
             all_texts = []
             start_idx = 0
@@ -1224,12 +1244,16 @@ class WhisperSTT:
                 compute_type = preset_config["compute_type"]
                 device = preset_config["device"]
                 
+                # ✅ 선택된 프리셋 저장 (_transcribe_with_transformers에서 사용)
+                self.preset = preset
+                
                 logger.info(f"   📌 {preset.upper()} 프리셋 설정:")
                 logger.info(f"      backend={backend}")
                 logger.info(f"      compute_type={compute_type}")
                 logger.info(f"      device={device}")
             else:
                 # custom: 사용자가 지정한 backend/compute_type/device 사용
+                self.preset = "custom"
                 logger.info(f"   📌 CUSTOM 모드 (사용자 지정값 사용):")
                 logger.info(f"      backend={backend}")
                 logger.info(f"      compute_type={compute_type}")
