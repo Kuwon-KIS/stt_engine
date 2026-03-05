@@ -404,7 +404,7 @@ async function transcribeFile() {
         formData.append('vllm_model_name', '/model/qwen30_thinking_2507');  // ✅ Qwen 모델
         formData.append('classification', classification ? 'true' : 'false');
         formData.append('element_detection', 'true');  // ✅ 요소 탐지 활성화
-        formData.append('detection_api_type', 'local');  // vLLM 사용
+        formData.append('detection_api_type', 'vllm');  // ✅ vLLM 사용 (local -> vllm 정규화)
         formData.append('detection_llm_type', 'vllm');  // vLLM 타입
         formData.append('vllm_model_name', '/model/qwen30_thinking_2507');  // Qwen 모델
         if (agentUrl) formData.append('agent_url', agentUrl);
