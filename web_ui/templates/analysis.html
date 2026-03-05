@@ -1206,10 +1206,10 @@
                 <td style="text-align: left;">${result.filename}</td>
                 <td style="text-align: center;">
                     <div class="audio-player">
-                        <audio controls preload="metadata">
-                            <source src="${audioUrl}" type="audio/wav">
-                            <source src="${audioUrl}" type="audio/mp3">
-                            <source src="${audioUrl}" type="audio/mpeg">
+                        <audio id="audio-${encodeURIComponent(result.filename)}" controls preload="none" onplay="loadAudioSource(this, '${audioUrl}')">
+                            <source type="audio/wav">
+                            <source type="audio/mp3">
+                            <source type="audio/mpeg">
                             지원하지 않는 브라우저입니다.
                         </audio>
                     </div>
@@ -1682,6 +1682,23 @@
             setTimeout(() => {
                 notification.remove();
             }, 3000);
+        }
+
+        // 오디오 소스 동적 로드 (재생 시에만 로드)
+        function loadAudioSource(audioElement, audioUrl) {
+            // 이미 src가 설정되어 있으면 스킵
+            if (audioElement.querySelector('source[src]')) {
+                return;
+            }
+            
+            // 모든 source 요소에 src 속성 설정
+            const sources = audioElement.querySelectorAll('source');
+            sources.forEach(source => {
+                source.src = audioUrl;
+            });
+            
+            // 오디오 로드
+            audioElement.load();
         }
 
         // 분석 이력 모달 표시
