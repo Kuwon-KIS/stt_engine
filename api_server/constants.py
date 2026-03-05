@@ -229,12 +229,10 @@ SUPPORTED_LANGUAGES = ["ko", "en", "ja", "zh", "es", "fr", "de", "it", "pt", "ru
 # ============================================================================
 
 # vLLM 설정
-VLLM_BASE_URL = "http://localhost:8001/v1/chat/completions"
-VLLM_MODEL_NAME = "qwen2.5-7b"
-
-# Ollama 설정
-OLLAMA_BASE_URL = "http://localhost:11434/api/generate"
-OLLAMA_MODEL_NAME = "qwen2.5"
+VLLM_BASE_URL = "http://localhost:8001"              # 베이스 URL만
+VLLM_API_ENDPOINT = "/v1/chat/completions"          # OpenAI 호환 엔드포인트
+VLLM_MODEL_NAME = "qwen30_thinking_2507"            # 기본 모델명 (경로 제외)
+VLLM_MODEL_NAME_FULL = "/model/qwen30_thinking_2507"  # 전체 경로 포함 (환경변수에서 사용 가능)
 
 # 외부 API 설정 (없으면 None)
 EXTERNAL_API_URL = None  # 예: "http://localhost:8002/detect"

@@ -299,16 +299,12 @@ class QwenClient:
         load_dotenv()
         try:
             import openai
-            # Qwen은 OpenAI 호환 API 사용 (vLLM, Ollama, 또는 Qwen 공식 API)
-            api_key = os.getenv("VLLM_QWEN_API_KEY") or os.getenv("OPENAI_API_KEY") or "dummy"
-            api_base = os.getenv("VLLM_QWEN_API_BASE") or os.getenv("OPENAI_API_BASE") or "http://localhost:8001/v1"
-            
-            # vLLM 또는 Ollama의 /v1 엔드포인트 사용
-            if not api_base.endswith('/v1'):
-                if api_base.endswith('/'):
-                    api_base = api_base + 'v1'
-                else:
-                    api_base = api_base + '/v1'
+            # Qwen은 OpenAI 호환 API 사용 (vLLM)
+            api_key = os.getenv("OPENAI_API_KEY") or "dummy"
+            # VLLM_BASE_URL + VLLM_API_ENDPOINT 조합
+            base_url = os.getenv("VLLM_BASE_URL", "http://localhost:8001")
+            endpoint = os.getenv("VLLM_API_ENDPOINT", "/v1/chat/completions")
+            api_base = base_url.rstrip('/') + endpoint
             
             self.client = openai.OpenAI(api_key=api_key, base_url=api_base)
             self.model_name = model_name
@@ -521,9 +517,9 @@ class PrivacyRemoverService:
         """
         load_dotenv()
         
-        # LLM 모델: 기본값은 vLLM (Qwen3-30B-A3B-Thinking)
-        # 또는 환경변수 LLM_MODEL_NAME으로 override 가능
-        self.model_name = os.getenv("LLM_MODEL_NAME") or os.getenv("QWEN_MODEL_NAME") or "/model/qwen30_thinking_2507"
+        # LLM 모델: 환경변수 VLLM_MODEL_NAME 또는 기본값
+        from api_server.constants import VLLM_MODEL_NAME
+        self.model_name = os.getenv("VLLM_MODEL_NAME", VLLM_MODEL_NAME)
         self.llm_client = None
         self.prompt_processor = SimplePromptProcessor(prompts_dir)
         self._initialized = False

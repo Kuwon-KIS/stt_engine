@@ -227,8 +227,7 @@ async def perform_privacy_removal(
     text: str,
     prompt_type: str = "privacy_remover_default_v6",
     llm_type: str = "vllm",
-    vllm_model_name: Optional[str] = None,
-    ollama_model_name: Optional[str] = None
+    vllm_model_name: Optional[str] = None
 ) -> Optional[PrivacyRemovalResult]:
     """
     Privacy Removal 수행
@@ -239,7 +238,7 @@ async def perform_privacy_removal(
     프롬프트 처리 흐름:
     1. 프롬프트 파일(privacy_remover_default_v6.prompt)에서 템플릿 로드
     2. {usertxt} 플레이스홀더를 실제 텍스트로 대체
-    3. 생성된 프롬프트를 LLM(vLLM/Ollama)에 전송
+    3. 생성된 프롬프트를 LLM(vLLM)에 전송
     4. LLM 응답 파싱 (JSON) 및 개인정보 제거 결과 추출
     5. 실패 시 regex fallback 적용
     
@@ -249,9 +248,8 @@ async def perform_privacy_removal(
                     - 'privacy_remover_default' 또는 'privacy_remover_default_v6': 기본 프롬프트
                     - 'privacy_remover_loosed_contact' 또는 'privacy_remover_loosed_contact_v6': 로우즈드 프롬프트
                     (기본값: privacy_remover_default_v6)
-        llm_type: LLM 타입 ('openai', 'vllm', 'ollama') (기본값: 'vllm')
-        vllm_model_name: vLLM 사용 시 모델명
-        ollama_model_name: Ollama 사용 시 모델명
+        llm_type: LLM 타입 ('vllm' 기본값)
+        vllm_model_name: vLLM 사용 시 모델명 (예: 'qwen30_thinking_2507')
     
     Returns:
         PrivacyRemovalResult 객체
@@ -263,13 +261,9 @@ async def perform_privacy_removal(
         privacy_service = get_privacy_remover_service()
         
         # 사용할 모델명 결정
-        model_name = None
-        if llm_type == "vllm" and vllm_model_name:
-            model_name = vllm_model_name
+        model_name = vllm_model_name
+        if model_name:
             logger.debug(f"[API/Transcribe] vLLM 모델 사용: {model_name}")
-        elif llm_type == "ollama" and ollama_model_name:
-            model_name = ollama_model_name
-            logger.debug(f"[API/Transcribe] Ollama 모델 사용: {model_name}")
         else:
             logger.debug(f"[API/Transcribe] 기본 모델 사용")
         
@@ -339,8 +333,7 @@ async def perform_classification(
     text: str,
     prompt_type: str,
     llm_type: str = "vllm",
-    vllm_model_name: Optional[str] = None,
-    ollama_model_name: Optional[str] = None
+    vllm_model_name: Optional[str] = None
 ) -> Optional[ClassificationResult]:
     """
     Classification 수행
@@ -348,9 +341,8 @@ async def perform_classification(
     Args:
         text: 분류할 텍스트
         prompt_type: 프롬프트 타입
-        llm_type: LLM 타입 ('openai', 'vllm', 'ollama') (기본값: 'openai')
-        vllm_model_name: vLLM 사용 시 모델명
-        ollama_model_name: Ollama 사용 시 모델명
+        llm_type: LLM 타입 ('vllm' 기본값)
+        vllm_model_name: vLLM 사용 시 모델명 (예: 'qwen30_thinking_2507')
     
     Returns:
         ClassificationResult 또는 None
@@ -701,11 +693,9 @@ async def _call_local_llm(
     Args:
         text: 처리할 텍스트
         detection_types: 탐지 대상 목록
-        llm_type: LLM 타입 ('vllm', 'ollama')
+        llm_type: LLM 타입 ('vllm')
         vllm_model_name: vLLM 모델명 (기본값: constants.VLLM_MODEL_NAME)
-        ollama_model_name: Ollama 모델명 (기본값: constants.OLLAMA_MODEL_NAME)
         vllm_base_url: vLLM 엔드포인트 URL (기본값: constants.VLLM_BASE_URL)
-        ollama_base_url: Ollama 엔드포인트 URL (기본값: constants.OLLAMA_BASE_URL)
         prompt_type: 프롬프트 타입 (기본값: 'element_detection_qwen')
     
     Returns:
@@ -714,19 +704,16 @@ async def _call_local_llm(
     try:
         import os
         from api_server.constants import (
-            VLLM_BASE_URL, VLLM_MODEL_NAME,
-            OLLAMA_BASE_URL, OLLAMA_MODEL_NAME
+            VLLM_BASE_URL, VLLM_API_ENDPOINT, VLLM_MODEL_NAME
         )
         
         # 기본값 적용
         vllm_model_name = vllm_model_name or os.getenv("VLLM_MODEL_NAME", VLLM_MODEL_NAME)
-        ollama_model_name = ollama_model_name or os.getenv("OLLAMA_MODEL_NAME", OLLAMA_MODEL_NAME)
         vllm_base_url = vllm_base_url or os.getenv("VLLM_BASE_URL", VLLM_BASE_URL)
-        ollama_base_url = ollama_base_url or os.getenv("OLLAMA_BASE_URL", OLLAMA_BASE_URL)
         
         logger.info(f"[Transcribe/ElementDetection] 로컬 LLM 호출 시작 (llm_type={llm_type})")
-        logger.info(f"  - 사용 URL: {vllm_base_url if llm_type == 'vllm' else ollama_base_url}")
-        logger.info(f"  - 사용 모델: {vllm_model_name if llm_type == 'vllm' else ollama_model_name}")
+        logger.info(f"  - 사용 URL: {vllm_base_url}")
+        logger.info(f"  - 사용 모델: {vllm_model_name}")
         logger.info(f"  - 탐지 대상: {detection_types}")
         logger.info(f"  - 텍스트 길이: {len(text)} 글자")
         
@@ -882,9 +869,7 @@ async def perform_element_detection(
     api_type: str = "fallback",
     llm_type: str = "vllm",
     vllm_model_name: Optional[str] = None,
-    ollama_model_name: Optional[str] = None,
     vllm_base_url: Optional[str] = None,
-    ollama_base_url: Optional[str] = None,
     element_detection_prompt_type: str = "element_detection_qwen",
     classification_result: dict = None,
     privacy_removal_result: dict = None,
@@ -896,22 +881,20 @@ async def perform_element_detection(
     Fallback 흐름:
     1. api_type이 'fallback'이면:
        - 1️⃣ 외부 AI Agent 호출 시도
-       - 2️⃣ 실패 시 → 로컬 vLLM/Ollama 호출 (localhost 기본값 사용)
+       - 2️⃣ 실패 시 → 로컬 vLLM 호출 (localhost 기본값 사용)
        - 3️⃣ 그것도 실패 시 → Dummy 결과 반환
     2. api_type이 'external'이면:
        - 외부 AI Agent만 호출
     3. api_type이 'vllm'이면:
-       - 로컬 LLM만 호출
+       - 로컬 vLLM만 호출
     
     Args:
         text: 처리할 텍스트 (정제되거나 원본 STT 결과)
         detection_types: 탐지 대상 목록 (예: ["incomplete_sales", "aggressive_sales"])
         api_type: API 방식 ("ai_agent"=외부 AI Agent, "vllm"=로컬 vLLM, "fallback"=자동 선택, 기본값: "fallback")
-        llm_type: LLM 타입 ('vllm'(기본값), 'ollama') - api_type이 "local"이나 "fallback"일 때 사용
-        vllm_model_name: vLLM 사용 시 모델명 (기본값: env VLLM_MODEL_NAME 또는 "qwen2.5-7b")
-        ollama_model_name: Ollama 사용 시 모델명 (기본값: env OLLAMA_MODEL_NAME 또는 "qwen2.5")
-        vllm_base_url: vLLM 엔드포인트 (기본값: env VLLM_BASE_URL 또는 "http://localhost:8001/v1/chat/completions")
-        ollama_base_url: Ollama 엔드포인트 (기본값: env OLLAMA_BASE_URL 또는 "http://localhost:11434/api/generate")
+        llm_type: LLM 타입 ('vllm' 기본값) - api_type이 "vllm"이나 "fallback"일 때 사용
+        vllm_model_name: vLLM 사용 시 모델명 (기본값: env VLLM_MODEL_NAME 또는 "qwen30_thinking_2507")
+        vllm_base_url: vLLM 엔드포인트 베이스 URL (기본값: env VLLM_BASE_URL 또는 "http://localhost:8001")
         element_detection_prompt_type: 요소 탐지 프롬프트 타입 (기본값: "element_detection_qwen")
         classification_result: 분류 결과
         privacy_removal_result: 개인정보 제거 결과

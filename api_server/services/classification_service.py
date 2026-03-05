@@ -44,7 +44,10 @@ class ClassificationService:
             vllm_model: vLLM 모델명 (기본값: env 또는 Qwen3-30B-A3B-Thinking-2507-FP8)
         """
         self.vllm_base_url = vllm_base_url or os.getenv('VLLM_BASE_URL', 'http://localhost:8001')
-        self.vllm_model = vllm_model or os.getenv('VLLM_MODEL', 'Qwen3-30B-A3B-Thinking-2507-FP8')
+        # URL 정규화: /v1/chat/completions이 있으면 제거
+        self.vllm_base_url = self.vllm_base_url.replace('/v1/chat/completions', '').rstrip('/') if '/v1/chat/completions' in self.vllm_base_url else self.vllm_base_url.rstrip('/')
+        # 모델명: form_data → 환경변수 → 기본값
+        self.vllm_model = vllm_model or os.getenv('VLLM_MODEL_NAME') or '/model/qwen30_thinking_2507'
         
         logger.info(f"[ClassificationService] 초기화 완료")
         logger.info(f"  vLLM Base URL: {self.vllm_base_url}")
@@ -229,11 +232,12 @@ class ClassificationService:
                 "top_p": 0.95,
             }
             
-            logger.debug(f"[ClassificationService] vLLM 호출: {self.vllm_base_url}/v1/chat/completions")
+            vllm_endpoint = f"{self.vllm_base_url}/v1/chat/completions"
+            logger.debug(f"[ClassificationService] vLLM 호출: {vllm_endpoint} (모델: {self.vllm_model})")
             
             async with aiohttp.ClientSession() as session:
                 async with session.post(
-                    f"{self.vllm_base_url}/v1/chat/completions",
+                    vllm_endpoint,
                     json=payload,
                     timeout=aiohttp.ClientTimeout(total=60)
                 ) as response:

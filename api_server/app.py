@@ -33,7 +33,7 @@ if str(app_root) not in sys.path:
 from stt_engine import WhisperSTT
 from stt_utils import check_memory_available, check_audio_file
 from utils.performance_monitor import PerformanceMonitor
-from api_server.constants import ErrorCode, PRESET_SEGMENT_CONFIG
+from api_server.constants import ErrorCode, PRESET_SEGMENT_CONFIG, VLLM_MODEL_NAME
 from api_server.services.privacy_remover import (
     PrivacyRemoverService,
     _async_get_privacy_remover_service
@@ -47,6 +47,20 @@ from api_server.transcribe_endpoint import (
     build_transcribe_response,
 )
 from api_server.models import ClassificationResult
+
+
+# ============================================================================
+# 유틸리티 함수
+# ============================================================================
+
+def _normalize_model_name(model_name: str) -> str:
+    """
+    모델명에서 /model/ 경로 제거
+    예: "/model/qwen30_thinking_2507" -> "qwen30_thinking_2507"
+    """
+    if model_name and model_name.startswith('/model/'):
+        return model_name.replace('/model/', '', 1)
+    return model_name
 
 
 # 로깅 설정
@@ -415,29 +429,37 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
     stt_text = form_data.get('stt_text')
     language = form_data.get('language', 'ko')
     is_stream = form_data.get('is_stream', 'false')
+    
+    # Privacy Removal 설정
     privacy_removal = form_data.get('privacy_removal', 'false')
     privacy_llm_type = form_data.get('privacy_llm_type', 'vllm')
-    vllm_model_name = form_data.get('vllm_model_name')
-    ollama_model_name = form_data.get('ollama_model_name')
+    privacy_vllm_model_name = _normalize_model_name(form_data.get('privacy_vllm_model_name') or os.getenv('PRIVACY_VLLM_MODEL_NAME', os.getenv('VLLM_MODEL_NAME', VLLM_MODEL_NAME)))
+    privacy_prompt_type = form_data.get('privacy_prompt_type', 'privacy_remover_default_v6')
+    
+    # Classification 설정
     classification = form_data.get('classification', 'false')
     classification_llm_type = form_data.get('classification_llm_type', 'openai')
+    classification_vllm_model_name = _normalize_model_name(form_data.get('classification_vllm_model_name') or os.getenv('CLASSIFICATION_VLLM_MODEL_NAME', os.getenv('VLLM_MODEL_NAME', VLLM_MODEL_NAME)))
+    classification_prompt_type = form_data.get('classification_prompt_type', 'classification_default_v1')
+    
+    # Element Detection 설정
     element_detection = form_data.get('element_detection', 'false')
     detection_types = form_data.get('detection_types', '')  # CSV: "incomplete_sales,aggressive_sales"
-    
-    # API 타입 정규화: 'external' -> 'ai_agent', 'local' -> 'vllm'
-    detection_api_type_input = form_data.get('detection_api_type', 'fallback')  # fallback/ai_agent/vllm
+    detection_api_type_input = form_data.get('detection_api_type') or os.getenv('ELEMENT_DETECTION_API_TYPE', 'fallback')
     detection_api_type_map = {'external': 'ai_agent', 'local': 'vllm'}  # 레거시 호환성
     detection_api_type = detection_api_type_map.get(detection_api_type_input, detection_api_type_input)
-    
-    detection_llm_type = form_data.get('detection_llm_type', 'vllm')  # vllm, ollama (기본값 변경: openai -> vllm)
-    agent_url = form_data.get('agent_url', '')  # Element Detection 외부 API URL
-    privacy_prompt_type = form_data.get('privacy_prompt_type', 'privacy_remover_default_v6')
-    classification_prompt_type = form_data.get('classification_prompt_type', 'classification_default_v1')
+    detection_llm_type = form_data.get('detection_llm_type', 'vllm')
+    detection_vllm_model_name = _normalize_model_name(form_data.get('detection_vllm_model_name') or os.getenv('DETECTION_VLLM_MODEL_NAME', os.getenv('VLLM_MODEL_NAME', VLLM_MODEL_NAME)))
     element_detection_prompt_type = form_data.get('element_detection_prompt_type', 'element_detection_qwen')
+    agent_url = form_data.get('agent_url', '')  # Element Detection 외부 API URL
     
     # DEBUG: FormData 내용 로깅
     logger.info(f"[DEBUG] FormData Keys: {list(form_data.keys())}")
     logger.info(f"[DEBUG] element_detection value: {repr(element_detection)} (type: {type(element_detection).__name__})")
+    logger.info(f"[DEBUG] LLM 모델 설정:")
+    logger.info(f"  - Privacy: {privacy_llm_type}/{privacy_vllm_model_name}")
+    logger.info(f"  - Classification: {classification_llm_type}/{classification_vllm_model_name}")
+    logger.info(f"  - Detection: {detection_llm_type}/{detection_vllm_model_name}")
     
     # 처리 시간 측정
     start_time = time.time()
@@ -550,12 +572,12 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
         privacy_result = None
         
         if privacy_removal_enabled:
+            logger.info(f"[API] Privacy Removal 처리 시작 (llm_type={privacy_llm_type}, model={privacy_vllm_model_name})")
             privacy_result = await perform_privacy_removal(
                 text=stt_result.get('text', ''),
                 prompt_type=privacy_prompt_type,
                 llm_type=privacy_llm_type,
-                vllm_model_name=vllm_model_name,
-                ollama_model_name=ollama_model_name
+                vllm_model_name=privacy_vllm_model_name
             )
         
         # 4. Classification (선택)
@@ -566,12 +588,12 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
             # Classification을 위해서는 Privacy Removal이 먼저 수행되어야 함
             classification_text = privacy_result.text if privacy_result else stt_result.get('text', '')
             
+            logger.info(f"[API] Classification 처리 시작 (llm_type={classification_llm_type}, model={classification_vllm_model_name})")
             classification_response = await perform_classification(
                 text=classification_text,
                 prompt_type=classification_prompt_type,
                 llm_type=classification_llm_type,
-                vllm_model_name=vllm_model_name,
-                ollama_model_name=ollama_model_name
+                vllm_model_name=classification_vllm_model_name
             )
             
             if classification_response and classification_response.get('success', False):
@@ -597,20 +619,21 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
             # detection_types를 리스트로 파싱 (CSV 형식 지원)
             detection_types_list = [t.strip() for t in detection_types.split(',') if t.strip()] if detection_types else []
             
-            # vLLM/Ollama 엔드포인트 URL 설정
-            import os
-            vllm_base_url = os.getenv("VLLM_BASE_URL", "http://localhost:8001/v1/chat/completions")
-            ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/api/generate")
+            # vLLM 엔드포인트 URL 설정
+            vllm_base_url = os.getenv("VLLM_BASE_URL", "http://localhost:8001")
+            
+            # 로깅: Element Detection 호출 시 사용할 모델 확인
+            logger.info(f"[API] Element Detection 모델 설정:")
+            logger.info(f"  - LLM Type: {detection_llm_type}")
+            logger.info(f"  - vLLM Model: {detection_vllm_model_name}")
             
             element_response = await perform_element_detection(
                 text=detection_text,
                 detection_types=detection_types_list,
                 api_type=detection_api_type,
                 llm_type=detection_llm_type,
-                vllm_model_name=vllm_model_name,
-                ollama_model_name=ollama_model_name,
+                vllm_model_name=detection_vllm_model_name,
                 vllm_base_url=vllm_base_url,
-                ollama_base_url=ollama_base_url,
                 element_detection_prompt_type=element_detection_prompt_type,
                 classification_result=classification_result,
                 privacy_removal_result=privacy_result,
