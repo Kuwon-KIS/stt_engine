@@ -123,14 +123,37 @@ else
     log_success "기존 이미지 없음 (새로운 빌드)"
 fi
 
-# Step 3: 출력 디렉토리 생성
-log_step "3" "출력 디렉토리 생성"
+# Step 3: SheetJS 다운로드 (오프라인 배포용)
+log_step "3" "SheetJS 라이브러리 다운로드"
+
+STATIC_LIB_DIR="${WEB_UI_DIR}/static/lib"
+mkdir -p "$STATIC_LIB_DIR"
+
+SHEETJS_URL="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"
+SHEETJS_FILE="${STATIC_LIB_DIR}/xlsx.full.min.js"
+
+if [ -f "$SHEETJS_FILE" ] && [ -s "$SHEETJS_FILE" ]; then
+    SHEETJS_SIZE=$(du -h "$SHEETJS_FILE" | awk '{print $1}')
+    log_success "SheetJS 이미 다운로드됨 (크기: $SHEETJS_SIZE)"
+else
+    echo "SheetJS 다운로드 중... ($SHEETJS_URL)"
+    if curl -L -o "$SHEETJS_FILE" "$SHEETJS_URL" 2>/dev/null; then
+        SHEETJS_SIZE=$(du -h "$SHEETJS_FILE" | awk '{print $1}')
+        log_success "SheetJS 다운로드 완료 (크기: $SHEETJS_SIZE)"
+    else
+        echo "⚠️  경고: SheetJS 다운로드 실패 - Docker 빌드 중 재시도"
+        echo "   (네트워크 불가능한 경우 CDN 폴백 사용)"
+    fi
+fi
+
+# Step 4: 출력 디렉토리 생성
+log_step "4" "출력 디렉토리 생성"
 
 mkdir -p "$OUTPUT_DIR"
 log_success "출력 디렉토리: $OUTPUT_DIR"
 
-# Step 4: Docker 이미지 빌드
-log_step "4" "Docker 이미지 빌드 시작"
+# Step 5: Docker 이미지 빌드
+log_step "5" "Docker 이미지 빌드 시작"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  이미지: $IMAGE_TAG"
@@ -154,8 +177,8 @@ else
     log_error "Docker 이미지 빌드 실패"
 fi
 
-# Step 5: Docker 이미지 tar.gz으로 저장
-log_step "5" "Docker 이미지 저장 (tar.gz 압축)"
+# Step 6: Docker 이미지 tar.gz으로 저장
+log_step "6" "Docker 이미지 저장 (tar.gz 압축)"
 
 mkdir -p "$OUTPUT_DIR"
 
@@ -171,8 +194,8 @@ fi
 IMAGE_TAR_SIZE=$(du -sh "${OUTPUT_DIR}/stt-web-ui-${IMAGE_VERSION}.tar.gz" | awk '{print $1}')
 log_success "Docker 이미지 저장 완료 (크기: $IMAGE_TAR_SIZE)"
 
-# Step 6: 빌드 결과 저장
-log_step "6" "빌드 정보 저장"
+# Step 7: 빌드 결과 저장
+log_step "7" "빌드 정보 저장"
 
 BUILD_INFO_FILE="${OUTPUT_DIR}/web_ui_build_info_${IMAGE_VERSION}.txt"
 {
