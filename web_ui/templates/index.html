@@ -1,9 +1,31 @@
+<!--
+⚠️ LEGACY FILE - 마이그레이션 대상
+
+이 파일은 이전의 파일 업로드 기반 STT 인터페이스입니다.
+현재 권장되는 시스템은 폴더 기반 분석입니다.
+
+❌ 현재 상태 (index.html)
+   - Privacy Removal: false (개인정보 제거 안 됨) ❌
+   - UI: 파일 업로드 및 배치 처리
+   - 장점: 간단한 인터페이스
+   - 단점: 개인정보 미보호, 이력 관리 안 됨
+
+✅ 권장 방식 (upload.html)
+   - Privacy Removal: true (vLLM으로 자동 제거) ✅
+   - UI: 폴더 선택 및 관리
+   - 장점: 개인정보 보호, 이력 추적
+   - 결론: 이 파일 대신 upload.html을 사용하세요!
+
+📖 마이그레이션 가이드: /docs/guides/WEB_UI_MIGRATION_SUMMARY.md
+📖 구조 문서: /docs/guides/WEB_UI_STRUCTURE.md
+-->
+
 <!DOCTYPE html>
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KIS 불완전판매 예방 녹취 분석 시스템</title>
+    <title>KIS 불완전판매 예방 녹취 분석 시스템 [LEGACY]</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

@@ -1,11 +1,32 @@
 /**
  * STT Web UI - 메인 JavaScript
+ * 
+ * ⚠️ MIGRATION NOTICE (2026-03-05)
+ * 
+ * 이전 구조: 파일 업로드 기반 STT (index.html)
+ * 현재 구조: 폴더 분석 기반 (upload.html + web_ui/app/routes/analysis.py)
+ * 
+ * 상태:
+ * - index.html: 여전히 main.js 사용 중 (파일 업로드 & 배치 기능)
+ * - upload.html: common.js 사용 (폴더 기반 분석)
+ * 
+ * Privacy Removal:
+ * - index.html의 /transcribe: privacy_removal='false' (미실행) ❌
+ * - upload.html의 /api/analysis/start: privacy_removal=true (vLLM) ✅
+ * 
+ * 정리 계획:
+ * - Step 1: 레거시 섹션 명확히 표시 (주석 처리 예정)
+ * - Step 2: index.html 업데이트 고려
+ * - Step 3: privacy removal 통합
+ * 
+ * 관련 문서: docs/guides/LEGACY_CODE_CLEANUP.md
  */
 
 // ============================================================================
 // 글로벌 변수
 // ============================================================================
 
+// [LEGACY] 파일 업로드 & 배치 처리용 (index.html에서 사용)
 let selectedFile = null;
 let currentFileId = null;
 let currentBatchId = null;
@@ -107,7 +128,10 @@ function showSection(sectionId) {
 }
 
 // ============================================================================
-// 파일 업로드 로직
+// [LEGACY] 파일 업로드 로직 (index.html용 - 현재 사용 중)
+// ⚠️ Privacy Removal: false로 고정 (개인정보 제거 안 됨)
+// 
+// 마이그레이션 대상: upload.html의 폴더 분석으로 변경 권장
 // ============================================================================
 
 const dropZone = document.getElementById("drop-zone");
@@ -126,7 +150,10 @@ const currentApiBackend = document.getElementById("current-api-backend");
 // ============================================================================
 
 /**
- * 모든 파일 업로드 이벤트 리스너 등록
+ * [LEGACY] 모든 파일 업로드 이벤트 리스너 등록
+ * 
+ * ⚠️ 레거시 시스템 (index.html 전용)
+ *    Privacy Removal: false (개인정보 제거 안 됨)
  */
 function initializeFileUploadHandlers() {
     console.log("[Init] 파일 업로드 핸들러 초기화 시작");
@@ -213,7 +240,7 @@ function initializeFileUploadHandlers() {
 }
 
 /**
- * 파일 선택 처리
+ * [LEGACY] 파일 선택 처리
  */
 function handleFileSelect(file) {
     selectedFile = file;
@@ -224,7 +251,10 @@ function handleFileSelect(file) {
 }
 
 /**
- * 파일 업로드
+ * [LEGACY] 파일 업로드
+ * 
+ * ⚠️ 레거시 시스템 (index.html 전용)
+ *    API 엔드포인트: /upload/
  */
 async function uploadFile() {
     if (!selectedFile) {
@@ -316,7 +346,18 @@ async function setGlobalBackend(backend) {
 }
 
 /**
- * STT 처리
+ * [LEGACY] STT 처리
+ * 
+ * ⚠️ 중요 경고: Privacy Removal이 항상 false로 설정되어 있습니다!
+ *    → 이는 개인정보가 제거되지 않음을 의미합니다
+ *    → index.html(파일 업로드 UI) 레거시 시스템이므로 권장하지 않습니다
+ * 
+ * ✅ 새로운 분석: upload.html(폴더 기반)을 사용하세요
+ *    → Privacy Removal: true (vLLM으로 자동 제거)
+ *    → 개인정보 안전하게 보호됨
+ *    → 분석 이력 추적 가능
+ * 
+ * 마이그레이션 가이드: /docs/guides/WEB_UI_MIGRATION_SUMMARY.md
  */
 async function transcribeFile() {
     try {
@@ -358,6 +399,9 @@ async function transcribeFile() {
         formData.append('language', language);
         formData.append('is_stream', isStream ? 'true' : 'false');
         formData.append('privacy_removal', 'false');
+        formData.append('privacy_llm_type', 'vllm');  // ✅ vLLM 사용
+        formData.append('privacy_prompt_type', 'privacy_remover_default_v6');
+        formData.append('vllm_model_name', '/model/qwen30_thinking_2507');  // ✅ Qwen 모델
         formData.append('classification', classification ? 'true' : 'false');
         formData.append('element_detection', 'true');  // ✅ 요소 탐지 활성화
         formData.append('detection_api_type', 'local');  // vLLM 사용
@@ -600,7 +644,17 @@ document.getElementById("reset-btn")?.addEventListener("click", () => {
 transcribeBtn.addEventListener("click", transcribeFile);
 
 // ============================================================================
-// 배치 처리 로직
+// [LEGACY] 배치 처리 로직 (index.html용)
+// ⚠️ Web UI에서 사용 안 함 (/api/analysis/start 사용)
+// 
+// 미사용 함수:
+// - loadBatchFiles()
+// - renderBatchTable()
+// - startBatch()
+// - startBatchProgressMonitoring()
+// - updateProgress()
+// 
+// 마이그레이션 상태: upload.html의 폴더 분석 시스템으로 완전 변경됨
 // ============================================================================
 
 const loadFilesBtn = document.getElementById("load-files-btn");
@@ -612,7 +666,20 @@ const batchParallelInput = document.getElementById("batch-parallel");
 let batchFiles = [];
 
 /**
- * 배치 파일 로드
+ * [LEGACY] 배치 파일 로드
+ * 
+ * ⚠️ 이 함수는 레거시 배치 처리 시스템의 일부입니다.
+ *    → index.html의 배치 탭에서만 사용됩니다
+ *    → Privacy Removal이 작동하지 않습니다 (개인정보 미보호)
+ * 
+ * ❌ 상태: 현재 /batch/ 엔드포인트가 실제로 사용되지 않음
+ *    → API 서버의 배치 처리 기능이 비활성화됨
+ *    → 파일 로드는 가능하지만 처리 불가능
+ * 
+ * ✅ 권장: upload.html의 폴더 기반 분석 사용
+ *    → 다중 파일 동시 처리 가능
+ *    → Privacy Removal: true (자동 실행)
+ *    → 분석 결과 DB 저장
  */
 loadFilesBtn?.addEventListener("click", async () => {
     try {
@@ -640,7 +707,9 @@ loadFilesBtn?.addEventListener("click", async () => {
 });
 
 /**
- * 배치 테이블 렌더링
+ * [LEGACY] 배치 테이블 렌더링
+ * 
+ * ⚠️ 레거시 시스템. index.html에서만 사용됩니다.
  */
 function renderBatchTable() {
     const tbody = document.getElementById("batch-table-body");
@@ -663,7 +732,19 @@ function renderBatchTable() {
 }
 
 /**
- * 배치 처리 시작
+ * [LEGACY] 배치 처리 시작
+ * 
+ * ⚠️ 주의: /batch/start/ 엔드포인트는 더 이상 작동하지 않습니다!
+ *    → API 서버가 이 엔드포인트를 비활성화했습니다
+ *    → Privacy Removal이 false로 고정되어 있습니다 (개인정보 미보호)
+ * 
+ * ❌ 결과: 이 버튼을 클릭해도 배치 처리가 진행되지 않습니다.
+ * 
+ * ✅ 대안: upload.html의 폴더 기반 분석 사용
+ *    → 지정한 폴더의 모든 파일을 자동으로 처리
+ *    → Privacy Removal: true (자동 활성화)
+ *    → 처리 진행률 실시간 표시
+ *    → 완료 후 분석 페이지에서 모든 결과 조회 가능
  */
 startBatchBtn?.addEventListener("click", async () => {
     try {
