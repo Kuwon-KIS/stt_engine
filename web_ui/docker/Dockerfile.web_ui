@@ -23,6 +23,10 @@ COPY web_ui/templates/ ./templates/
 COPY web_ui/migrations/ ./migrations/
 COPY web_ui/scripts/ ./scripts/
 COPY web_ui/docker/entrypoint.sh ./
+COPY scripts/download_sheetjs.py /tmp/
+
+# SheetJS 다운로드 (오프라인 배포용 - 실패해도 계속 진행)
+RUN python3 /tmp/download_sheetjs.py || echo "Warning: SheetJS download failed - will fallback to CDN"
 
 # 데이터 디렉토리 생성
 RUN mkdir -p data/uploads data/results data/batch_input logs

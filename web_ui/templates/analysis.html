@@ -892,28 +892,30 @@
         </div>
     </div>
 
-    <!-- 내보내기 형식 선택 모달 -->
-    <div id="exportFormatModal" class="modal" style="display: none;">
-        <div class="modal-content" style="max-width: 400px;">
-            <div class="modal-header">
-                <h2>내보내기 형식 선택</h2>
-                <button class="close-btn" onclick="closeExportFormatModal()">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div style="display: flex; flex-direction: column; gap: 15px;">
-                    <button class="btn btn-export" onclick="exportToExcel()" style="padding: 15px; font-size: 16px;">
-                        Excel 파일 (.xlsx)
-                    </button>
-                    <button class="btn btn-export" onclick="exportToCSV()" style="padding: 15px; font-size: 16px;">
-                        CSV 파일 (.csv)
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
+    <!-- Export results modal removed - using CSV only for offline deployment -->
 
-    <!-- SheetJS for Excel export -->
-    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <!-- SheetJS for Excel export (loaded from local static if available, fallback to CDN) -->
+    <script>
+        // Load SheetJS from local static folder first, fallback to CDN if not available
+        function loadSheetJS() {
+            if (window.XLSX) return; // Already loaded
+            
+            const script = document.createElement('script');
+            script.src = '/static/lib/xlsx.full.min.js';
+            script.onerror = function() {
+                // Fallback to CDN if local copy doesn't exist
+                console.warn('Local SheetJS not found, trying CDN...');
+                const cdnScript = document.createElement('script');
+                cdnScript.src = 'https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js';
+                cdnScript.onerror = function() {
+                    console.error('Failed to load SheetJS from both local and CDN');
+                };
+                document.head.appendChild(cdnScript);
+            };
+            document.head.appendChild(script);
+        }
+        loadSheetJS();
+    </script>
     <script src="/static/js/common.js"></script>
     <script>
         let currentJobId = null;
@@ -1425,17 +1427,41 @@
         }
 
         function exportResults() {
-            // 형식 선택 모달 표시
-            document.getElementById('exportFormatModal').style.display = 'flex';
+            // SheetJS가 로드되었으면 형식 선택, 아니면 CSV만 지원
+            if (window.XLSX) {
+                showExportFormatModal();
+            } else {
+                // 형식 선택 없이 바로 CSV 내보내기
+                exportToCSV();
+            }
+        }
+
+        function showExportFormatModal() {
+            // 내보내기 형식 모달 표시
+            const modal = document.getElementById('exportFormatModal');
+            if (modal) {
+                modal.style.display = 'flex';
+            } else {
+                // 모달이 없으면 CSV로 진행
+                exportToCSV();
+            }
         }
 
         function closeExportFormatModal() {
-            document.getElementById('exportFormatModal').style.display = 'none';
+            const modal = document.getElementById('exportFormatModal');
+            if (modal) {
+                modal.style.display = 'none';
+            }
         }
 
         function exportToExcel() {
             try {
                 closeExportFormatModal();
+                
+                if (!window.XLSX) {
+                    showNotification('SheetJS 라이브러리를 로드할 수 없습니다. CSV로 내보내주세요.', 'error');
+                    return;
+                }
                 
                 // 필터링된 결과 사용
                 const filteredResults = applyFilters(allResults);
@@ -1544,8 +1570,6 @@
 
         function exportToCSV() {
             try {
-                closeExportFormatModal();
-                
                 // 필터링된 결과 사용
                 const filteredResults = applyFilters(allResults);
                 
