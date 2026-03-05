@@ -25,14 +25,14 @@ services:
     
     restart: unless-stopped
     
-    # GPU 사용 설정 (NVIDIA Docker - 필요할 때만 활성화)
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
+    # GPU 사용 설정 (NVIDIA Docker)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     
     # 헬스 체크
     healthcheck:

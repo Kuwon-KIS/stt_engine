@@ -4,6 +4,7 @@ LLM Client Factory - LLM 제공자 선택 및 생성
 
 from typing import Optional, Dict
 import logging
+import os
 from .base import LLMClient
 from .vllm_client import vLLMClient
 from .ollama_client import OllamaClient
@@ -20,8 +21,8 @@ class LLMClientFactory:
     def create_client(
         llm_type: str = "vllm",
         model_name: Optional[str] = None,
-        vllm_api_url: str = "http://localhost:8000",
-        ollama_api_url: str = "http://localhost:11434",
+        vllm_api_url: Optional[str] = None,
+        ollama_api_url: Optional[str] = None,
         **kwargs
     ) -> LLMClient:
         """
@@ -32,7 +33,7 @@ class LLMClientFactory:
                      - 'vllm': vLLM 로컬 서버 (기본값)
                      - 'ollama': Ollama 로컬 서버
             model_name: 사용할 모델명 (llm_type에 따라 다름)
-            vllm_api_url: vLLM API URL (기본값: http://localhost:8000)
+            vllm_api_url: vLLM API URL (환경변수 VLLM_BASE_URL, 기본값: http://localhost:8001/v1/chat/completions)
             ollama_api_url: Ollama API URL (기본값: http://localhost:11434)
             **kwargs: 추가 파라미터
         
@@ -42,6 +43,12 @@ class LLMClientFactory:
         Raises:
             ValueError: 지원하지 않는 llm_type
         """
+        # 환경변수에서 기본값 읽기
+        if vllm_api_url is None:
+            vllm_api_url = os.getenv("VLLM_BASE_URL", "http://localhost:8001/v1/chat/completions")
+        if ollama_api_url is None:
+            ollama_api_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        
         try:
             if llm_type == "vllm":
                 logger.info(f"[LLMClientFactory] Creating vLLMClient (model={model_name}, url={vllm_api_url})")

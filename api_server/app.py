@@ -33,11 +33,12 @@ if str(app_root) not in sys.path:
 from stt_engine import WhisperSTT
 from stt_utils import check_memory_available, check_audio_file
 from utils.performance_monitor import PerformanceMonitor
-from api_server.constants import ErrorCode
+from api_server.constants import ErrorCode, PRESET_SEGMENT_CONFIG
 from api_server.services.privacy_remover import (
     PrivacyRemoverService,
     _async_get_privacy_remover_service
 )
+import torch
 from api_server.transcribe_endpoint import (
     validate_and_prepare_file,
     perform_stt,
@@ -81,7 +82,9 @@ try:
     # 환경변수로 compute_type 지정 가능 (기본값: device에 따라 자동)
     compute_type = os.getenv("STT_COMPUTE_TYPE")
     if compute_type is None:
-        compute_type = "float16" if device == "cuda" else "float32"  # CPU는 float32가 더 안정적
+        # device="auto"일 때 CUDA 가용성 확인
+        use_cuda = device == "cuda" or (device == "auto" and torch.cuda.is_available())
+        compute_type = "float16" if use_cuda else "float32"  # CPU는 float32가 더 안정적
     
     logger.info(f"STT 모델 로드 시작 (다중 백엔드)")
     logger.info(f"  모델: openai_whisper-large-v3-turbo")
@@ -108,15 +111,24 @@ try:
     logger.info(f"   Device: {device}")
     print(f"✅ STT 모델 로드 완료 (Backend: {backend_type}, Device: {device})")
     
+    # STT_PRESET에 따른 세그멘트 설정 적용
+    initial_preset = os.getenv("STT_PRESET", "accuracy").lower()
+    if initial_preset in PRESET_SEGMENT_CONFIG:
+        segment_config = PRESET_SEGMENT_CONFIG[initial_preset]
+        STREAM_CHUNK_DURATION = segment_config["chunk_duration"]
+        STREAM_OVERLAP_DURATION = segment_config["overlap_duration"]
+        logger.info(f"🔧 STT_PRESET='{initial_preset}'에 따른 세그멘트 설정 적용:")
+        logger.info(f"   - STREAM_CHUNK_DURATION: {STREAM_CHUNK_DURATION}초")
+        logger.info(f"   - STREAM_OVERLAP_DURATION: {STREAM_OVERLAP_DURATION}초")
+        logger.info(f"   - 설명: {segment_config['description']}")
+    
     # 초기 프리셋 설정 (환경변수 STT_PRESET으로 지정 가능, 기본값: accuracy)
-    initial_preset = os.getenv("STT_PRESET", "accuracy")
     if initial_preset:
-        initial_preset_lower = initial_preset.lower()
-        logger.info(f"🔄 초기 프리셋 적용 중: {initial_preset_lower}")
+        logger.info(f"🔄 초기 프리셋 적용 중: {initial_preset}")
         
         try:
             # preset="custom"인 경우, device와 compute_type을 환경변수에서 읽음
-            if initial_preset_lower == "custom":
+            if initial_preset == "custom":
                 custom_device = os.getenv("STT_DEVICE", device)
                 custom_compute_type = os.getenv("STT_COMPUTE_TYPE", compute_type)
                 custom_backend = os.getenv("STT_BACKEND")
@@ -134,14 +146,14 @@ try:
                 )
             else:
                 # 미리정의된 프리셋 (speed/balanced/accuracy)
-                preset_result = stt.reload_backend(preset=initial_preset_lower)
+                preset_result = stt.reload_backend(preset=initial_preset)
             
             if preset_result.get("status") == "success":
-                logger.info(f"✅ 프리셋 적용 완료: {initial_preset_lower}")
+                logger.info(f"✅ 프리셋 적용 완료: {initial_preset}")
                 logger.info(f"   현재 백엔드: {preset_result.get('current_backend')}")
                 logger.info(f"   디바이스: {preset_result.get('device')}")
                 logger.info(f"   컴퓨트 타입: {preset_result.get('compute_type')}")
-                print(f"✅ 초기 프리셋 적용: {initial_preset_lower} ({preset_result.get('current_backend')})")
+                print(f"✅ 초기 프리셋 적용: {initial_preset} ({preset_result.get('current_backend')})")
             else:
                 logger.warning(f"⚠️  프리셋 적용 실패: {preset_result.get('message')}")
         except Exception as e:

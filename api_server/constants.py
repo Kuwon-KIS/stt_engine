@@ -199,6 +199,26 @@ MAX_FILE_SIZE_MB = 500
 STREAM_CHUNK_DURATION = 30
 STREAM_OVERLAP_DURATION = 3  # 기존 12초에서 변경 (40% → 10%)
 
+# STT_PRESET별 세그멘트 설정 오버라이드
+# STT_PRESET 환경변수에 따라 segment 설정을 명시적으로 조정
+PRESET_SEGMENT_CONFIG = {
+    "accuracy": {
+        "chunk_duration": 30,
+        "overlap_duration": 3,  # 높은 정확도(float32)로 3초 오버랩으로 충분
+        "description": "High accuracy with minimal overlap"
+    },
+    "balanced": {
+        "chunk_duration": 30,
+        "overlap_duration": 5,  # 중간 정확도, 5초 오버랩
+        "description": "Balanced accuracy and performance"
+    },
+    "fast": {
+        "chunk_duration": 30,
+        "overlap_duration": 2,  # 빠른 처리, 최소 오버랩
+        "description": "Fast processing with minimal overlap"
+    }
+}
+
 # 기본 언어
 DEFAULT_LANGUAGE = "ko"
 SUPPORTED_LANGUAGES = ["ko", "en", "ja", "zh", "es", "fr", "de", "it", "pt", "ru"]
