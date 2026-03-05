@@ -193,6 +193,7 @@ async def perform_classification():
 | 설정값 | 출처 | 기본값 | 현행 호출값 | 용도 |
 |--------|------|--------|-------------|------|
 | **`element_detection`** | FormData | "false" | ✅ **"true"** (upload.html) | 활성화 여부 |
+| **`element_detection_prompt_type`** ⭐ | FormData | **"element_detection_qwen"** | ✅ **"element_detection_qwen"** | 프롬프트 타입 (프롬프트 파일 자동 로드) |
 | **`VLLM_BASE_URL`** ⭐ | env | **"http://localhost:8001"** | ✅ HTTP 직접 요청 | AIAgentService, ClassificationService |
 | **`VLLM_MODEL`** | env | **"Qwen3-30B-A3B-Thinking-2507-FP8"** | ✅ 모델명 | vLLM 모델 지정 |
 | `temperature` | 코드 | 0.3 | ✅ 0.3 | 창의성 |
@@ -333,6 +334,400 @@ if api_type == "fallback":
     2️⃣ local LLM 시도 (vLLM/Ollama)
     3️⃣ Dummy 반환 (TEST_MODE=True일 때만)
 ```
+
+---
+
+## 🎯 **Element Detection 설정 상세 분석**
+
+> **목적**: External AI Agent vs Local vLLM 선택 메커니즘 명확화  
+> **코드 위치**: `app.py:410-590` (파라미터 관리), `transcribe_endpoint.py:849-950` (처리 로직)
+
+### **설정 파라미터 (Dependency 포함)**
+
+| 파라미터 | 출처 | 기본값 | 현행값 | 역할 | **의존 모드** |
+|---------|------|--------|--------|------|--------------|
+| **`element_detection`** | FormData | "false" | ✅ "true" | 요소 탐지 활성화 | 모든 모드 필수 |
+| **`element_detection_prompt_type`** ⭐ | FormData | "element_detection_qwen" | ✅ "element_detection_qwen" | 프롬프트 파일명 ({prompt_type}.prompt 자동 로드) | ❌ ai_agent / ✅ vllm, fallback (필수) |
+| **`detection_api_type`** ⭐ | FormData | "ai_agent" | ✅ "vllm" | API 모드 선택 | 모든 모드 필수 |
+| **`agent_url`** ⭐ | FormData | "" | - | 외부 AI Agent URL | ✅ ai_agent / ⚠️ fallback (선택) / ❌ vllm (무시) |
+| **`detection_llm_type`** | FormData | "openai" | ✅ "vllm" | Local LLM 타입 | ❌ ai_agent / ✅ vllm, fallback (필수) |
+| **`vllm_model_name`** | FormData | None | ✅ "/model/qwen30_thinking_2507" | vLLM 모델명 | ❌ ai_agent / ✅ vllm, fallback (detection_llm_type='vllm'일 때) |
+| **`ollama_model_name`** | FormData | None | - | Ollama 모델명 | ❌ ai_agent / ✅ vllm, fallback (detection_llm_type='ollama'일 때) |
+| **`detection_types`** | FormData | "" | - | 탐지 대상 (CSV) | 모든 모드 선택 (기본: incomplete_sales,aggressive_sales) |
+| **`VLLM_BASE_URL`** ⭐ | env | "http://localhost:8001" | ✅ 설정됨 | vLLM 엔드포인트 | ❌ ai_agent / ✅ vllm, fallback (detection_llm_type='vllm'일 때) |
+| **`OLLAMA_BASE_URL`** | env | "http://localhost:11434" | - | Ollama 엔드포인트 | ❌ ai_agent / ✅ vllm, fallback (detection_llm_type='ollama'일 때) |
+| **`TEST_MODE`** | env | "false" | - | Dummy 허용 여부 | ⚠️ fallback (단계 3에만 영향) |
+
+**⚠️ 핵심 의존성 규칙**:
+
+| 모드 | detection_api_type | agent_url | detection_llm_type | vllm_base_url | 설명 |
+|-----|-------------------|-----------|-------------------|----------------|------|
+| **AI Agent** | `"ai_agent"` | ✅ **필수** | ❌ 무시 | ❌ 무시 | 외부 AI Agent만 호출, 텍스트 그대로 전달 |
+| **vLLM** | `"vllm"` | ❌ 무시 | ✅ **필수** | ✅ **필수** | Local vLLM만 호출, 프롬프트로 포맷팅하여 전달 |
+| **Fallback** | `"fallback"` | ⚠️ **선택** | ✅ **필수** (단계2) | ✅ **필수** (단계2) | AI Agent (설정시) → vLLM (필수) → Dummy (TEST_MODE=true만) |
+
+---
+
+### **설정 파라미터
+
+### **API 타입별 동작**
+
+#### **1️⃣ detection_api_type = "ai_agent"** ⭐ 외부 AI Agent 호출
+
+외부 AI Agent만 호출. **agent_url 필수**. 
+
+**데이터 전달 방식**:
+- 입력: STT 결과 또는 Privacy Removal 결과 (순수 텍스트)
+- 포맷팅: **없음** - 텍스트 그대로 `user_query` 필드로 전달
+- 쿼리 형식: KIS Agent API 표준 형식
+
+**API 요청 형식**:
+```json
+{
+  "chat_thread_id": "",
+  "parameters": {
+    "user_query": "분석할 텍스트 (STT 또는 Privacy Removal 결과)"
+  }
+}
+```
+
+**API 응답 형식** (예상):
+```json
+{
+  "detected_yn": "Y" 또는 "N",
+  "detected_sentences": ["문장1", "문장2", ...],
+  "detected_reasons": ["근거1", "근거2", ...],
+  "detected_keywords": ["키워드1", "키워드2", ...]
+}
+```
+
+**코드 위치**: [transcribe_endpoint.py#L559-L675](transcribe_endpoint.py#L559-L675)
+
+```python
+# _call_external_api 함수 (transcribe_endpoint.py:603-612)
+payload = {
+    "chat_thread_id": "",
+    "parameters": {
+        "user_query": text  # ⭐ 순수 텍스트만 전달, 포맷팅 없음
+    }
+}
+
+async with httpx.AsyncClient(timeout=30.0) as client:
+    response = await client.post(
+        external_api_url,
+        json=payload,
+        headers={"Content-Type": "application/json"}
+    )
+```
+
+**필수 파라미터**:
+| 파라미터 | 값 | 필수 |
+|---------|-----|------|
+| `agent_url` | 외부 API 엔드포인트 URL | ✅ **필수** |
+| `detection_api_type` | `"ai_agent"` | ✅ **필수** |
+| `detection_types` | CSV 리스트 | ⚠️ 선택 (기본: incomplete_sales,aggressive_sales) |
+
+---
+
+#### **2️⃣ detection_api_type = "vllm"** ⭐ Local vLLM/Ollama 호출
+
+Local vLLM/Ollama만 호출. **agent_url 무시**.
+
+**데이터 전달 방식**:
+- 입력: STT 결과 또는 Privacy Removal 결과 (순수 텍스트)
+- 포맷팅: **`detection_prompt` 프롬프트로 구조화**하여 전달
+- 프롬프트 명: `ELEMENT_DETECTION_PROMPT_V1` (정의 필요시)
+- Privacy Removal의 `privacy_remover_default_v6` 프롬프트와 유사 패턴
+
+**프롬프트 구조**:
+```
+다음 고객 상담 통화 내용을 분석하여 요청된 요소들의 탐지 여부를 판단하세요.
+
+감지 대상:
+{detection_types_csv}
+
+상담 내용:
+{text}
+
+다음 JSON 형식으로 응답하세요:
+{
+    "detected_yn": "Y" 또는 "N",
+    "detected_sentences": ["탐지된 문장1", ...],
+    "detected_reasons": ["근거1", ...],
+    "detected_keywords": ["키워드1", ...]
+}
+
+검정 결과:
+```
+
+**코드 위치**: [transcribe_endpoint.py#L676-L870](transcribe_endpoint.py#L676-L870)
+
+```python
+# _call_local_llm 함수 (transcribe_endpoint.py:676-870)
+
+async def _call_local_llm(
+    text: str,
+    detection_types: list,
+    llm_type: str = "vllm",
+    vllm_model_name: Optional[str] = None,
+    ollama_model_name: Optional[str] = None,
+    vllm_base_url: Optional[str] = None,
+    ollama_base_url: Optional[str] = None,
+    prompt_type: str = "element_detection_qwen"  # ⭐ 프롬프트 파일 타입 (기본값)
+) -> Optional[dict]:
+    
+    # 프롬프트 파일 로드 (element_detection_qwen.prompt 등)
+    try:
+        prompt_file_path = Path(__file__).parent / "services" / "prompts" / f"{prompt_type}.prompt"
+        with open(prompt_file_path, 'r', encoding='utf-8') as f:
+            prompt_template = f.read()
+        detection_prompt = prompt_template.replace("{usertxt}", text)
+        logger.info(f"프롬프트 파일 로드 완료 (타입: {prompt_type})")
+    except Exception as prompt_err:
+        logger.warning(f"프롬프트 파일 로드 실패, 기본 프롬프트 사용")
+        # Fallback: 기본 프롬프트 사용
+        detection_prompt = f"""...기본 프롬프트..."""
+    
+    # LLM 호출
+    response = await llm_client.call(
+        prompt=detection_prompt,
+        temperature=0.3,
+        max_tokens=1000
+    )
+```
+
+**핵심 변경사항**:
+- ✅ `prompt_type` 파라미터로 프롬프트 파일 동적 로드 (기본값: "element_detection_qwen")
+- ✅ `api_server/services/prompts/{prompt_type}.prompt` 파일 자동 로드
+- ✅ `{usertxt}` 치환으로 프롬프트 템플릿 처리
+- ✅ Privacy Removal과 동일한 프롬프트 로드 방식 적용
+
+**필수 파라미터**:
+| 파라미터 | 값 | 필수 |
+|---------|-----|------|
+| `detection_api_type` | `"vllm"` | ✅ **필수** |
+| `detection_llm_type` | `"vllm"` 또는 `"ollama"` | ✅ **필수** |
+| `vllm_model_name` | 모델명 (vLLM의 경우) | ✅ **필수** (detection_llm_type='vllm') |
+| `ollama_model_name` | 모델명 (Ollama의 경우) | ✅ **필수** (detection_llm_type='ollama') |
+| `VLLM_BASE_URL` | 환경변수 | ✅ **필수** (vLLM의 경우) |
+| `OLLAMA_BASE_URL` | 환경변수 | ✅ **필수** (Ollama의 경우) |
+| `agent_url` | 무시됨 | ❌ 불필요 |
+
+**⚠️ 주의**: 프롬프트가 JSON 파싱 가능한 형식으로 응답하도록 강제하므로, 응답 실패 시 NULL 반환 (fallback 불가능)
+
+#### **3️⃣ detection_api_type = "fallback"** (추천 ⭐ 간단한 구조)
+
+자동 선택: ai_agent (설정시) → vllm (필수) → dummy (TEST_MODE=true만) 순서로 시도.  
+**각 단계 실패 시 다음 단계로 자동 이동 (TEST_MODE 무관)**
+
+**단계별 동작**:
+
+1️⃣ **단계 1: 외부 AI Agent 시도** (agent_url이 지정된 경우만)
+   - 조건: `external_api_url`이 지정되어 있음
+   - 동작: 텍스트 그대로 KIS Agent API 형식으로 전달
+   - 성공 시: 즉시 결과 반환 (api_type='ai_agent')
+   - 실패 시: 자동으로 단계 2로 진행
+
+2️⃣ **단계 2: Local vLLM 시도** (필수 폴백)
+   - 조건: 항상 실행
+   - 동작: 텍스트를 `detection_prompt`로 포맷팅하여 vLLM/Ollama 호출
+   - 성공 시: 즉시 결과 반환 (api_type='vllm')
+   - 실패 시: 자동으로 단계 3으로 진행
+
+3️⃣ **단계 3: Dummy 결과 반환** (TEST_MODE=True일 때만)
+   - 조건: TEST_MODE=true 환경변수 설정됨
+   - 동작: 모든 탐지가 "N"인 더미 결과 반환
+   - TEST_MODE=false: 에러 반환
+
+**코드 위치**: [transcribe_endpoint.py#L877-L1000](transcribe_endpoint.py#L877-L1000)
+
+```python
+# perform_element_detection 함수 (transcribe_endpoint.py:877-1000)
+async def perform_element_detection(
+    text: str,
+    detection_types: list = None,
+    api_type: str = "fallback",
+    llm_type: str = "vllm",
+    vllm_model_name: Optional[str] = None,
+    ollama_model_name: Optional[str] = None,
+    vllm_base_url: Optional[str] = None,
+    ollama_base_url: Optional[str] = None,
+    element_detection_prompt_type: str = "element_detection_qwen",  # ⭐ 프롬프트 타입
+    classification_result: dict = None,
+    privacy_removal_result: dict = None,
+    external_api_url: Optional[str] = None
+) -> dict:
+
+if api_type == "fallback":
+    # 1️⃣ AI Agent 시도 (설정된 경우)
+    if external_api_url:
+        logger.info("[Fallback] 단계 1️⃣: 외부 AI Agent 호출 시도...")
+        result = await _call_external_api(text, detection_types, external_api_url)
+        
+        if result:
+            return {
+                'success': True,
+                'detection_results': result.get('detection_results', []),
+                'api_type': 'ai_agent',
+                'llm_type': None
+            }
+        else:
+            logger.warning("[Fallback] ❌ AI Agent 실패, vLLM으로 이동")
+    
+    # 2️⃣ vLLM 시도 (필수) - ⭐ element_detection_prompt_type 전달
+    logger.info("[Fallback] 단계 2️⃣: 로컬 vLLM 호출 시도...")
+    result = await _call_local_llm(
+        text, detection_types, llm_type,
+        vllm_model_name, ollama_model_name,
+        vllm_base_url, ollama_base_url,
+        prompt_type=element_detection_prompt_type  # ⭐ 프롬프트 파일 타입 전달
+    )
+    
+    if result:
+        result['success'] = True
+        return result
+    else:
+        logger.warning("[Fallback] ❌ vLLM 실패, Dummy 또는 에러 반환")
+    
+    # 3️⃣ Dummy 반환 또는 에러
+    if test_mode:
+        logger.warning("[Fallback] 단계 3️⃣: Dummy 반환 (TEST_MODE=True)")
+        return _get_dummy_results(detection_types)
+    else:
+        return {
+            'success': False,
+            'error': 'All fallback attempts failed',
+            'api_type': 'fallback'
+        }
+```
+
+**핵심 변경사항**:
+- ✅ `element_detection_prompt_type: str = "element_detection_qwen"` 파라미터 추가
+- ✅ `_call_local_llm` 호출 시 `prompt_type=element_detection_prompt_type` 전달
+- ✅ Privacy Removal과 동일한 프롬프트 타입 관리 방식 적용
+
+**흐름도**:
+```
+Fallback 모드 시작
+    ↓
+1️⃣ agent_url 설정됨?
+    ├─ YES → AI Agent 호출 (텍스트 그대로)
+    │   ├─ 성공 → 반환 ✅
+    │   └─ 실패 → 자동 다음 단계
+    │
+2️⃣ vLLM 호출 (detection_prompt 포맷팅)
+    ├─ 성공 → 반환 ✅
+    └─ 실패 → 자동 다음 단계
+    
+3️⃣ TEST_MODE=True?
+    ├─ YES → Dummy 반환 ✅
+    └─ NO → 에러 반환 ❌
+```
+
+**필수 파라미터**:
+| 파라미터 | 값 | 필수 |
+|---------|-----|------|
+| `detection_api_type` | `"fallback"` | ✅ **필수** |
+| `detection_llm_type` | `"vllm"` 또는 `"ollama"` | ✅ **필수** (단계 2용) |
+| `vllm_model_name` 또는 `ollama_model_name` | 모델명 | ✅ **필수** (단계 2용) |
+| `VLLM_BASE_URL` 또는 `OLLAMA_BASE_URL` | 환경변수 | ✅ **필수** (단계 2용) |
+| `agent_url` | 외부 API URL | ⚠️ **선택** (단계 1 수행 여부 결정) |
+
+**⚠️ 주의**:
+- 각 단계 실패 시 **자동으로 다음 단계로 이동** (TEST_MODE 체크 없음)
+- `TEST_MODE=true`일 때만 최종 단계에서 Dummy 결과 반환
+- `TEST_MODE=false`에서는 모든 API 실패 시 에러 반환
+- **단계별 독립적 처리**: AI Agent 실패 → vLLM 자동 시도 → vLLM 실패 → Dummy 또는 에러
+
+### **현재 실제 설정 (Web UI 기준)** ✅ Local vLLM 모드
+
+```python
+# web_ui/app/services/analysis_service.py:661-671
+
+stt_result = await stt_service.transcribe_local_file(
+    file_path=str(file_path),
+    language="ko",
+    is_stream=False,
+    privacy_removal=True,              # ✅ 항상 활성화 (vLLM + Qwen)
+    classification=False,              # ❌ 미사용
+    element_detection=True,            # ✅ 항상 활성화 (Local vLLM)
+    # 추가 파라미터는 기본값 사용
+)
+```
+
+**API 서버에서의 실제 처리** (app.py:410-590):
+
+```python
+# 1️⃣ FormData에서 파라미터 추출
+element_detection = form_data.get('element_detection', 'false')  # 값: 'true'
+detection_api_type = form_data.get('detection_api_type', 'ai_agent')  # 기본: 'ai_agent', 현재 웹UI에서 'vllm' 설정 필요
+agent_url = form_data.get('agent_url', '')  # 값: '' (미제공)
+detection_llm_type = form_data.get('detection_llm_type', 'openai')  # 기본: 'openai'
+vllm_model_name = form_data.get('vllm_model_name')  # 값: '/model/qwen30_thinking_2507'
+detection_types = form_data.get('detection_types', '')  # 기본값 사용
+
+# 2️⃣ 환경변수에서 기본값 읽기
+VLLM_BASE_URL = os.getenv("VLLM_BASE_URL", "http://localhost:8001")
+VLLM_MODEL_NAME = os.getenv("VLLM_MODEL_NAME", "Qwen3-30B-A3B-Thinking-2507-FP8")
+
+# 3️⃣ perform_element_detection 호출
+element_response = await perform_element_detection(
+    text=detection_text,  # STT 또는 Privacy Removal 결과
+    detection_types=detection_types_list,
+    api_type=detection_api_type,  # 기본: 'ai_agent', 현재 웹UI에서 'vllm' 설정 필요
+    llm_type=detection_llm_type,  # 'vllm' (detection_api_type='vllm'일 때만)
+    vllm_model_name=vllm_model_name,  # '/model/qwen30_thinking_2507'
+    vllm_base_url=VLLM_BASE_URL,  # 'http://localhost:8001'
+    external_api_url=agent_url  # '' (미사용)
+)
+```
+
+**⭐ 현재 문제점**: Web UI에서 명시적으로 `detection_api_type='vllm'`을 지정하지 않으므로, API 서버 기본값 'ai_agent'이 사용됨
+→ ai_agent는 agent_url이 필수인데 Web UI에서 제공하지 않음
+→ **현재는 fallback 모드로 전환하거나 Web UI에서 detection_api_type 파라미터 추가 필요**
+
+### **권장 설정 시나리오**
+
+**시나리오 1️⃣: Local vLLM만 사용 (현재 + 웹UI 수정)**
+```python
+# Web UI (upload.html)에서 FormData에 추가
+formData.append('detection_api_type', 'vllm');  # ⭐ 명시적 지정
+formData.append('detection_llm_type', 'vllm');
+formData.append('vllm_model_name', '/model/qwen30_thinking_2507');
+```
+**장점**: 단순, 가벼움 | **단점**: 외부 AI Agent 미지원
+
+**시나리오 2️⃣: Fallback 사용 (추천, 안정적)**
+```python
+# Web UI (upload.html)에서 FormData에 추가
+formData.append('detection_api_type', 'fallback');  # ⭐ Fallback 지정
+formData.append('detection_llm_type', 'vllm');
+formData.append('vllm_model_name', '/model/qwen30_thinking_2507');
+# agent_url은 선택사항 (없으면 자동으로 vllm으로 폴백)
+```
+**장점**: AI Agent 장애 시 자동으로 vllm으로 폴백 | **단점**: 약간의 오버헤드
+
+**시나리오 3️⃣: 외부 AI Agent 사용**
+```python
+# Web UI (upload.html)에서 FormData에 추가
+formData.append('detection_api_type', 'ai_agent');  # ⭐ AI Agent 지정
+formData.append('agent_url', 'https://agent-api.kis.zone/...');  # ⭐ 필수
+# detection_llm_type, vllm_model_name은 무시됨
+```
+**장점**: 외부 AI Agent의 고급 기능 활용 | **단점**: 외부 API 의존, 장애 시 전체 시스템 영향
+
+### **점검 체크리스트**
+
+- [x] Local vLLM 설정: vllm_base_url='http://localhost:8001' (경로 제외)
+- [x] Local vLLM 모델: vllm_model_name='/model/qwen30_thinking_2507'
+- [x] Privacy Removal: VLLM_QWEN_API_BASE='http://localhost:8001/v1' (경로 포함)
+- [ ] **Web UI 수정 필요**: detection_api_type 명시적 지정 (현재 기본값 'ai_agent' 문제)
+- [ ] External AI Agent 사용 계획 시: agent_url 환경변수 또는 FormData에 추가
+- [ ] Fallback 모드 테스트: detection_api_type='fallback' + TEST_MODE=true로 설정
+
+---
+
+### **API 타입별 처리**
 
 ---
 

@@ -414,6 +414,7 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
     agent_url = form_data.get('agent_url', '')  # Element Detection 외부 API URL
     privacy_prompt_type = form_data.get('privacy_prompt_type', 'privacy_remover_default_v6')
     classification_prompt_type = form_data.get('classification_prompt_type', 'classification_default_v1')
+    element_detection_prompt_type = form_data.get('element_detection_prompt_type', 'element_detection_qwen')
     
     # DEBUG: FormData 내용 로깅
     logger.info(f"[DEBUG] FormData Keys: {list(form_data.keys())}")
@@ -591,6 +592,7 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
                 ollama_model_name=ollama_model_name,
                 vllm_base_url=vllm_base_url,
                 ollama_base_url=ollama_base_url,
+                element_detection_prompt_type=element_detection_prompt_type,
                 classification_result=classification_result,
                 privacy_removal_result=privacy_result,
                 external_api_url=agent_url
