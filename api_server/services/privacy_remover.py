@@ -301,10 +301,8 @@ class QwenClient:
             import openai
             # Qwen은 OpenAI 호환 API 사용 (vLLM)
             api_key = os.getenv("OPENAI_API_KEY") or "dummy"
-            # VLLM_BASE_URL + VLLM_API_ENDPOINT 조합
-            base_url = os.getenv("VLLM_BASE_URL", "http://localhost:8001")
-            endpoint = os.getenv("VLLM_API_ENDPOINT", "/v1/chat/completions")
-            api_base = base_url.rstrip('/') + endpoint
+            # VLLM_BASE_URL만 사용 (endpoint는 OpenAI 클라이언트가 자동으로 처리)
+            api_base = os.getenv("VLLM_BASE_URL", "http://localhost:8001")
             
             self.client = openai.OpenAI(api_key=api_key, base_url=api_base)
             self.model_name = model_name

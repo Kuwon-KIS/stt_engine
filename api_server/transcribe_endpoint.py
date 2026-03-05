@@ -674,9 +674,7 @@ async def _call_local_llm(
     detection_types: list,
     llm_type: str = "vllm",
     vllm_model_name: Optional[str] = None,
-    ollama_model_name: Optional[str] = None,
     vllm_base_url: Optional[str] = None,
-    ollama_base_url: Optional[str] = None,
     prompt_type: str = "element_detection_qwen"
 ) -> Optional[dict]:
     """
@@ -1011,8 +1009,8 @@ async def perform_element_detection(
             logger.info(f"[Transcribe/ElementDetection] 로컬 LLM 요소 탐지 시작 (llm_type={llm_type})")
             result = await _call_local_llm(
                 text, detection_types, llm_type,
-                vllm_model_name, ollama_model_name,
-                vllm_base_url, ollama_base_url,
+                vllm_model_name,
+                vllm_base_url,
                 prompt_type=element_detection_prompt_type
             )
             

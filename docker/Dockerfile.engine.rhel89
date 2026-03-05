@@ -123,7 +123,7 @@ RUN python3.11 -m pip install \
 # setuptools의 pkg_resources가 librosa(transformers 백엔드)에서 필요함
 # ROOT 권한으로 실행 (USER 전환 전)
 RUN python3.11 -m pip install --no-cache-dir --upgrade pip && \
-    python3.11 -m pip install --no-cache-dir --upgrade --force-reinstall setuptools>=68.0 wheel
+    python3.11 -m pip install --no-cache-dir --upgrade --force-reinstall 'setuptools>=68.0' wheel
 
 # ============================================================================
 # Step 8: 모든 애플리케이션 의존성 설치 (모든 백엔드 활용 가능)
@@ -136,11 +136,12 @@ RUN python3.11 -m pip install --no-cache-dir --upgrade pip && \
 #   - transformers (HuggingFace 백엔드, 상세 제어 가능)
 # stt_engine.py의 WhisperSTT는 자동으로 백엔드 선택:
 #   faster-whisper → transformers → openai-whisper
-COPY requirements.txt /tmp/
+COPY --chown=root:root requirements.txt /tmp/
 
 RUN python3.11 -m pip install \
     --no-cache-dir \
-    -r /tmp/requirements.txt
+    -r /tmp/requirements.txt && \
+    rm -f /tmp/requirements.txt
 
 # ============================================================================
 # Step 9: CUDA 라이브러리 위치 탐색 및 경로 등록
@@ -197,10 +198,12 @@ RUN mkdir -p /opt/app-root/src/.cache && \
     mkdir -p /app/models && \
     mkdir -p /app/logs && \
     mkdir -p /app/audio && \
+    mkdir -p /tmp && \
     chown -R stt-user:stt-user /opt/app-root/src/.cache && \
     chown -R stt-user:stt-user /app/models && \
     chown -R stt-user:stt-user /app/logs && \
     chown -R stt-user:stt-user /app/audio && \
+    chown -R stt-user:stt-user /tmp && \
     chmod -R 755 /opt/app-root/src/.cache && \
     chmod -R 755 /app/models && \
     chmod -R 755 /app/logs && \
