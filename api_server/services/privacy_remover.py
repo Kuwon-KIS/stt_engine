@@ -301,14 +301,32 @@ class QwenClient:
             import openai
             # Qwen은 OpenAI 호환 API 사용 (vLLM)
             api_key = os.getenv("OPENAI_API_KEY") or "dummy"
-            # VLLM_BASE_URL만 사용 (endpoint는 OpenAI 클라이언트가 자동으로 처리)
-            api_base = os.getenv("VLLM_BASE_URL", "http://localhost:8001")
+            
+            # ⚠️ 중요: OpenAI SDK는 base_url에 /v1을 기대함
+            # - 정확한 형식: http://localhost:8001/v1
+            # - OpenAI SDK가 자동으로 /chat/completions를 추가함
+            # - 절대 경로에 /chat/completions를 포함하면 안됨
+            api_base = os.getenv("VLLM_QWEN_API_BASE", "http://localhost:8001/v1")
+            
+            # URL 검증: /chat/completions가 포함되어 있으면 제거
+            if api_base.endswith("/chat/completions"):
+                logger.warning(f"⚠️ base_url에 /chat/completions이 포함됨: {api_base}")
+                logger.warning(f"   OpenAI SDK가 자동으로 추가하므로 제거합니다")
+                api_base = api_base.replace("/chat/completions", "")
+            
+            # /v1이 없으면 추가
+            if not api_base.endswith("/v1"):
+                if api_base.endswith("/"):
+                    api_base = api_base + "v1"
+                else:
+                    api_base = api_base + "/v1"
+                logger.info(f"   Adjusted base_url to: {api_base}")
             
             self.client = openai.OpenAI(api_key=api_key, base_url=api_base)
             self.model_name = model_name
             self.api_base = api_base
             
-            logger.info(f"Qwen 클라이언트 초기화 완료: {model_name} (base_url: {api_base})")
+            logger.info(f"✅ Qwen 클라이언트 초기화 완료: {model_name} (base_url: {api_base})")
         except ImportError:
             logger.error("openai 패키지 미설치")
             raise ImportError("openai 패키지를 설치하세요: pip install openai")
