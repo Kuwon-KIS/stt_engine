@@ -896,19 +896,35 @@
 
     <!-- SheetJS for Excel export (loaded from local static if available, fallback to CDN) -->
     <script>
+        // Initialize sheetjsLoaded flag
+        let sheetjsLoaded = false;
+        
         // Load SheetJS from local static folder first, fallback to CDN if not available
         function loadSheetJS() {
-            if (window.XLSX) return; // Already loaded
+            if (window.XLSX) {
+                sheetjsLoaded = true;
+                console.log('SheetJS already loaded');
+                return;
+            }
             
             const script = document.createElement('script');
             script.src = '/static/lib/xlsx.full.min.js';
+            script.onload = function() {
+                sheetjsLoaded = true;
+                console.log('SheetJS loaded from local');
+            };
             script.onerror = function() {
                 // Fallback to CDN if local copy doesn't exist
                 console.warn('Local SheetJS not found, trying CDN...');
                 const cdnScript = document.createElement('script');
                 cdnScript.src = 'https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js';
+                cdnScript.onload = function() {
+                    sheetjsLoaded = true;
+                    console.log('SheetJS loaded from CDN');
+                };
                 cdnScript.onerror = function() {
                     console.error('Failed to load SheetJS from both local and CDN');
+                    sheetjsLoaded = false;
                 };
                 document.head.appendChild(cdnScript);
             };
