@@ -30,8 +30,10 @@ RUN mkdir -p /app/static/lib && \
     curl -L \
     -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
     -o /app/static/lib/xlsx.full.min.js \
-    https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js 2>/dev/null || \
-    (echo "⚠️  SheetJS download failed - will use CDN fallback at runtime" && mkdir -p /app/static/lib)
+    https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js 2>/dev/null && \
+    ls -lh /app/static/lib/xlsx.full.min.js && \
+    echo "✅ SheetJS downloaded successfully" || \
+    echo "⚠️  SheetJS download failed - will use CDN fallback at runtime"
 
 # 데이터 디렉토리 생성
 RUN mkdir -p data/uploads data/results data/batch_input logs
