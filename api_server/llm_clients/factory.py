@@ -19,6 +19,8 @@ class LLMClientFactory:
     def create_client(
         model_name: Optional[str] = None,
         vllm_api_url: Optional[str] = None,
+        base_url: Optional[str] = None,
+        llm_type: Optional[str] = None,
         **kwargs
     ) -> vLLMClient:
         """
@@ -26,8 +28,10 @@ class LLMClientFactory:
         
         Args:
             model_name: 사용할 모델명 (예: 'qwen30_thinking_2507')
-            vllm_api_url: vLLM API URL (예: http://localhost:8001/v1/chat/completions)
-                         없으면 VLLM_BASE_URL + VLLM_API_ENDPOINT 조합
+            vllm_api_url: 직접 지정한 전체 URL (legacy, 이제는 base_url 사용)
+            base_url: vLLM API 베이스 URL (예: http://localhost:8001/v1)
+                     vLLMClient가 /chat/completions를 자동으로 추가함
+            llm_type: LLM 타입 (현재는 'vllm'만 지원, 무시됨)
             **kwargs: 추가 파라미터
         
         Returns:
@@ -36,17 +40,25 @@ class LLMClientFactory:
         Raises:
             ValueError: 설정 오류 발생 시
         """
-        # 환경변수에서 기본값 읽기
-        if vllm_api_url is None:
-            vllm_base = os.getenv("VLLM_BASE_URL", "http://localhost:8001")
-            vllm_endpoint = os.getenv("VLLM_API_ENDPOINT", "/v1/chat/completions")
-            vllm_api_url = vllm_base.rstrip('/') + vllm_endpoint
+        # 베이스 URL 결정 (우선순위: base_url > vllm_api_url > 환경변수)
+        if base_url is None and vllm_api_url is None:
+            # 환경변수에서 읽기 (VLLM_BASE_URL은 /v1 포함, VLLM_API_ENDPOINT는 deprecated)
+            vllm_base = os.getenv("VLLM_BASE_URL", "http://localhost:8001/v1")
+            base_url = vllm_base
+        elif vllm_api_url is not None and base_url is None:
+            # Legacy: vllm_api_url이 지정된 경우
+            base_url = vllm_api_url
+        
+        # base_url 정규화 (vLLMClient에서도 하지만, 로깅 전에 미리 정규화)
+        base_url = base_url.rstrip('/').rstrip('v1')
+        if not base_url.endswith('/v1'):
+            base_url = base_url.rstrip('/') + '/v1'
         
         try:
-            logger.info(f"[LLMClientFactory] Creating vLLMClient (model={model_name}, url={vllm_api_url})")
+            logger.info(f"[LLMClientFactory] Creating vLLMClient (model={model_name}, base_url={base_url}, llm_type={llm_type})")
             return vLLMClient(
                 model_name=model_name,
-                api_url=vllm_api_url,
+                api_url=base_url,  # vLLMClient는 api_url을 base_url로 해석함
                 **kwargs
             )
         

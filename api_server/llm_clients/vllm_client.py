@@ -25,15 +25,37 @@ class vLLMClient(LLMClient):
         """
         Args:
             model_name: vLLM 모델명
-            api_url: vLLM API 엔드포인트 URL (기본값: http://localhost:8000)
+            api_url: vLLM API 베이스 URL (기본값: http://localhost:8000)
+                     형식: http://localhost:8001/v1 (endpoint는 자동 추가)
             timeout: 요청 타임아웃 (초단위)
             **kwargs: 추가 설정
         """
         super().__init__(model_name, **kwargs)
         self.model_name = model_name or "default"
+        
+        # ⚠️ 중요: api_url 정규화
+        # - 들어오는 형식: http://localhost:8001/v1 또는 http://localhost:8001
+        # - 절대로 /chat/completions를 포함하면 안됨
+        api_url = api_url.rstrip('/')
+        
+        # /v1이 없으면 추가
+        if not api_url.endswith('/v1'):
+            if api_url.endswith('/chat/completions'):
+                # 잘못된 형식 감지 및 수정
+                logger.warning(f"⚠️ api_url에 /chat/completions이 포함됨: {api_url}")
+                logger.warning(f"   vLLMClient가 자동으로 /v1/completions를 추가하므로 제거합니다")
+                api_url = api_url.replace('/chat/completions', '')
+            
+            # /v1 추가
+            if not api_url.endswith('/v1'):
+                api_url = api_url + '/v1'
+        
         self.api_url = api_url
         self.timeout = timeout
-        self.endpoint = f"{api_url}/v1/completions"
+        # ✅ 올바른 endpoint: base_url/v1 + /completions
+        self.endpoint = f"{api_url}/completions"
+        
+        logger.info(f"[vLLMClient] 초기화 완료: model={model_name}, base_url={api_url}, endpoint={self.endpoint}")
     
     async def call(
         self,

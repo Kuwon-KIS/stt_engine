@@ -228,9 +228,9 @@ SUPPORTED_LANGUAGES = ["ko", "en", "ja", "zh", "es", "fr", "de", "it", "pt", "ru
 # LLM 및 API Endpoint 설정
 # ============================================================================
 
-# vLLM 설정
-VLLM_BASE_URL = "http://localhost:8001"              # 베이스 URL만
-VLLM_API_ENDPOINT = "/v1/chat/completions"          # OpenAI 호환 엔드포인트
+# vLLM 설정 (Element Detection / Classification용)
+VLLM_BASE_URL = "http://localhost:8001/v1"          # ✅ 반드시 /v1 포함! (OpenAI SDK가 /chat/completions를 자동 추가)
+VLLM_API_ENDPOINT = "/chat/completions"             # ✅ /v1은 BASE_URL에 포함되므로 여기선 생략
 VLLM_MODEL_NAME = "qwen30_thinking_2507"            # 기본 모델명 (경로 제외)
 VLLM_MODEL_NAME_FULL = "/model/qwen30_thinking_2507"  # 전체 경로 포함 (환경변수에서 사용 가능)
 
