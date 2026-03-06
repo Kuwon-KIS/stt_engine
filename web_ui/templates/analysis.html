@@ -904,7 +904,25 @@
         </div>
     </div>
 
-    <!-- Export results modal removed - using CSV only for offline deployment -->
+    <!-- 결과 내보내기 형식 선택 모달 -->
+    <div id="exportFormatModal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-header">
+                <h2>내보내기 형식 선택</h2>
+                <button class="close-btn" onclick="closeExportFormatModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div style="display: flex; flex-direction: column; gap: 15px;">
+                    <button class="btn btn-export" onclick="exportToExcel()" style="padding: 15px; font-size: 16px;">
+                        📊 Excel 파일 (.xlsx)
+                    </button>
+                    <button class="btn btn-export" onclick="exportToCSV()" style="padding: 15px; font-size: 16px;">
+                        📄 CSV 파일 (.csv)
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- SheetJS for Excel export (loaded from local static if available, fallback to CDN) -->
     <script>
