@@ -24,6 +24,15 @@ COPY web_ui/migrations/ ./migrations/
 COPY web_ui/scripts/ ./scripts/
 COPY web_ui/docker/entrypoint.sh ./
 
+# SheetJS 다운로드 (오프라인 배포용)
+# curl 사용 + User-Agent 추가로 CDN 403 에러 해결
+RUN mkdir -p /app/static/lib && \
+    curl -L \
+    -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+    -o /app/static/lib/xlsx.full.min.js \
+    https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js 2>/dev/null || \
+    (echo "⚠️  SheetJS download failed - will use CDN fallback at runtime" && mkdir -p /app/static/lib)
+
 # 데이터 디렉토리 생성
 RUN mkdir -p data/uploads data/results data/batch_input logs
 
