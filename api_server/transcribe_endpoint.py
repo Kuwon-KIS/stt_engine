@@ -366,10 +366,9 @@ async def perform_classification(
 """
         
         # LLM 클라이언트 생성
-        model_name = vllm_model_name if llm_type == "vllm" else (ollama_model_name if llm_type == "ollama" else None)
         llm_client = LLMClientFactory.create_client(
             llm_type=llm_type,
-            model_name=model_name
+            model_name=vllm_model_name
         )
         
         # LLM 호출
@@ -678,7 +677,7 @@ async def _call_local_llm(
     prompt_type: str = "element_detection_qwen"
 ) -> Optional[dict]:
     """
-    로컬 LLM (vLLM/Ollama)을 사용한 요소 탐지
+    로컬 LLM (vLLM)을 사용한 요소 탐지
     
     LLM 응답을 표준 형식으로 변환:
     {
@@ -716,13 +715,10 @@ async def _call_local_llm(
         logger.info(f"  - 텍스트 길이: {len(text)} 글자")
         
         # LLM 클라이언트 생성
-        model_name = vllm_model_name if llm_type == "vllm" else (ollama_model_name if llm_type == "ollama" else None)
-        base_url = vllm_base_url if llm_type == "vllm" else (ollama_base_url if llm_type == "ollama" else None)
-        
         llm_client = LLMClientFactory.create_client(
             llm_type=llm_type,
-            model_name=model_name,
-            base_url=base_url
+            model_name=vllm_model_name,
+            base_url=vllm_base_url
         )
         
         # 요소 탐지 프롬프트 생성 - 프롬프트 타입에 따라 파일 로드
@@ -953,8 +949,8 @@ async def perform_element_detection(
             logger.info(f"[Transcribe/ElementDetection] [Fallback] 단계 2️⃣: 로컬 vLLM 호출 시도 (llm_type={llm_type})...")
             result = await _call_local_llm(
                 text, detection_types, llm_type,
-                vllm_model_name, ollama_model_name,
-                vllm_base_url, ollama_base_url,
+                vllm_model_name,
+                vllm_base_url,
                 prompt_type=element_detection_prompt_type
             )
             
