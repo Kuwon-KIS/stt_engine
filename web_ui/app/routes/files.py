@@ -149,22 +149,33 @@ async def get_audio_file(
         FileResponse: 오디오 파일
     """
     try:
+        # 로깅
+        logger.info(f"[Audio] 오디오 파일 요청: emp_id={emp_id}, folder_path={folder_path}, filename={filename}")
+        
         # 세션 확인
         session_emp_id = request.session.get("emp_id")
         if not session_emp_id:
+            logger.warning(f"[Audio] 세션 없음 - 로그인 필요")
             raise HTTPException(status_code=401, detail="로그인이 필요합니다")
         
         # 본인 파일만 접근 가능
         if session_emp_id != emp_id:
+            logger.warning(f"[Audio] 접근 권한 없음 - 요청 emp_id={emp_id}, 세션 emp_id={session_emp_id}")
             raise HTTPException(status_code=403, detail="접근 권한이 없습니다")
         
         # 파일 경로 구성
         base_path = os.path.join("data", "uploads", emp_id, folder_path)
         file_path = os.path.join(base_path, filename)
+        logger.info(f"[Audio] 파일 경로: base_path={base_path}, file_path={file_path}")
         
         # 파일 존재 확인
         if not os.path.exists(file_path):
-            logger.error(f"파일을 찾을 수 없음: {file_path}")
+            logger.error(f"[Audio] 파일을 찾을 수 없음: {file_path}")
+            # 디렉토리 내용 확인
+            if os.path.exists(base_path):
+                logger.error(f"[Audio] 디렉토리 내용: {os.listdir(base_path)}")
+            else:
+                logger.error(f"[Audio] 디렉토리 없음: {base_path}")
             raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다")
         
         # 파일 타입 결정
@@ -178,7 +189,7 @@ async def get_audio_file(
         }
         media_type = media_type_map.get(ext.lower(), 'audio/mpeg')
         
-        logger.info(f"오디오 파일 제공: {file_path}")
+        logger.info(f"[Audio] 오디오 파일 제공: {file_path} (type: {media_type})")
         return FileResponse(
             path=file_path,
             media_type=media_type,
