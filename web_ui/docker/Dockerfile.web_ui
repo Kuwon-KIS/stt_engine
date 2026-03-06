@@ -24,43 +24,6 @@ COPY web_ui/migrations/ ./migrations/
 COPY web_ui/scripts/ ./scripts/
 COPY web_ui/docker/entrypoint.sh ./
 
-# SheetJS 다운로드 (오프라인 배포용 - 실패해도 계속 진행)
-# .dockerignore에 scripts/가 제외되어 있으므로 Dockerfile 내에서 직접 구현
-RUN mkdir -p /app/static/lib && \
-    python3 << 'EOF'
-import os
-import urllib.request
-import urllib.error
-import sys
-
-# SheetJS 다운로드
-sheetjs_url = 'https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js'
-output_file = '/app/static/lib/xlsx.full.min.js'
-
-print(f'Downloading SheetJS from {sheetjs_url}...')
-try:
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            print(f'Attempt {attempt + 1}/{max_retries}...', file=sys.stderr)
-            urllib.request.urlretrieve(sheetjs_url, output_file)
-            file_size = os.path.getsize(output_file)
-            print(f'✓ Downloaded successfully to {output_file} ({file_size:,} bytes)')
-            break
-        except (urllib.error.URLError, urllib.error.HTTPError) as e:
-            if attempt < max_retries - 1:
-                print(f'  Retry after error: {e}', file=sys.stderr)
-                continue
-            else:
-                raise
-except Exception as e:
-    print(f'✗ Failed to download SheetJS: {e}', file=sys.stderr)
-    print(f'Note: This is expected if running in offline mode.', file=sys.stderr)
-    print(f'Excel export will be disabled. CSV export will still work.', file=sys.stderr)
-    sys.exit(0)
-EOF
-
-
 # 데이터 디렉토리 생성
 RUN mkdir -p data/uploads data/results data/batch_input logs
 
