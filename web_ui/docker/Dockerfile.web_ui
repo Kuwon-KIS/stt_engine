@@ -27,7 +27,7 @@ COPY web_ui/docker/entrypoint.sh ./
 # SheetJS 다운로드 (오프라인 배포용 - 실패해도 계속 진행)
 # .dockerignore에 scripts/가 제외되어 있으므로 Dockerfile 내에서 직접 구현
 RUN mkdir -p /app/static/lib && \
-    python3 -c "
+    python3 << 'EOF'
 import os
 import urllib.request
 import urllib.error
@@ -57,7 +57,9 @@ except Exception as e:
     print(f'✗ Failed to download SheetJS: {e}', file=sys.stderr)
     print(f'Note: This is expected if running in offline mode.', file=sys.stderr)
     print(f'Excel export will be disabled. CSV export will still work.', file=sys.stderr)
-" || echo "Warning: SheetJS download failed - will fallback to CDN"
+    sys.exit(0)
+EOF
+
 
 # 데이터 디렉토리 생성
 RUN mkdir -p data/uploads data/results data/batch_input logs
