@@ -878,11 +878,6 @@
                             지원하지 않는 브라우저입니다.
                         </audio>
                     </div>
-                    <!-- 오디오 디버그 정보 -->
-                    <div id="audioDebugInfo" style="margin-top: 10px; padding: 10px; background-color: #f0f0f0; border-radius: 4px; font-size: 12px; font-family: monospace; max-height: 150px; overflow-y: auto; display: none;">
-                        <div style="color: #666; margin-bottom: 5px;">🔍 오디오 로드 상태:</div>
-                        <div id="audioDebugLog" style="color: #333; white-space: pre-wrap; word-break: break-all;"></div>
-                    </div>
                 </div>
 
                 <!-- STT 전문 -->
@@ -1254,10 +1249,10 @@
                 <td style="text-align: left;">${result.filename}</td>
                 <td style="text-align: center;">
                     <div class="audio-player">
-                        <audio id="audio-${encodeURIComponent(result.filename)}" controls preload="none" onplay="loadAudioSource(this, '${audioUrl}')">
-                            <source type="audio/wav">
-                            <source type="audio/mp3">
-                            <source type="audio/mpeg">
+                        <audio id="audio-${encodeURIComponent(result.filename)}" controls preload="none" style="width: 100%;">
+                            <source src="${audioUrl}" type="audio/wav">
+                            <source src="${audioUrl}" type="audio/mp3">
+                            <source src="${audioUrl}" type="audio/mpeg">
                             지원하지 않는 브라우저입니다.
                         </audio>
                     </div>
@@ -1458,55 +1453,12 @@
             // 오디오 플레이어 설정
             const audioUrl = `/api/files/audio/${currentEmpId}/${currentFolderPath}/${encodeURIComponent(filename)}`;
             const audioPlayer = document.getElementById('detailAudioPlayer');
-            const debugPanel = document.getElementById('audioDebugInfo');
-            const debugLog = document.getElementById('audioDebugLog');
-            
-            // 디버그 로그 초기화
-            let debugMessages = [];
-            
-            const log = (msg) => {
-                console.log('[Audio Detail]', msg);
-                debugMessages.push(`✓ ${msg}`);
-                debugLog.textContent = debugMessages.join('\n');
-            };
-            
-            const error = (msg) => {
-                console.error('[Audio Detail]', msg);
-                debugMessages.push(`✗ ${msg}`);
-                debugLog.textContent = debugMessages.join('\n');
-            };
-            
-            log(`분석 상세 모달 오디오 로드 시작`);
-            log(`URL: ${audioUrl}`);
-            log(`empId: ${currentEmpId}, folderPath: ${currentFolderPath}, filename: ${filename}`);
             
             document.getElementById('detailAudioSource1').src = audioUrl;
             document.getElementById('detailAudioSource2').src = audioUrl;
             document.getElementById('detailAudioSource3').src = audioUrl;
             audioPlayer.load();
-            log(`audioPlayer.load() 호출됨`);
             
-            // 오디오 이벤트 핸들러 추가 (디버깅용)
-            audioPlayer.addEventListener('loadstart', () => {
-                log('🎵 loadstart 이벤트 발생');
-            });
-            audioPlayer.addEventListener('progress', () => {
-                log('📥 progress 이벤트 발생');
-            });
-            audioPlayer.addEventListener('canplay', () => {
-                log('✅ canplay 이벤트 - 재생 가능 상태');
-            });
-            audioPlayer.addEventListener('playing', () => {
-                log('▶️ playing 이벤트 - 재생 중');
-            });
-            audioPlayer.addEventListener('error', (e) => {
-                const errorCode = e.target.error?.code;
-                const errorMsg = e.target.error?.message;
-                error(`❌ 오디오 로드 에러 (code: ${errorCode}, msg: ${errorMsg})`);
-            });
-            
-            // 디버그 패널 표시
-            debugPanel.style.display = 'block';
             // STT 전문 설정
             document.getElementById('detailSttText').textContent = result.stt_text || '(STT 데이터 없음)';
             
@@ -1849,7 +1801,9 @@
             }, 3000);
         }
 
-        // 오디오 소스 동적 로드 (재생 시에만 로드)
+        // 오디오 소스 동적 로드 (재생 시에만 로드) - DEPRECATED: src 속성을 초기화하도록 변경됨
+        // 더 이상 사용되지 않음 (결과 행의 audio 태그는 이제 초기에 src 설정)
+        /*
         function loadAudioSource(audioElement, audioUrl) {
             // 이미 src가 설정되어 있으면 스킵
             if (audioElement.querySelector('source[src]')) {
@@ -1865,6 +1819,7 @@
             // 오디오 로드
             audioElement.load();
         }
+        */
 
         // 분석 이력 모달 표시
         async function showHistoryModal() {
