@@ -714,26 +714,24 @@ class AnalysisService:
                                 # Agent 결과가 있으면 사용, 없으면 더미 데이터 사용
                                 detection_result = None
                                 
-                                # 1. Agent 결과 확인 (element_detection 또는 ai_agent_result)
-                                if include_classification and stt_result.get('element_detection'):
-                                    # Agent가 제공한 요소 탐지 결과
+                                # 1. STT API에서 제공한 element_detection 결과 직접 사용
+                                if stt_result.get('element_detection'):
+                                    # STT API의 element_detection 결과 (Dict 형식)
                                     element_data = stt_result.get('element_detection', {})
-                                    agent_result = incomplete_data.get('result', {})
                                     
-                                    # Agent 결과를 우리 형식으로 변환
-                                    if agent_result:
-                                        detection_result = {
-                                            "category": agent_result.get("category", "사전판매"),
-                                            "detected_yn": "Y" if agent_result.get("detected", False) else "N",
-                                            "detected_sentence": agent_result.get("detected_sentences", []),
-                                            "detected_reason": agent_result.get("detected_reasons", []),
-                                            "detected_keyword": agent_result.get("keywords", [])
-                                        }
-                                        logger.info(f"[process_analysis_sync] Using agent detection result for {filename}")
+                                    # 이미 표준 형식(detected_yn, detected_sentences 등)이므로 바로 사용
+                                    detection_result = {
+                                        "category": element_data.get("category", []),
+                                        "detected_yn": element_data.get("detected_yn", "N"),
+                                        "detected_sentence": element_data.get("detected_sentences", []),
+                                        "detected_reason": element_data.get("detected_reasons", []),
+                                        "detected_keyword": element_data.get("detected_keywords", [])
+                                    }
+                                    logger.info(f"[process_analysis_sync] Using STT API element_detection result for {filename}: detected_yn={detection_result.get('detected_yn')}")
                                 
-                                # 2. Agent 결과 없으면 더미 데이터 사용 (개발/테스트용)
+                                # 2. Element detection이 없으면 더미 데이터 사용 (개발/테스트용)
                                 if not detection_result:
-                                    logger.warning(f"[process_analysis_sync] No agent result for {filename}, using dummy data")
+                                    logger.warning(f"[process_analysis_sync] No element_detection from STT API for {filename}, using dummy data")
                                     detection_result = SAMPLE_DETECTION_RESULTS[idx % len(SAMPLE_DETECTION_RESULTS)]
                                 
                                 if existing_result:
