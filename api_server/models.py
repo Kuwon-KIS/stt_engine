@@ -226,7 +226,7 @@ class TranscribeResponse(BaseModel):
     )
     
     # 요소 탐지 결과 (불완전판매, 부당권유 판매 등)
-    element_detection: Optional[List[Dict[str, Any]]] = Field(
+    element_detection: Optional[Dict[str, Any]] = Field(
         None,
         description="요소 탐지 결과 (불완전판매, 부당권유 판매 등)"
     )

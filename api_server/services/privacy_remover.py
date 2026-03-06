@@ -634,9 +634,10 @@ class PrivacyRemoverService:
             prompt = self.prompt_processor.get_prompt(prompt_type, usertxt)
             
             # LLM API 호출
-            logger.debug(f"[PrivacyRemover] LLM API 호출: model={self.model_name}")
+            logger.debug(f"[PrivacyRemover] LLM API 호출: model={actual_model}")
             llm_response = await self.llm_client.generate_response(
                 prompt=prompt,
+                model_name=actual_model,
                 max_tokens=max_tokens,
                 temperature=temperature
             )

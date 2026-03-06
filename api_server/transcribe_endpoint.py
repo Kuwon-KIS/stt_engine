@@ -616,49 +616,95 @@ async def _call_external_api(
         
         result = response.json()
         logger.info(f"[Transcribe/ElementDetection] ✅ 외부 API 호출 성공")
-        logger.debug(f"[Transcribe/ElementDetection] 응답: {json_lib.dumps(result, ensure_ascii=False)[:200]}...")
+        logger.info(f"[Transcribe/ElementDetection] 응답: {json_lib.dumps(result, ensure_ascii=False)[:200]}...")
         
         # 외부 API 응답을 표준 형식으로 변환
         # 응답 형식: {"detected_yn": "Y"/"N", "detected_sentences": list, "detected_reasons": list, "detected_keywords": list}
-        detection_results = []
         
-        # API 응답이 직접 detection 객체인 경우와 message 필드에 포함된 경우 모두 처리
+        # API 응답이 직접 detection 객체인 경우와 nested 필드에 포함된 경우 모두 처리
         if isinstance(result, dict):
-            # 직접 응답 형식인 경우
+            # 직접 응답 형식인 경우 (detected_yn 필드 있음)
             if "detected_yn" in result:
                 detection_data = result
-            # message 필드에 포함된 경우 (경우에 따라)
+                logger.debug("[Transcribe/ElementDetection] 응답 형식: 직접 detected_yn 필드")
+            # answer.answer 필드에 포함된 경우 (KIS Agent API 응답 형식)
+            elif "answer" in result:
+                try:
+                    answer_field = result.get("answer")
+                    if isinstance(answer_field, dict):
+                        # answer 필드가 dict인 경우 (answer.answer 구조)
+                        inner_answer = answer_field.get("answer")
+                        if isinstance(inner_answer, str):
+                            # JSON 문자열로 된 경우 파싱
+                            detection_data = json_lib.loads(inner_answer)
+                            logger.debug("[Transcribe/ElementDetection] 응답 형식: answer.answer 필드 (JSON 문자열)")
+                        elif isinstance(inner_answer, dict):
+                            # 이미 dict인 경우 직접 사용
+                            detection_data = inner_answer
+                            logger.debug("[Transcribe/ElementDetection] 응답 형식: answer.answer 필드 (dict)")
+                        else:
+                            logger.warning(f"[Transcribe/ElementDetection] answer.answer 필드 타입 예상 불일치: {type(inner_answer)}")
+                            detection_data = answer_field
+                    elif isinstance(answer_field, str):
+                        # answer 필드가 문자열인 경우 (한 단계 더 파싱)
+                        detection_data = json_lib.loads(answer_field)
+                        logger.debug("[Transcribe/ElementDetection] 응답 형식: answer 필드 (JSON 문자열)")
+                    else:
+                        detection_data = answer_field
+                        logger.debug("[Transcribe/ElementDetection] 응답 형식: answer 필드 (다른 타입)")
+                except Exception as parse_err:
+                    logger.warning(f"[Transcribe/ElementDetection] answer 필드 파싱 실패: {parse_err}, 전체 응답 사용")
+                    detection_data = result
+            # message 필드에 포함된 경우
             elif "message" in result:
                 try:
                     message_str = result.get("message", "{}")
                     if isinstance(message_str, str):
                         detection_data = json_lib.loads(message_str)
+                        logger.debug("[Transcribe/ElementDetection] 응답 형식: message 필드 (JSON 문자열)")
                     else:
                         detection_data = message_str
-                except:
-                    logger.warning("[Transcribe/ElementDetection] message 필드 파싱 실패, 전체 응답 사용")
+                        logger.debug("[Transcribe/ElementDetection] 응답 형식: message 필드 (dict)")
+                except Exception as parse_err:
+                    logger.warning(f"[Transcribe/ElementDetection] message 필드 파싱 실패: {parse_err}")
                     detection_data = result
             else:
                 # 응답 구조가 다른 경우, 전체 응답을 사용
                 detection_data = result
+                logger.debug("[Transcribe/ElementDetection] 응답 형식: 구조 미매칭, 전체 응답 사용")
         else:
             logger.warning(f"[Transcribe/ElementDetection] 예상하지 못한 응답 형식: {type(result)}")
             return None
         
-        detected_yn = detection_data.get("detected_yn", "N").upper()
+        # detected_yn 값 추출 및 정규화 (다양한 형식 대응)
+        detected_yn_raw = detection_data.get("detected_yn", "N")
+        if isinstance(detected_yn_raw, list):
+            # 리스트인 경우 첫 번째 요소 사용
+            detected_yn = str(detected_yn_raw[0]).upper() if detected_yn_raw else "N"
+            logger.debug(f"[Transcribe/ElementDetection] detected_yn이 리스트 형식: {detected_yn_raw} → {detected_yn}으로 변환")
+        elif isinstance(detected_yn_raw, str):
+            detected_yn = detected_yn_raw.upper()
+        else:
+            detected_yn = str(detected_yn_raw).upper() if detected_yn_raw else "N"
         
-        detection_results.append({
+        logger.debug(f"[Transcribe/ElementDetection] 최종 detected_yn: {detected_yn}")
+        
+        detection_result = {
             "detected_yn": detected_yn,
             "detected_sentences": detection_data.get("detected_sentences", []),
             "detected_reasons": detection_data.get("detected_reasons", []),
             "detected_keywords": detection_data.get("detected_keywords", []),
             "category": detection_data.get("category", [])
-        })
+        }
         
-        logger.info(f"[Transcribe/ElementDetection] 탐지 결과: detected_yn={detected_yn}")
+        logger.info(f"[Transcribe/ElementDetection] ✅ 탐지 결과 파싱 완료")
+        logger.info(f"  - detected_yn: {detected_yn}")
+        logger.info(f"  - detected_sentences: {len(detection_data.get('detected_sentences', []))}개")
+        logger.info(f"  - detected_reasons: {len(detection_data.get('detected_reasons', []))}개")
+        logger.info(f"  - detected_keywords: {len(detection_data.get('detected_keywords', []))}개")
         
         return {
-            'detection_results': detection_results,
+            'detection_results': detection_result,
             'api_type': 'external'
         }
     
@@ -763,7 +809,6 @@ async def _call_local_llm(
         logger.info(f"  응답 미리보기: {response[:150]}...")
         
         # 응답 파싱
-        detection_results = []
         try:
             import json as json_lib
             result_json = json_lib.loads(response)
@@ -789,7 +834,7 @@ async def _call_local_llm(
             if isinstance(category, str):
                 category = [category] if category else []
             
-            result_obj = {
+            detection_result = {
                 "detected_yn": detected_yn,
                 "detected_sentences": detected_sentences,
                 "detected_reasons": detected_reasons,
@@ -798,9 +843,7 @@ async def _call_local_llm(
             
             # category 필드 추가 (AI Agent와 동일한 형식)
             if category:
-                result_obj["category"] = category if isinstance(category, list) else [category]
-            
-            detection_results.append(result_obj)
+                detection_result["category"] = category if isinstance(category, list) else [category]
             
         except (json_lib.JSONDecodeError, ValueError) as parse_err:
             logger.error(f"[Transcribe/ElementDetection] LLM 응답 JSON 파싱 실패: {str(parse_err)[:100]}")
@@ -809,10 +852,10 @@ async def _call_local_llm(
         
         logger.info(f"[Transcribe/ElementDetection] ✅ 로컬 LLM 처리 완료")
         logger.info(f"  - llm_type: {llm_type}")
-        logger.info(f"  - 결과_수: {len(detection_results)}")
-        logger.info(f"  - 결과 상세: {detection_results}")
+        logger.info(f"  - detected_yn: {detection_result.get('detected_yn', 'N')}")
+        logger.info(f"  - 결과 상세: {detection_result}")
         return {
-            'detection_results': detection_results,
+            'detection_results': detection_result,
             'api_type': 'local',
             'llm_type': llm_type
         }
@@ -842,16 +885,14 @@ def _get_dummy_results(detection_types: list) -> dict:
         더미 결과 dict
     """
     logger.warning("[Transcribe/ElementDetection] 모든 fallback 방법 실패, 더미 결과 반환")
-    detection_results = [
-        {
-            "detected_yn": "N",
-            "detected_sentences": [],
-            "detected_reasons": [],
-            "detected_keywords": []
-        }
-    ]
+    detection_result = {
+        "detected_yn": "N",
+        "detected_sentences": [],
+        "detected_reasons": [],
+        "detected_keywords": []
+    }
     return {
-        'detection_results': detection_results,
+        'detection_results': detection_result,
         'api_type': 'dummy',
         'llm_type': None
     }

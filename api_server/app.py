@@ -451,7 +451,7 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
     detection_llm_type = form_data.get('detection_llm_type', 'vllm')
     detection_vllm_model_name = _normalize_model_name(form_data.get('detection_vllm_model_name') or os.getenv('DETECTION_VLLM_MODEL_NAME', os.getenv('VLLM_MODEL_NAME', VLLM_MODEL_NAME)))
     element_detection_prompt_type = form_data.get('element_detection_prompt_type', 'element_detection_qwen')
-    agent_url = form_data.get('agent_url', '')  # Element Detection 외부 API URL
+    agent_url = form_data.get('agent_url', '') or os.getenv('EXTERNAL_API_URL', os.getenv('AGENT_URL', ''))  # Element Detection 외부 API URL
     
     # DEBUG: FormData 내용 로깅
     logger.info(f"[DEBUG] FormData Keys: {list(form_data.keys())}")
@@ -569,6 +569,7 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
         
         # 3. Privacy Removal (선택)
         privacy_removal_enabled = privacy_removal.lower() in ['true', '1', 'yes', 'on']
+        privacy_removal_enabled= False
         privacy_result = None
         
         if privacy_removal_enabled:
@@ -586,6 +587,7 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
         
         if classification_enabled:
             # Classification을 위해서는 Privacy Removal이 먼저 수행되어야 함
+            # privacy_result가 None인 경우 안전하게 처리
             classification_text = privacy_result.text if privacy_result else stt_result.get('text', '')
             
             logger.info(f"[API] Classification 처리 시작 (llm_type={classification_llm_type}, model={classification_vllm_model_name})")
@@ -614,7 +616,9 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
             from api_server.transcribe_endpoint import perform_element_detection
             
             # 정제된 텍스트 또는 원본 사용
+            # privacy_result가 있으면 정제된 텍스트 사용, 없으면 원본 STT 결과 사용
             detection_text = privacy_result.text if privacy_result else stt_result.get('text', '')
+            logger.info(f"[API] 요소 탐지 텍스트 선택: privacy_result={privacy_result is not None}, text_length={len(detection_text)}, text_preview={detection_text[:100] if detection_text else ''}")
             
             # detection_types를 리스트로 파싱 (CSV 형식 지원)
             detection_types_list = [t.strip() for t in detection_types.split(',') if t.strip()] if detection_types else []
@@ -626,6 +630,7 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
             logger.info(f"[API] Element Detection 모델 설정:")
             logger.info(f"  - LLM Type: {detection_llm_type}")
             logger.info(f"  - vLLM Model: {detection_vllm_model_name}")
+            logger.info(f"[API] Element Detection 호출 전 stt_result 상태: success={stt_result.get('success')}, backend={stt_result.get('backend')}, text_len={len(stt_result.get('text', ''))}")
             
             element_response = await perform_element_detection(
                 text=detection_text,
@@ -640,9 +645,14 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
                 external_api_url=agent_url
             )
             
+            logger.info(f"[API] Element Detection 응답: success={element_response.get('success')}, api_type={element_response.get('api_type')}, error={element_response.get('error')}")
+            
+            # success 여부와 관계없이 element_result 설정 (미탐지도 유효한 결과)
+            element_result = element_response
+            
             if element_response.get('success'):
-                element_result = element_response
-                logger.info(f"[API] ✅ 요소 탐지 완료 (api_type={element_response.get('api_type')}, llm_type={element_response.get('llm_type')})")
+                detected_yn = element_response.get('detection_results', {}).get('detected_yn', 'N')
+                logger.info(f"[API] ✅ 요소 탐지 완료 (api_type={element_response.get('api_type')}, llm_type={element_response.get('llm_type')}, detected_yn={detected_yn})")
             else:
                 logger.warning(f"[API] ⚠️ 요소 탐지 실패: {element_response.get('error')}")
         

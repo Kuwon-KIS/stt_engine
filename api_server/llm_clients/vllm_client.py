@@ -43,7 +43,7 @@ class vLLMClient(LLMClient):
             if api_url.endswith('/chat/completions'):
                 # 잘못된 형식 감지 및 수정
                 logger.warning(f"⚠️ api_url에 /chat/completions이 포함됨: {api_url}")
-                logger.warning(f"   vLLMClient가 자동으로 /v1/completions를 추가하므로 제거합니다")
+                logger.warning(f"   vLLMClient가 자동으로 /v1/chat/completions를 추가하므로 제거합니다")
                 api_url = api_url.replace('/chat/completions', '')
             
             # /v1 추가
@@ -52,8 +52,8 @@ class vLLMClient(LLMClient):
         
         self.api_url = api_url
         self.timeout = timeout
-        # ✅ 올바른 endpoint: base_url/v1 + /completions
-        self.endpoint = f"{api_url}/completions"
+        # ✅ 올바른 endpoint: base_url/v1 + /chat/completions
+        self.endpoint = f"{api_url}/chat/completions"
         
         logger.info(f"[vLLMClient] 초기화 완료: model={model_name}, base_url={api_url}, endpoint={self.endpoint}")
     

@@ -42,17 +42,26 @@ class LLMClientFactory:
         """
         # 베이스 URL 결정 (우선순위: base_url > vllm_api_url > 환경변수)
         if base_url is None and vllm_api_url is None:
-            # 환경변수에서 읽기 (VLLM_BASE_URL은 /v1 포함, VLLM_API_ENDPOINT는 deprecated)
-            vllm_base = os.getenv("VLLM_BASE_URL", "http://localhost:8001/v1")
-            base_url = vllm_base
+            # 환경변수에서 읽기 (VLLM_BASE_URL은 /v1 포함)
+            base_url = os.getenv("VLLM_BASE_URL", "http://localhost:8001/v1")
         elif vllm_api_url is not None and base_url is None:
             # Legacy: vllm_api_url이 지정된 경우
             base_url = vllm_api_url
         
-        # base_url 정규화 (vLLMClient에서도 하지만, 로깅 전에 미리 정규화)
-        base_url = base_url.rstrip('/').rstrip('v1')
+        # base_url 정규화
+        # ⚠️ 주의: vLLMClient가 자동으로 /v1/completions를 구성하므로
+        #         base_url은 반드시 "http://host:port/v1" 형식이어야 함
+        #         /chat/completions가 있으면 제거
+        base_url = base_url.rstrip('/')
+        if '/chat/completions' in base_url:
+            # /v1/chat/completions → /v1으로 수정
+            base_url = base_url.replace('/chat/completions', '')
         if not base_url.endswith('/v1'):
-            base_url = base_url.rstrip('/') + '/v1'
+            if base_url.endswith('/completions'):
+                # /v1/completions → /v1으로 수정
+                base_url = base_url.replace('/completions', '')
+            if not base_url.endswith('/v1'):
+                base_url = base_url + '/v1'
         
         try:
             logger.info(f"[LLMClientFactory] Creating vLLMClient (model={model_name}, base_url={base_url}, llm_type={llm_type})")
