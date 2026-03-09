@@ -3,6 +3,8 @@
 **작성일**: 2026년 2월 25일  
 **대상**: Phase 3 LLM Client 구현 후 API 테스트
 
+> **참고**: STT API 서버 환경변수는 [ENVIRONMENT_VARIABLES.md](./ENVIRONMENT_VARIABLES.md)를 참고하세요.
+
 ---
 
 ## 목차

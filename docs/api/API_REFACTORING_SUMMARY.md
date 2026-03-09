@@ -4,6 +4,8 @@
 **버전**: Phase 2 완료  
 **상태**: ✅ 구현 완료 및 테스트 통과
 
+> **참고**: STT API 서버의 환경변수 설정은 [ENVIRONMENT_VARIABLES.md](./ENVIRONMENT_VARIABLES.md)를 참고하세요.
+
 ---
 
 ## 1. 주요 변경사항
