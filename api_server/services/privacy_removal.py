@@ -296,7 +296,7 @@ class QwenClient:
         
         Note:
             API base_url과 api_key는 환경변수에서 읽습니다:
-            - PRIVACY_VLLM_API_BASE (기본값: http://localhost:8001/v1)
+            - PRIVACY_REMOVAL_VLLM_API_BASE (기본값: http://localhost:8001/v1)
             - OPENAI_API_KEY (기본값: "dummy")
         """
         load_dotenv()
@@ -305,7 +305,7 @@ class QwenClient:
             
             # 환경변수에서 설정값 읽기
             api_key = os.getenv("OPENAI_API_KEY", "dummy")
-            api_base = os.getenv("PRIVACY_VLLM_API_BASE", "http://localhost:8001/v1")
+            api_base = os.getenv("PRIVACY_REMOVAL_VLLM_API_BASE", "http://localhost:8001/v1")
             
             # URL 정규화 (OpenAI SDK 호환)
             api_base = self._normalize_api_base(api_base)

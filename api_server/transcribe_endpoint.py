@@ -228,7 +228,8 @@ async def perform_privacy_removal(
     text: str,
     prompt_type: str = "privacy_remover_default_v6",
     llm_type: str = "vllm",
-    vllm_model_name: Optional[str] = None
+    vllm_model_name: Optional[str] = None,
+    vllm_api_base: Optional[str] = None
 ) -> Optional[PrivacyRemovalResult]:
     """
     Privacy Removal 수행

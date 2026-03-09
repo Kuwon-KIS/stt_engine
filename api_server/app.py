@@ -435,6 +435,7 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
     privacy_removal = config.get_bool('privacy_removal')
     privacy_llm_type = config.get_str('privacy_llm_type', 'vllm')
     privacy_vllm_model_name = config.get_vllm_model_name('privacy_removal')
+    privacy_vllm_api_base = config.get_vllm_api_base('privacy_removal')
     privacy_prompt_type = config.get_str('privacy_prompt_type', 'privacy_remover_default_v6')
     
     # Classification 설정
@@ -579,7 +580,8 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
                 text=stt_result.get('text', ''),
                 prompt_type=privacy_prompt_type,
                 llm_type=privacy_llm_type,
-                vllm_model_name=privacy_vllm_model_name
+                vllm_model_name=privacy_vllm_model_name,
+                vllm_api_base=privacy_vllm_api_base
             )
         
         # 4. Classification (선택)
