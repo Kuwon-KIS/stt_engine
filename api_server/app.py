@@ -637,16 +637,26 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
             logger.info(f"  - vLLM Model: {detection_vllm_model_name}")
             logger.info(f"[API] Element Detection 호출 전 stt_result 상태: success={stt_result.get('success')}, backend={stt_result.get('backend')}, text_len={len(stt_result.get('text', ''))}")
             
-            element_response = await perform_element_detection(
-                text=detection_text,
-                detection_types=detection_types_list,
-                api_type=detection_api_type,
-                llm_type=detection_llm_type,
-                vllm_model_name=detection_vllm_model_name,
-                vllm_base_url=vllm_base_url,
-                element_detection_prompt_type=element_detection_prompt_type,
-                agent_url=agent_url
-            )
+            # ai_agent 모드와 vllm 모드의 파라미터 구분
+            if detection_api_type == "ai_agent":
+                # AI Agent 모드: agent_url만 필요
+                element_response = await perform_element_detection(
+                    text=detection_text,
+                    detection_types=detection_types_list,
+                    api_type=detection_api_type,
+                    agent_url=agent_url
+                )
+            else:
+                # vLLM 모드: vLLM 설정 필요
+                element_response = await perform_element_detection(
+                    text=detection_text,
+                    detection_types=detection_types_list,
+                    api_type=detection_api_type,
+                    llm_type=detection_llm_type,
+                    vllm_model_name=detection_vllm_model_name,
+                    vllm_base_url=vllm_base_url,
+                    agent_url=agent_url
+                )
             
             logger.info(f"[API] Element Detection 응답: success={element_response.get('success')}, api_type={element_response.get('api_type')}, error={element_response.get('error')}")
             
