@@ -335,9 +335,9 @@ class TestSTTConfig:
     
     def test_get_preset_from_env(self, monkeypatch):
         """환경변수에서 프리셋 추출"""
-        monkeypatch.setenv('STT_PRESET', 'fast')
+        monkeypatch.setenv('STT_PRESET', 'speed')
         cfg = self.create_config({})
-        assert cfg.get_preset() == 'fast'
+        assert cfg.get_preset() == 'speed'
     
     def test_get_preset_invalid_fallback(self):
         """지원하지 않는 프리셋은 기본값으로 폴백"""

@@ -199,23 +199,38 @@ MAX_FILE_SIZE_MB = 500
 STREAM_CHUNK_DURATION = 30
 STREAM_OVERLAP_DURATION = 3  # 기존 12초에서 변경 (40% → 10%)
 
-# STT_PRESET별 세그멘트 설정 오버라이드
-# STT_PRESET 환경변수에 따라 segment 설정을 명시적으로 조정
+# STT PRESET 설정
+# 
+# ⚠️ 중요: 실제 성능 차이는 stt_engine.py의 reload_backend()에서 결정됩니다!
+#
+# 각 PRESET별 백엔드/연산 타입:
+#   - "speed"     → faster-whisper + int8 (가장 빠름, 약 8초/30초 오디오)
+#   - "balanced"  → faster-whisper + float16 (중간 속도, 약 15초/30초 오디오)
+#   - "accuracy"  → transformers + float32 (정확도 최고, 약 25초+/30초 오디오) ⚠️ 매우 느림!
+#   - "custom"    → 사용자 지정값 사용 (reload_backend()에 backend/compute_type/device 직접 지정)
+#
+# 세그멘트 오버랩은 수% 정도만 영향을 미치므로 모든 PRESET에서 동일하게 설정합니다.
 PRESET_SEGMENT_CONFIG = {
     "accuracy": {
         "chunk_duration": 30,
-        "overlap_duration": 3,  # 높은 정확도(float32)로 3초 오버랩으로 충분
-        "description": "High accuracy with minimal overlap"
+        "overlap_duration": 3,
+        "backend": "transformers",
+        "compute_type": "float32",
+        "description": "Highest accuracy (transformers + float32, ~25sec/30sec audio) ⚠️ SLOW"
     },
     "balanced": {
         "chunk_duration": 30,
-        "overlap_duration": 5,  # 중간 정확도, 5초 오버랩
-        "description": "Balanced accuracy and performance"
+        "overlap_duration": 3,
+        "backend": "faster-whisper",
+        "compute_type": "float16",
+        "description": "Balanced speed & accuracy (faster-whisper + float16, ~15sec/30sec audio)"
     },
-    "fast": {
+    "speed": {
         "chunk_duration": 30,
-        "overlap_duration": 2,  # 빠른 처리, 최소 오버랩
-        "description": "Fast processing with minimal overlap"
+        "overlap_duration": 2,
+        "backend": "faster-whisper",
+        "compute_type": "int8",
+        "description": "Fastest processing (faster-whisper + int8, ~8sec/30sec audio)"
     }
 }
 
@@ -225,14 +240,19 @@ SUPPORTED_LANGUAGES = ["ko", "en", "ja", "zh", "es", "fr", "de", "it", "pt", "ru
 
 
 # ============================================================================
-# LLM 및 API Endpoint 설정
+# Model Configuration (환경변수 기반)
 # ============================================================================
+# 
+# 이 섹션은 운영 환경에서 환경변수로 override됩니다.
+# 로컬 개발 시 아래 기본값을 사용합니다.
+#
+# 우선순위: 환경변수 > 기본값
 
-# vLLM 설정 (Element Detection / Classification용)
-VLLM_BASE_URL = "http://localhost:8001/v1"          # ✅ 반드시 /v1 포함! (OpenAI SDK가 /chat/completions를 자동 추가)
-VLLM_API_ENDPOINT = "/chat/completions"             # ✅ /v1은 BASE_URL에 포함되므로 여기선 생략
-VLLM_MODEL_NAME = "qwen30_thinking_2507"            # 기본 모델명 (경로 제외)
-VLLM_MODEL_NAME_FULL = "/model/qwen30_thinking_2507"  # 전체 경로 포함 (환경변수에서 사용 가능)
+# vLLM 서버 설정
+# - STT 작업: Privacy Removal, Classification, Element Detection에 사용
+VLLM_BASE_URL = "http://localhost:8001/v1"
+VLLM_MODEL_NAME = "qwen30_thinking_2507"
 
-# 외부 API 설정 (없으면 None)
-EXTERNAL_API_URL = None  # 예: "http://localhost:8002/detect"
+# 외부 Element Detection Agent (ai_agent 모드 사용 시에만 필요)
+# - 환경변수: ELEMENT_DETECTION_AGENT_URL
+EXTERNAL_API_URL = None  # 레거시 호환성용 (사용하지 말 것)

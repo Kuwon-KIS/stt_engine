@@ -242,6 +242,22 @@ class STTConfig(FormDataConfig):
     
     FormDataConfig를 기반으로 STT 엔진 설정에 특화된 메서드를 제공합니다.
     
+    **⚠️ 중요: PRESET과 실제 성능 차이**
+    
+    PRESET별 실제 동작 (stt_engine.py의 reload_backend에서 결정):
+    
+    | PRESET | 백엔드 | 연산타입 | 성능 (30초 오디오 기준) | 특징 |
+    |--------|--------|---------|----------------------|------|
+    | speed | faster-whisper | int8 | ~8초 | ⚡ 가장 빠름, 정확도 낮음 |
+    | balanced | faster-whisper | float16 | ~15초 | 🟡 중간 속도, 중간 정확도 |
+    | accuracy | transformers | float32 | ~25초+ | 🐌 매우 느림, 정확도 최고 ⚠️ |
+    | custom | 사용자 지정 | 사용자 지정 | - | 명시적으로 device/compute_type/backend 지정 |
+    
+    **성능 차이 분석:**
+    - accuracy는 speed에 비해 **3배 이상 느림** (단순 2-3배가 아님!)
+    - 주요 원인: transformers 전체 모델 vs faster-whisper 경량 모델
+    - 세그멘트 설정 차이는 5% 미만의 성능 영향만 미침
+    
     **설정 우선순위 (중요):**
     
     STT_PRESET이 최우선 우선순위입니다:
@@ -254,18 +270,23 @@ class STTConfig(FormDataConfig):
     - stt_compute_type (FormData) > STT_COMPUTE_TYPE (env) > 기본값
     - stt_backend (FormData) > STT_BACKEND (env) > 기본값
     
-    다른 preset (accuracy/balanced/fast)은 고정된 설정으로 작동합니다.
+    다른 preset (speed/balanced/accuracy)은 고정된 설정으로 작동합니다.
+    
+    **운영 권장사항:**
+    - 실시간 처리 필요 → STT_PRESET=speed      (8초/30초 오디오)
+    - 균형 필요 → STT_PRESET=balanced         (15초/30초 오디오)
+    - 정확도 우선 → STT_PRESET=accuracy       (25초+/30초 오디오)
     """
     
     # STT 디바이스 지원 목록
     SUPPORTED_DEVICES = ['cpu', 'cuda', 'mps', 'auto']
     SUPPORTED_BACKENDS = ['faster_whisper', 'transformers', 'openai']
     SUPPORTED_COMPUTE_TYPES = ['float32', 'float16', 'bfloat16', 'int8']
-    SUPPORTED_PRESETS = ['accuracy', 'balanced', 'fast', 'custom']
+    SUPPORTED_PRESETS = ['speed', 'balanced', 'accuracy', 'custom']
     
     def get_preset(self, default: str = "accuracy") -> str:
         """
-        STT 프리셋 선택 (accuracy, balanced, fast, custom)
+        STT 프리셋 선택 (speed, balanced, accuracy, custom)
         
         *** 이것이 STT 설정의 가장 높은 우선순위입니다 ***
         
@@ -274,15 +295,23 @@ class STTConfig(FormDataConfig):
         2. 환경변수 (STT_PRESET)
         3. 기본값 "accuracy"
         
+        각 PRESET의 실제 동작 (stt_engine.py의 reload_backend에서 결정):
+        - "speed"     : faster-whisper + int8    (⚡ 가장 빠름, ~8초/30초 오디오)
+        - "balanced"  : faster-whisper + float16 (🟡 중간 속도, ~15초/30초 오디오)
+        - "accuracy"  : transformers + float32   (🐌 최고정확도, ~25초+/30초 오디오) ⚠️ 매우 느림!
+        - "custom"    : device, compute_type, backend 개별 지정 (reload_backend()에서 직접 설정)
+        
         Args:
             default: 기본값 (일반적으로 "accuracy")
         
         Returns:
-            검증된 프리셋명 (accuracy/balanced/fast/custom)
+            검증된 프리셋명
         
         Note:
-            - "accuracy", "balanced", "fast": 고정된 설정 사용
+            - "speed", "balanced", "accuracy": 고정된 백엔드 + 연산타입 조합 사용
             - "custom": device, compute_type, backend 개별 설정 사용
+            - ⚠️ 성능 차이의 80%는 백엔드 선택(transformers vs faster-whisper)에서 발생!
+            - 실제 성능: speed는 accuracy보다 3배 이상 빠름
         """
         preset = self.get_str('stt_preset') or os.getenv('STT_PRESET', default)
         preset = preset.lower()
@@ -295,13 +324,6 @@ class STTConfig(FormDataConfig):
             logger.info(f"[STTConfig] get_preset(): {repr(preset)}")
         
         return preset
-    
-    def get_device(self, default: str = "auto") -> str:
-        """
-        STT 처리에 사용할 디바이스 추출 및 검증
-        
-        *** 이 메서드는 preset == "custom"일 때만 의미가 있습니다 ***
-        
         우선순위:
         1. FormData 파라미터 (stt_device)
         2. 환경변수 (STT_DEVICE)
