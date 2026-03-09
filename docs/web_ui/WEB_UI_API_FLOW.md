@@ -209,7 +209,7 @@ for file in files:
         privacy_removal=True,      # 개인정보 제거
         classification=True,       # 통화 분류
         element_detection=True,    # 요소 탐지
-        agent_url="<EXTERNAL_API_URL>",
+        agent_url="<ELEMENT_DETECTION_AGENT_URL>",
         ...
     )
     
@@ -447,8 +447,7 @@ VLLM_MODEL_NAME = os.getenv("VLLM_MODEL_NAME", "qwen30_thinking_2507")
 
 # Element Detection
 ELEMENT_DETECTION_API_TYPE = os.getenv("ELEMENT_DETECTION_API_TYPE", "fallback")
-EXTERNAL_API_URL = os.getenv("EXTERNAL_API_URL")
-AGENT_URL = os.getenv("AGENT_URL")  # 레거시
+ELEMENT_DETECTION_AGENT_URL = os.getenv("ELEMENT_DETECTION_AGENT_URL")  # ai_agent 모드 필수
 ```
 
 ---
@@ -486,9 +485,9 @@ AGENT_URL = os.getenv("AGENT_URL")  # 레거시
    - 3개 LLM 모델명 환경변수 (PRIVACY, CLASSIFICATION, DETECTION) + 공통 (VLLM_MODEL_NAME)
    - 우선순위: 요청 파라미터 > 작업별 환경변수 > 공통 환경변수 > 기본값
 
-4. **API URL 중복**:
-   - EXTERNAL_API_URL과 AGENT_URL이 같은 목적 (레거시 호환성)
-   - 우선순위: form_data > EXTERNAL_API_URL > AGENT_URL
+4. **Element Detection API URL**:
+   - ELEMENT_DETECTION_AGENT_URL로 명확하게 통일 (ai_agent 모드 필수)
+   - 우선순위: form_data > ELEMENT_DETECTION_AGENT_URL (환경변수) > 기본값
 
 ---
 

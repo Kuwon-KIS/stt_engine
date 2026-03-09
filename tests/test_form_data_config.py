@@ -7,7 +7,8 @@ FormData 요청 파싱 및 설정 추상화 계층의 유닛 테스트
 import os
 import pytest
 from unittest.mock import Mock
-from api_server.config import FormDataConfig
+from api_server.config import FormDataConfig, STTConfig, LLMConfig, ElementDetectionConfig
+from api_server import config as config_module
 
 
 class TestFormDataConfig:
@@ -173,36 +174,22 @@ class TestFormDataConfig:
         result = config.get_agent_url()
         assert result == 'http://localhost:8002/detect'
     
-    def test_get_agent_url_from_external_api_url_env(self, monkeypatch):
-        """EXTERNAL_API_URL 환경변수 사용"""
-        monkeypatch.setenv('EXTERNAL_API_URL', 'http://api.example.com/detect')
-        monkeypatch.delenv('AGENT_URL', raising=False)
+    def test_get_agent_url_from_element_detection_agent_url_env(self, monkeypatch):
+        """ELEMENT_DETECTION_AGENT_URL 환경변수 사용"""
+        monkeypatch.setenv('ELEMENT_DETECTION_AGENT_URL', 'http://api.example.com/detect')
         config = self.create_config({})
         result = config.get_agent_url()
         assert result == 'http://api.example.com/detect'
-    
-    def test_get_agent_url_from_legacy_agent_url_env(self, monkeypatch):
-        """레거시 AGENT_URL 환경변수 지원"""
-        monkeypatch.delenv('EXTERNAL_API_URL', raising=False)
-        monkeypatch.setenv('AGENT_URL', 'http://legacy.example.com/detect')
         config = self.create_config({})
         result = config.get_agent_url()
-        assert result == 'http://legacy.example.com/detect'
+        assert result == 'http://api.example.com/detect'
     
     def test_get_agent_url_priority_form_over_env(self, monkeypatch):
         """FormData가 환경변수보다 우선"""
-        monkeypatch.setenv('EXTERNAL_API_URL', 'http://api.example.com/detect')
+        monkeypatch.setenv('ELEMENT_DETECTION_AGENT_URL', 'http://api.example.com/detect')
         config = self.create_config({'agent_url': 'http://form.example.com/detect'})
         result = config.get_agent_url()
         assert result == 'http://form.example.com/detect'
-    
-    def test_get_agent_url_priority_external_over_legacy(self, monkeypatch):
-        """EXTERNAL_API_URL이 AGENT_URL보다 우선"""
-        monkeypatch.setenv('EXTERNAL_API_URL', 'http://api.example.com/detect')
-        monkeypatch.setenv('AGENT_URL', 'http://legacy.example.com/detect')
-        config = self.create_config({})
-        result = config.get_agent_url()
-        assert result == 'http://api.example.com/detect'
     
     def test_get_agent_url_empty_string_fallback(self, monkeypatch):
         """모든 소스가 없을 때 빈 문자열 반환"""
@@ -270,5 +257,256 @@ class TestFormDataConfig:
         assert config.get_str('detection_types') == 'aggressive_sales,incomplete_sales'
 
 
+# ============================================================================
+# STTConfig 테스트
+# ============================================================================
+
+class TestSTTConfig:
+    """STTConfig 클래스 테스트"""
+    
+    def create_config(self, form_data_dict):
+        """테스트용 STTConfig 생성"""
+        form_data = Mock()
+        form_data.get = lambda key, default="": form_data_dict.get(key, default)
+        return STTConfig(form_data, debug=False)
+    
+    def test_get_device_from_form_data(self):
+        """FormData에서 디바이스 추출"""
+        cfg = self.create_config({'stt_device': 'cuda'})
+        assert cfg.get_device() == 'cuda'
+    
+    def test_get_device_case_insensitive(self):
+        """디바이스 선택 시 대소문자 무시"""
+        cfg = self.create_config({'stt_device': 'CUDA'})
+        assert cfg.get_device() == 'cuda'
+    
+    def test_get_device_invalid_fallback(self):
+        """지원하지 않는 디바이스는 기본값으로 폴백"""
+        cfg = self.create_config({'stt_device': 'invalid_device'})
+        assert cfg.get_device() == 'auto'
+    
+    def test_get_device_from_env(self, monkeypatch):
+        """환경변수에서 디바이스 추출"""
+        monkeypatch.setenv('STT_DEVICE', 'mps')
+        cfg = self.create_config({})
+        assert cfg.get_device() == 'mps'
+    
+    def test_get_compute_type_auto_cuda(self):
+        """CUDA 디바이스는 float16 자동 선택"""
+        cfg = self.create_config({})
+        compute_type = cfg.get_compute_type(device='cuda')
+        assert compute_type == 'float16'
+    
+    def test_get_compute_type_auto_cpu(self):
+        """CPU 디바이스는 float32 자동 선택"""
+        cfg = self.create_config({})
+        compute_type = cfg.get_compute_type(device='cpu')
+        assert compute_type == 'float32'
+    
+    def test_get_compute_type_from_form_data(self):
+        """FormData에서 연산 타입 추출"""
+        cfg = self.create_config({'stt_compute_type': 'float16'})
+        assert cfg.get_compute_type() == 'float16'
+    
+    def test_get_compute_type_invalid_fallback(self):
+        """지원하지 않는 연산 타입은 기본값으로 폴백"""
+        cfg = self.create_config({'stt_compute_type': 'invalid_type'})
+        assert cfg.get_compute_type() == 'float32'
+    
+    def test_get_backend_from_form_data(self):
+        """FormData에서 백엔드 추출"""
+        cfg = self.create_config({'stt_backend': 'transformers'})
+        assert cfg.get_backend() == 'transformers'
+    
+    def test_get_backend_hyphen_normalization(self):
+        """하이픈을 언더스코어로 정규화 (faster-whisper -> faster_whisper)"""
+        cfg = self.create_config({'stt_backend': 'faster-whisper'})
+        assert cfg.get_backend() == 'faster_whisper'
+    
+    def test_get_backend_invalid_fallback(self):
+        """지원하지 않는 백엔드는 기본값으로 폴백"""
+        cfg = self.create_config({'stt_backend': 'invalid_backend'})
+        assert cfg.get_backend() == 'faster_whisper'
+    
+    def test_get_preset_from_form_data(self):
+        """FormData에서 프리셋 추출"""
+        cfg = self.create_config({'stt_preset': 'balanced'})
+        assert cfg.get_preset() == 'balanced'
+    
+    def test_get_preset_from_env(self, monkeypatch):
+        """환경변수에서 프리셋 추출"""
+        monkeypatch.setenv('STT_PRESET', 'fast')
+        cfg = self.create_config({})
+        assert cfg.get_preset() == 'fast'
+    
+    def test_get_preset_invalid_fallback(self):
+        """지원하지 않는 프리셋은 기본값으로 폴백"""
+        cfg = self.create_config({'stt_preset': 'invalid_preset'})
+        assert cfg.get_preset() == 'accuracy'
+    
+    def test_get_preset_custom(self):
+        """커스텀 프리셋 지원"""
+        cfg = self.create_config({'stt_preset': 'custom'})
+        assert cfg.get_preset() == 'custom'
+
+
+# ============================================================================
+# LLMConfig 테스트
+# ============================================================================
+
+class TestLLMConfig:
+    """LLMConfig 클래스 테스트"""
+    
+    def create_config(self, form_data_dict):
+        """테스트용 LLMConfig 생성"""
+        form_data = Mock()
+        form_data.get = lambda key, default="": form_data_dict.get(key, default)
+        return LLMConfig(form_data, debug=False)
+    
+    def test_get_llm_type_from_form_data(self):
+        """FormData에서 LLM 타입 추출"""
+        cfg = self.create_config({'privacy_llm_type': 'ollama'})
+        assert cfg.get_llm_type('privacy') == 'ollama'
+    
+    def test_get_llm_type_invalid_fallback(self):
+        """지원하지 않는 LLM 타입은 기본값으로 폴백"""
+        cfg = self.create_config({'privacy_llm_type': 'invalid_llm'})
+        assert cfg.get_llm_type('privacy') == 'vllm'
+    
+    def test_get_vllm_endpoint_from_form_data(self):
+        """FormData에서 vLLM 엔드포인트 추출"""
+        cfg = self.create_config({'privacy_vllm_endpoint': 'http://api.example.com:8000/v1'})
+        assert cfg.get_vllm_endpoint('privacy') == 'http://api.example.com:8000/v1'
+    
+    def test_get_vllm_endpoint_default(self):
+        """vLLM 엔드포인트 기본값"""
+        cfg = self.create_config({})
+        assert cfg.get_vllm_endpoint('privacy') == 'http://localhost:8000/v1'
+    
+    def test_get_vllm_endpoint_from_env(self, monkeypatch):
+        """환경변수에서 vLLM 엔드포인트 추출"""
+        monkeypatch.setenv('PRIVACY_VLLM_ENDPOINT', 'http://custom.example.com:8000/v1')
+        cfg = self.create_config({})
+        assert cfg.get_vllm_endpoint('privacy') == 'http://custom.example.com:8000/v1'
+
+
+# ============================================================================
+# ElementDetectionConfig 테스트
+# ============================================================================
+
+class TestElementDetectionConfig:
+    """ElementDetectionConfig 클래스 테스트"""
+    
+    def create_config(self, form_data_dict):
+        """테스트용 ElementDetectionConfig 생성"""
+        form_data = Mock()
+        form_data.get = lambda key, default="": form_data_dict.get(key, default)
+        return ElementDetectionConfig(form_data, debug=False)
+    
+    def test_get_detection_api_type_from_form_data(self):
+        """FormData에서 API 타입 추출"""
+        cfg = self.create_config({'detection_api_type': 'vllm'})
+        assert cfg.get_detection_api_type() == 'vllm'
+    
+    def test_get_detection_api_type_default(self):
+        """API 타입 기본값 (ai_agent)"""
+        cfg = self.create_config({})
+        assert cfg.get_detection_api_type() == 'ai_agent'
+    
+    def test_get_detection_api_type_invalid_fallback(self):
+        """지원하지 않는 API 타입은 기본값으로 폴백"""
+        cfg = self.create_config({'detection_api_type': 'invalid_api'})
+        assert cfg.get_detection_api_type() == 'ai_agent'
+    
+    def test_get_detection_types_csv_parsing(self):
+        """CSV 형식의 탐지 타입 파싱"""
+        cfg = self.create_config({'detection_types': 'aggressive_sales, incomplete_sales'})
+        types = cfg.get_detection_types()
+        assert types == ['aggressive_sales', 'incomplete_sales']
+    
+    def test_get_detection_types_case_insensitive(self):
+        """탐지 타입 대소문자 정규화"""
+        cfg = self.create_config({'detection_types': 'AGGRESSIVE_SALES,INCOMPLETE_SALES'})
+        types = cfg.get_detection_types()
+        assert types == ['aggressive_sales', 'incomplete_sales']
+    
+    def test_get_detection_types_invalid_filtered(self):
+        """지원하지 않는 타입은 필터링"""
+        cfg = self.create_config({'detection_types': 'aggressive_sales, invalid_type, incomplete_sales'})
+        types = cfg.get_detection_types()
+        assert types == ['aggressive_sales', 'incomplete_sales']
+    
+    def test_get_detection_types_empty(self):
+        """탐지 타입 미지정 시 빈 리스트 반환"""
+        cfg = self.create_config({})
+        assert cfg.get_detection_types() == []
+    
+    # ============================================================================
+    # ElementDetectionConfig 모드별 필수 파라미터 검증
+    # ============================================================================
+    
+    def test_validate_ai_agent_mode_success(self):
+        """ai_agent 모드 검증 성공"""
+        cfg = self.create_config({'agent_url': 'http://api.example.com/detect'})
+        is_valid, error = cfg.validate_for_ai_agent_mode()
+        assert is_valid is True
+        assert error == ""
+    
+    def test_validate_ai_agent_mode_missing_agent_url(self):
+        """ai_agent 모드: agent_url 누락"""
+        cfg = self.create_config({})
+        is_valid, error = cfg.validate_for_ai_agent_mode()
+        assert is_valid is False
+        assert "agent_url" in error
+    
+    def test_validate_vllm_mode_success(self, monkeypatch):
+        """vllm 모드 검증 성공"""
+        monkeypatch.setenv('VLLM_MODEL_NAME', 'qwen30')
+        monkeypatch.setenv('VLLM_ENDPOINT', 'http://vllm:8000/v1')
+        cfg = self.create_config({})
+        is_valid, error = cfg.validate_for_vllm_mode()
+        assert is_valid is True
+        assert error == ""
+    
+    def test_validate_vllm_mode_missing_model_name(self, monkeypatch):
+        """vllm 모드: 모델명 누락"""
+        monkeypatch.setenv('VLLM_ENDPOINT', 'http://vllm:8000/v1')
+        monkeypatch.delenv('VLLM_MODEL_NAME', raising=False)
+        cfg = self.create_config({})
+        is_valid, error = cfg.validate_for_vllm_mode()
+        assert is_valid is False
+        assert "detection_vllm_model_name" in error
+    
+    def test_validate_vllm_mode_missing_endpoint(self, monkeypatch):
+        """vllm 모드: 엔드포인트 누락"""
+        monkeypatch.setenv('VLLM_MODEL_NAME', 'qwen30')
+        monkeypatch.delenv('VLLM_ENDPOINT', raising=False)
+        cfg = self.create_config({})
+        is_valid, error = cfg.validate_for_vllm_mode()
+        assert is_valid is False
+        assert "엔드포인트" in error or "endpoint" in error.lower()
+    
+    def test_get_agent_url_for_detection(self):
+        """ai_agent 모드용 agent_url 추출"""
+        cfg = self.create_config({'agent_url': 'http://api.example.com/detect'})
+        assert cfg.get_agent_url_for_detection() == 'http://api.example.com/detect'
+    
+    def test_get_vllm_model_name_for_detection(self):
+        """vllm 모드용 모델명 추출"""
+        cfg = self.create_config({'detection_vllm_model_name': 'qwen30_custom'})
+        assert cfg.get_vllm_model_name_for_detection() == 'qwen30_custom'
+    
+    def test_get_vllm_endpoint_for_detection(self):
+        """vllm 모드용 엔드포인트 추출"""
+        cfg = self.create_config({'detection_vllm_endpoint': 'http://custom-vllm:8000/v1'})
+        assert cfg.get_vllm_endpoint_for_detection() == 'http://custom-vllm:8000/v1'
+    
+    def test_get_vllm_endpoint_for_detection_default(self):
+        """vllm 모드용 엔드포인트 기본값"""
+        cfg = self.create_config({})
+        assert cfg.get_vllm_endpoint_for_detection() == 'http://localhost:8000/v1'
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
+

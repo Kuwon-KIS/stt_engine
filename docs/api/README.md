@@ -125,7 +125,7 @@ curl -X POST http://localhost:8003/transcribe \
 | **VLLM_MODEL_NAME** | 기본 LLM 모델명 | 기본값 | 아니오 |
 | **PRIVACY_VLLM_MODEL_NAME** | Privacy Removal 모델 | VLLM_MODEL_NAME | 아니오 |
 | **ELEMENT_DETECTION_API_TYPE** | Element Detection 방식 (ai_agent/vllm/fallback) | fallback | 아니오 |
-| **EXTERNAL_API_URL** | 외부 AI Agent API URL | 없음 | ai_agent 모드에서만 |
+| **ELEMENT_DETECTION_AGENT_URL** | Element Detection AI Agent API URL | 없음 | ai_agent 모드에서만 |
 
 **전체 환경변수는 [ENVIRONMENT_VARIABLES.md](./ENVIRONMENT_VARIABLES.md) 참고**
 

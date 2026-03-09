@@ -2028,7 +2028,7 @@ async def process_with_agent(
     ```
     
     **Agent 타입 선택:**
-    - `external`: 외부 Agent 사용 (기본값, AGENT_URL 필수)
+    - `external`: 외부 Agent 사용 (기본값, ELEMENT_DETECTION_AGENT_URL 필수)
     - `vllm`: vLLM 백엔드 사용
     - `dummy`: Dummy Agent 사용 (테스트용)
     

@@ -302,41 +302,38 @@ docker run \
 
 ---
 
-### **EXTERNAL_API_URL & AGENT_URL** (중복 방지)
+### **ELEMENT_DETECTION_AGENT_URL** (AI Agent 모드)
 
-**설명**: Element Detection의 외부 AI Agent API 주소
+**설명**: Element Detection ai_agent 모드에서 사용할 외부 AI Agent API 주소
 
 **우선순위**:
 ```
 1. 요청 파라미터 (agent_url)
-2. EXTERNAL_API_URL 환경변수 ← 권장
-3. AGENT_URL 환경변수 ← 레거시
+2. ELEMENT_DETECTION_AGENT_URL 환경변수 ← 명확한 이름
 ```
 
 **활성화 조건**:
-- ✅ `ELEMENT_DETECTION_API_TYPE="ai_agent"` 또는 `"fallback"`일 때만 사용
+- ✅ `ELEMENT_DETECTION_API_TYPE="ai_agent"`일 때 **필수**
 - ❌ `ELEMENT_DETECTION_API_TYPE="vllm"`일 때 무시됨
 
 **코드 동작**:
 ```python
-# 순서: 요청 > EXTERNAL_API_URL > AGENT_URL > 빈 문자열
+# 순서: 요청 파라미터 > ELEMENT_DETECTION_AGENT_URL 환경변수
 agent_url = form_data.get('agent_url', '') \
-    or os.getenv('EXTERNAL_API_URL', \
-    or os.getenv('AGENT_URL', ''))
+    or os.getenv('ELEMENT_DETECTION_AGENT_URL', '')
 ```
-
-**마이그레이션 전략**:
-- **현재**: `EXTERNAL_API_URL` 사용 권장
-- **레거시**: `AGENT_URL` 지원 (하위호환성)
-- **향후**: `AGENT_URL` 제거 예정
 
 **예시**:
 ```bash
-# 새 방식 (권장) ✅
-docker run -e EXTERNAL_API_URL=https://api.kis.com/v1/detect stt-api:latest
+# 표준 방식 (권장) ✅
+docker run -e ELEMENT_DETECTION_AGENT_URL=https://api.kis.com/v1/detect stt-api:latest
 
-# 레거시 방식 (호환성 유지)
-docker run -e AGENT_URL=https://api.kis.com/v1/detect stt-api:latest
+# 요청 파라미터로 설정
+curl -X POST http://localhost:8003/transcribe \
+  -F "file_path=/app/audio.wav" \
+  -F "element_detection=true" \
+  -F "detection_api_type=ai_agent" \
+  -F "agent_url=https://api.kis.com/v1/detect"
 ```
 
 ---
