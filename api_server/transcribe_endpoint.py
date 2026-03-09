@@ -17,7 +17,8 @@ from fastapi.responses import JSONResponse
 from stt_utils import check_memory_available, check_audio_file
 from utils.performance_monitor import PerformanceMonitor
 from api_server.services.privacy_removal import get_privacy_removal_service
-from api_server.llm_clients import LLMClientFactory
+from api_server.services.classification import get_classification_service
+from api_server.services.element_detection import get_element_detection_service
 from api_server.constants import (
     ProcessingStep,
     ClassificationCode,
@@ -335,7 +336,7 @@ async def perform_classification(
     vllm_api_base: Optional[str] = None
 ) -> Optional[ClassificationResult]:
     """
-    Classification 수행
+    Classification 수행 (ClassificationService 싱글톤 사용)
     
     Args:
         text: 분류할 텍스트
@@ -345,60 +346,28 @@ async def perform_classification(
         vllm_api_base: vLLM API base URL (예: http://localhost:8001/v1)
     
     Returns:
-        ClassificationResult 또는 None
+        ClassificationResult 객체
     """
     try:
-        logger.info(f"[API/Transcribe] Classification 시작 (텍스트 길이: {len(text)}, llm_type={llm_type})")
+        logger.info(f"[API/Transcribe] Classification 시작: prompt_type={prompt_type}, llm_type={llm_type}")
         
-        # Classification 프롬프트 생성
-        classification_prompt = f"""다음 텍스트를 분류하세요. 고객 상담 통화의 성격을 파악하고 다음 중 하나로 분류해주세요:
-- TELEMARKETING: 텔레마케팅/영업 통화
-- CUSTOMER_SERVICE: 고객 서비스/기술 지원
-- SALES: 직판 영업
-- SURVEY: 설문조사
-- SCAM: 사기/불법
-- UNKNOWN: 분류 불가
-
-텍스트: {text}
-
-분류 결과를 JSON 형식으로 반환하세요:
-{{"category": "분류", "confidence": 0.0~1.0 사이의 신뢰도}}
-"""
+        # ClassificationService 싱글톤 가져오기
+        classification_service = get_classification_service()
         
-        # LLM 클라이언트 생성 (API base URL 지정)
-        llm_client = LLMClientFactory.create_client(
+        # 분류 수행
+        result = await classification_service.classify_text(
+            text=text,
+            prompt_type=prompt_type,
             model_name=vllm_model_name,
-            base_url=vllm_api_base
+            api_base=vllm_api_base
         )
         
-        # LLM 호출
-        response = await llm_client.call(
-            prompt=classification_prompt,
-            temperature=0.3,
-            max_tokens=500
+        logger.info(
+            f"[API/Transcribe] ✅ Classification 완료: "
+            f"category={result.category}, confidence={result.confidence}"
         )
         
-        logger.debug(f"[API/Transcribe] Classification LLM 응답: {response[:100]}...")
-        
-        # 응답 파싱
-        try:
-            import json
-            result_json = json.loads(response)
-            category = result_json.get("category", "UNKNOWN")
-            confidence = float(result_json.get("confidence", 0.0))
-        except (json.JSONDecodeError, ValueError):
-            logger.warning(f"[API/Transcribe] Classification 응답 파싱 실패: {response}")
-            category = "UNKNOWN"
-            confidence = 0.0
-        
-        logger.info(f"[API/Transcribe] Classification 완료: category={category}, confidence={confidence}")
-        
-        return ClassificationResult(
-            code=category,
-            category=category,
-            confidence=confidence,
-            reason="LLM-based classification"
-        )
+        return result
     
     except Exception as e:
         logger.error(f"[API/Transcribe] Classification 오류: {type(e).__name__}: {e}", exc_info=True)
@@ -549,357 +518,9 @@ async def perform_incomplete_elements_check(
         }
 
 
-async def _call_external_api(
-    text: str,
-    detection_types: list,
-    external_api_url: Optional[str]
-) -> Optional[dict]:
-    """
-    외부 AI Agent API 호출 시도 (KIS Agent API 형식)
-    
-    외부 API 요청 형식:
-    {
-        "chat_thread_id": "",
-        "parameters": {
-            "user_query": "분석할 텍스트"
-        }
-    }
-    
-    외부 API 응답 형식:
-    {
-        "detected_yn": "Y" or "N",
-        "detected_sentences": list of string,
-        "detected_reasons": list of string,
-        "detected_keywords": list of string,
-        "category": list of string (e.g., ["사전판매"])
-    }
-    
-    Args:
-        text: 처리할 텍스트 (고객 상담 내용)
-        detection_types: 탐지 대상 목록
-        external_api_url: 외부 API 엔드포인트 URL (예: https://agent-api.kis.zone/v2_2/api/agent_before_check/messages)
-    
-    Returns:
-        성공 시 dict, 실패 시 None
-    """
-    if not external_api_url:
-        logger.warning("[Transcribe/ElementDetection] 외부 API URL이 지정되지 않음")
-        return None
-    
-    try:
-        import httpx
-        import json as json_lib
-        
-        logger.info(f"[Transcribe/ElementDetection] 외부 AI Agent 호출 시작 (url={external_api_url})")
-        
-        # 요청 준비 (KIS Agent API 형식) - 순수 텍스트만 전달
-        payload = {
-            "chat_thread_id": "",
-            "parameters": {
-                "user_query": text
-            }
-        }
-        
-        logger.debug(f"[Transcribe/ElementDetection] 외부 API 요청 본문: {json_lib.dumps(payload, ensure_ascii=False)[:200]}...")
-        
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                external_api_url,
-                json=payload,
-                headers={"Content-Type": "application/json"}
-            )
-        
-        if response.status_code != 200:
-            logger.warning(f"[Transcribe/ElementDetection] 외부 API 호출 실패 (status={response.status_code})")
-            logger.warning(f"[Transcribe/ElementDetection] 응답 본문: {response.text[:500]}")
-            return None
-        
-        result = response.json()
-        logger.info(f"[Transcribe/ElementDetection] ✅ 외부 API 호출 성공")
-        logger.info(f"[Transcribe/ElementDetection] 응답: {json_lib.dumps(result, ensure_ascii=False)[:200]}...")
-        
-        # 외부 API 응답을 표준 형식으로 변환
-        # 응답 형식: {"detected_yn": "Y"/"N", "detected_sentences": list, "detected_reasons": list, "detected_keywords": list}
-        
-        # API 응답이 직접 detection 객체인 경우와 nested 필드에 포함된 경우 모두 처리
-        if isinstance(result, dict):
-            # 직접 응답 형식인 경우 (detected_yn 필드 있음)
-            if "detected_yn" in result:
-                detection_data = result
-                logger.debug("[Transcribe/ElementDetection] 응답 형식: 직접 detected_yn 필드")
-            # answer.answer 필드에 포함된 경우 (KIS Agent API 응답 형식)
-            elif "answer" in result:
-                try:
-                    answer_field = result.get("answer")
-                    if isinstance(answer_field, dict):
-                        # answer 필드가 dict인 경우 (answer.answer 구조)
-                        inner_answer = answer_field.get("answer")
-                        if isinstance(inner_answer, str):
-                            # JSON 문자열로 된 경우 파싱
-                            detection_data = json_lib.loads(inner_answer)
-                            logger.debug("[Transcribe/ElementDetection] 응답 형식: answer.answer 필드 (JSON 문자열)")
-                        elif isinstance(inner_answer, dict):
-                            # 이미 dict인 경우 직접 사용
-                            detection_data = inner_answer
-                            logger.debug("[Transcribe/ElementDetection] 응답 형식: answer.answer 필드 (dict)")
-                        else:
-                            logger.warning(f"[Transcribe/ElementDetection] answer.answer 필드 타입 예상 불일치: {type(inner_answer)}")
-                            detection_data = answer_field
-                    elif isinstance(answer_field, str):
-                        # answer 필드가 문자열인 경우 (한 단계 더 파싱)
-                        detection_data = json_lib.loads(answer_field)
-                        logger.debug("[Transcribe/ElementDetection] 응답 형식: answer 필드 (JSON 문자열)")
-                    else:
-                        detection_data = answer_field
-                        logger.debug("[Transcribe/ElementDetection] 응답 형식: answer 필드 (다른 타입)")
-                except Exception as parse_err:
-                    logger.warning(f"[Transcribe/ElementDetection] answer 필드 파싱 실패: {parse_err}, 전체 응답 사용")
-                    detection_data = result
-            # message 필드에 포함된 경우
-            elif "message" in result:
-                try:
-                    message_str = result.get("message", "{}")
-                    if isinstance(message_str, str):
-                        detection_data = json_lib.loads(message_str)
-                        logger.debug("[Transcribe/ElementDetection] 응답 형식: message 필드 (JSON 문자열)")
-                    else:
-                        detection_data = message_str
-                        logger.debug("[Transcribe/ElementDetection] 응답 형식: message 필드 (dict)")
-                except Exception as parse_err:
-                    logger.warning(f"[Transcribe/ElementDetection] message 필드 파싱 실패: {parse_err}")
-                    detection_data = result
-            else:
-                # 응답 구조가 다른 경우, 전체 응답을 사용
-                detection_data = result
-                logger.debug("[Transcribe/ElementDetection] 응답 형식: 구조 미매칭, 전체 응답 사용")
-        else:
-            logger.warning(f"[Transcribe/ElementDetection] 예상하지 못한 응답 형식: {type(result)}")
-            return None
-        
-        # detected_yn 값 추출 및 정규화 (다양한 형식 대응)
-        detected_yn_raw = detection_data.get("detected_yn", "N")
-        if isinstance(detected_yn_raw, list):
-            # 리스트인 경우 첫 번째 요소 사용
-            detected_yn = str(detected_yn_raw[0]).upper() if detected_yn_raw else "N"
-            logger.debug(f"[Transcribe/ElementDetection] detected_yn이 리스트 형식: {detected_yn_raw} → {detected_yn}으로 변환")
-        elif isinstance(detected_yn_raw, str):
-            detected_yn = detected_yn_raw.upper()
-        else:
-            detected_yn = str(detected_yn_raw).upper() if detected_yn_raw else "N"
-        
-        logger.debug(f"[Transcribe/ElementDetection] 최종 detected_yn: {detected_yn}")
-        
-        detection_result = {
-            "detected_yn": detected_yn,
-            "detected_sentences": detection_data.get("detected_sentences", []),
-            "detected_reasons": detection_data.get("detected_reasons", []),
-            "detected_keywords": detection_data.get("detected_keywords", []),
-            "category": detection_data.get("category", [])
-        }
-        
-        logger.info(f"[Transcribe/ElementDetection] ✅ 탐지 결과 파싱 완료")
-        logger.info(f"  - detected_yn: {detected_yn}")
-        logger.info(f"  - detected_sentences: {len(detection_data.get('detected_sentences', []))}개")
-        logger.info(f"  - detected_reasons: {len(detection_data.get('detected_reasons', []))}개")
-        logger.info(f"  - detected_keywords: {len(detection_data.get('detected_keywords', []))}개")
-        
-        return {
-            'detection_results': detection_result,
-            'api_type': 'external'
-        }
-    
-    except Exception as e:
-        logger.warning(f"[Transcribe/ElementDetection] 외부 API 호출 중 오류: {type(e).__name__}: {str(e)}")
-        logger.warning(f"[Transcribe/ElementDetection] 오류 상세: {str(e)}", exc_info=True)
-        return None
 
 
-async def _call_local_llm(
-    text: str,
-    detection_types: list,
-    llm_type: str = "vllm",
-    vllm_model_name: Optional[str] = None,
-    vllm_base_url: Optional[str] = None,
-    prompt_type: str = "element_detection_qwen"
-) -> Optional[dict]:
-    """
-    로컬 LLM (vLLM)을 사용한 요소 탐지
-    
-    LLM 응답을 표준 형식으로 변환:
-    {
-        "detected_yn": "Y" or "N",
-        "detected_sentences": list of string,
-        "detected_reasons": list of string,
-        "detected_keywords": list of string
-    }
-    
-    Args:
-        text: 처리할 텍스트
-        detection_types: 탐지 대상 목록
-        llm_type: LLM 타입 ('vllm')
-        vllm_model_name: vLLM 모델명 (기본값: constants.VLLM_MODEL_NAME)
-        vllm_base_url: vLLM 엔드포인트 URL (기본값: constants.VLLM_BASE_URL)
-        prompt_type: 프롬프트 타입 (기본값: 'element_detection_qwen')
-    
-    Returns:
-        성공 시 dict, 실패 시 None
-    """
-    try:
-        import os
-        from pathlib import Path
-        from api_server.constants import VLLM_MODEL_NAME
-        from api_server.config import FormDataConfig
-        
-        # FormDataConfig 인스턴스 생성 (config 참조용)
-        config = FormDataConfig(form_data={})
-        
-        # 기본값 적용
-        vllm_model_name = vllm_model_name or os.getenv("VLLM_MODEL_NAME", VLLM_MODEL_NAME)
-        # API base_url: 작업별 전용 환경변수 → 공용 환경변수 → 기본값 순으로 확인
-        vllm_base_url = vllm_base_url or config.get_vllm_api_base('element_detection')
-        
-        logger.info(f"[Transcribe/ElementDetection] 로컬 LLM 호출 시작 (llm_type={llm_type})")
-        logger.info(f"  - 사용 URL: {vllm_base_url}")
-        logger.info(f"  - 사용 모델: {vllm_model_name}")
-        logger.info(f"  - 탐지 대상: {detection_types}")
-        logger.info(f"  - 텍스트 길이: {len(text)} 글자")
-        
-        # LLM 클라이언트 생성
-        llm_client = LLMClientFactory.create_client(
-            llm_type=llm_type,
-            model_name=vllm_model_name,
-            base_url=vllm_base_url
-        )
-        
-        # 요소 탐지 프롬프트 생성 - 프롬프트 타입에 따라 파일 로드
-        try:
-            # 프롬프트 파일명 구성 (예: element_detection_qwen → element_detection_qwen.prompt)
-            prompt_file_path = Path(__file__).parent / "services" / "prompts" / f"{prompt_type}.prompt"
-            with open(prompt_file_path, 'r', encoding='utf-8') as f:
-                prompt_template = f.read()
-            detection_prompt = prompt_template.replace("{usertxt}", text)
-            logger.info(f"[Transcribe/ElementDetection] 프롬프트 파일 로드 완료 (타입: {prompt_type}, 경로: {prompt_file_path})")
-        except Exception as prompt_err:
-            logger.warning(f"[Transcribe/ElementDetection] 프롬프트 파일 로드 실패: {str(prompt_err)}, 기본 프롬프트 사용")
-            # Fallback: 기본 프롬프트 사용
-            detection_prompt = f"""다음 고객 상담 통화 내용을 분석하여 요청된 요소들의 탐지 여부를 판단하세요.
 
-감지 대상:
-{', '.join(detection_types)}
-
-상담 내용:
-{text}
-
-다음 JSON 형식으로 응답하세요:
-{{
-    "category": "사전판매/사후판매/일반상담",
-    "detected_yn": "Y" 또는 "N",
-    "detected_sentence": ["탐지된 문장1", "탐지된 문장2", ...],
-    "detected_reason": ["근거1", "근거2", ...],
-    "detected_keyword": ["키워드1", "키워드2", ...]
-}}
-
-검정 결과:
-"""
-        
-        # LLM 호출
-        response = await llm_client.call(
-            prompt=detection_prompt,
-            temperature=0.3,
-            max_tokens=1000
-        )
-        
-        logger.info(f"[Transcribe/ElementDetection] LLM 응답 수신 (길이: {len(response)} 글자)")
-        logger.info(f"  응답 미리보기: {response[:150]}...")
-        
-        # 응답 파싱
-        try:
-            import json as json_lib
-            result_json = json_lib.loads(response)
-            
-            # 표준 형식으로 변환 (qwen 프롬프트 응답 처리)
-            # category, detected_yn, detected_sentence, detected_reason, detected_keyword 지원
-            detected_yn = result_json.get("detected_yn", "N").upper()
-            category = result_json.get("category", "")
-            
-            # detected_sentence, detected_reason, detected_keyword (qwen format) 또는
-            # detected_sentences, detected_reasons, detected_keywords (legacy format) 모두 지원
-            detected_sentences = result_json.get("detected_sentence", result_json.get("detected_sentences", []))
-            detected_reasons = result_json.get("detected_reason", result_json.get("detected_reasons", []))
-            detected_keywords = result_json.get("detected_keyword", result_json.get("detected_keywords", []))
-            
-            # 리스트가 아닌 경우 리스트로 변환
-            if isinstance(detected_sentences, str):
-                detected_sentences = [detected_sentences]
-            if isinstance(detected_reasons, str):
-                detected_reasons = [detected_reasons]
-            if isinstance(detected_keywords, str):
-                detected_keywords = [detected_keywords]
-            if isinstance(category, str):
-                category = [category] if category else []
-            
-            detection_result = {
-                "detected_yn": detected_yn,
-                "detected_sentences": detected_sentences,
-                "detected_reasons": detected_reasons,
-                "detected_keywords": detected_keywords
-            }
-            
-            # category 필드 추가 (AI Agent와 동일한 형식)
-            if category:
-                detection_result["category"] = category if isinstance(category, list) else [category]
-            
-        except (json_lib.JSONDecodeError, ValueError) as parse_err:
-            logger.error(f"[Transcribe/ElementDetection] LLM 응답 JSON 파싱 실패: {str(parse_err)[:100]}")
-            logger.error(f"  응답 내용 (전체): {response}")
-            return None
-        
-        logger.info(f"[Transcribe/ElementDetection] ✅ 로컬 LLM 처리 완료")
-        logger.info(f"  - llm_type: {llm_type}")
-        logger.info(f"  - detected_yn: {detection_result.get('detected_yn', 'N')}")
-        logger.info(f"  - 결과 상세: {detection_result}")
-        return {
-            'detection_results': detection_result,
-            'api_type': 'local',
-            'llm_type': llm_type
-        }
-    
-    except Exception as e:
-        logger.error(f"[Transcribe/ElementDetection] 로컬 LLM 호출 중 오류: {type(e).__name__}: {str(e)}")
-        logger.error(f"  스택 트레이스:", exc_info=True)
-        return None
-
-
-def _get_dummy_results(detection_types: list) -> dict:
-    """
-    더미 결과 반환 (모든 요소 미탐지)
-    
-    표준 형식:
-    {
-        "detected_yn": "N",
-        "detected_sentences": [],
-        "detected_reasons": [],
-        "detected_keywords": []
-    }
-    
-    Args:
-        detection_types: 탐지 대상 목록
-    
-    Returns:
-        더미 결과 dict
-    """
-    logger.warning("[Transcribe/ElementDetection] 모든 fallback 방법 실패, 더미 결과 반환")
-    detection_result = {
-        "detected_yn": "N",
-        "detected_sentences": [],
-        "detected_reasons": [],
-        "detected_keywords": []
-    }
-    return {
-        'detection_results': detection_result,
-        'api_type': 'dummy',
-        'llm_type': None
-    }
 
 
 async def perform_element_detection(
@@ -958,122 +579,26 @@ async def perform_element_detection(
         }
     """
     try:
-        import os
-        
-        # TEST_MODE 환경변수 확인 (기본값: False)
-        test_mode = os.getenv("TEST_MODE", "false").lower() in ['true', '1', 'yes', 'on']
-        logger.info(f"[Transcribe/ElementDetection] 요소 탐지 시작 (api_type={api_type}, llm_type={llm_type}, detection_types={detection_types}, text_length={len(text)}, TEST_MODE={test_mode})")
+        logger.info(f"[Transcribe/ElementDetection] 요소 탐지 시작 (api_type={api_type}, detection_types={detection_types}, text_length={len(text)})")
         
         # detection_types가 지정되지 않았으면 기본값 사용
         if not detection_types:
             detection_types = ["incomplete_sales", "aggressive_sales"]
         
-        # ============================================
-        # Fallback 모드: 각 API 타입별 독립 처리
-        # ============================================
-        if api_type == "fallback":
-            logger.info(f"[Transcribe/ElementDetection] Fallback 모드 시작 (ai_agent 우선, 실패 시 vllm)")
-            
-            # 1️⃣ 외부 AI Agent 시도 (설정된 경우)
-            if external_api_url:
-                logger.info("[Transcribe/ElementDetection] [Fallback] 단계 1️⃣: 외부 AI Agent 호출 시도...")
-                result = await _call_external_api(text, detection_types, external_api_url)
-                
-                if result:
-                    logger.info("[Transcribe/ElementDetection] [Fallback] ✅ 단계 1️⃣ 성공 (외부 AI Agent 사용)")
-                    return {
-                        'success': True,
-                        'detection_results': result.get('detection_results', []),
-                        'api_type': 'ai_agent',
-                        'llm_type': None
-                    }
-                else:
-                    logger.warning("[Transcribe/ElementDetection] [Fallback] ❌ 단계 1️⃣ 실패 (외부 AI Agent), 단계 2️⃣로 이동")
-            
-            # 2️⃣ Local vLLM 시도 (필수 폴백)
-            logger.info(f"[Transcribe/ElementDetection] [Fallback] 단계 2️⃣: 로컬 vLLM 호출 시도 (llm_type={llm_type})...")
-            result = await _call_local_llm(
-                text, detection_types, llm_type,
-                vllm_model_name,
-                vllm_base_url,
-                prompt_type=element_detection_prompt_type
-            )
-            
-            if result:
-                logger.info(f"[Transcribe/ElementDetection] [Fallback] ✅ 단계 2️⃣ 성공 (로컬 vLLM 사용)")
-                result['success'] = True
-                return result
-            else:
-                logger.warning("[Transcribe/ElementDetection] [Fallback] ❌ 단계 2️⃣ 실패 (로컬 vLLM), 단계 3️⃣로 이동")
-            
-            # 3️⃣ Dummy 결과 반환 (TEST_MODE=True일 때만)
-            if test_mode:
-                logger.warning("[Transcribe/ElementDetection] [Fallback] 단계 3️⃣: Dummy 결과 반환 (TEST_MODE=True)")
-                result = _get_dummy_results(detection_types)
-                result['success'] = True
-                return result
-            else:
-                # TEST_MODE=False: Dummy 없이 최종 에러
-                error_msg = "[Fallback] 모든 방법 실패 (AI Agent, vLLM) - TEST_MODE=False이므로 에러 반환"
-                logger.error(f"[Transcribe/ElementDetection] {error_msg}")
-                return {
-                    'success': False,
-                    'error': error_msg,
-                    'api_type': 'fallback'
-                }
+        # ElementDetectionService 싱글톤 사용
+        service = get_element_detection_service()
         
-        # ============================================
-        # 외부 AI Agent만 사용
-        # ============================================
-        elif api_type == "ai_agent":
-            logger.info(f"[Transcribe/ElementDetection] 외부 AI Agent 호출 시작 (url={external_api_url})")
-            result = await _call_external_api(text, detection_types, external_api_url)
-            
-            if result:
-                return {
-                    'success': True,
-                    'detection_results': result.get('detection_results', []),
-                    'api_type': 'ai_agent',
-                    'llm_type': None
-                }
-            else:
-                return {
-                    'success': False,
-                    'error': 'AI Agent API call failed',
-                    'api_type': 'ai_agent'
-                }
+        result = await service.detect_elements(
+            text=text,
+            api_type=api_type,
+            llm_type=llm_type,
+            vllm_model_name=vllm_model_name,
+            vllm_base_url=vllm_base_url,
+            external_api_url=external_api_url,
+            detection_types=detection_types
+        )
         
-        # ============================================
-        # 로컬 vLLM만 사용
-        # ============================================
-        elif api_type == "vllm":
-            logger.info(f"[Transcribe/ElementDetection] 로컬 LLM 요소 탐지 시작 (llm_type={llm_type})")
-            result = await _call_local_llm(
-                text, detection_types, llm_type,
-                vllm_model_name,
-                vllm_base_url,
-                prompt_type=element_detection_prompt_type
-            )
-            
-            if result:
-                result['success'] = True
-                return result
-            else:
-                return {
-                    'success': False,
-                    'error': 'Local LLM call failed',
-                    'api_type': 'local',
-                    'llm_type': llm_type
-                }
-        
-        else:
-            error_msg = f"Unknown api_type: {api_type}. Expected 'ai_agent', 'vllm', or 'fallback'"
-            logger.error(f"[Transcribe/ElementDetection] {error_msg}")
-            return {
-                'success': False,
-                'error': error_msg,
-                'api_type': api_type
-            }
+        return result
     
     except Exception as e:
         error_msg = f"{type(e).__name__}: {str(e)}"
@@ -1081,5 +606,6 @@ async def perform_element_detection(
         return {
             'success': False,
             'error': error_msg,
+            'detection_results': None,
             'api_type': api_type
         }
