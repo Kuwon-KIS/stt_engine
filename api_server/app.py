@@ -511,7 +511,7 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
             file_size_mb = file_path_obj.stat().st_size / (1024**2)
             
             # 2. STT 처리
-            is_streaming = is_stream.lower() in ['true', '1', 'yes', 'on']
+            is_streaming = is_stream  # is_stream은 이미 config.get_bool()에서 boolean으로 변환됨
             stt_result = await perform_stt(
                 stt_instance=stt,
                 file_path_obj=file_path_obj,
@@ -570,8 +570,7 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
             )
         
         # 3. Privacy Removal (선택)
-        privacy_removal_enabled = privacy_removal.lower() in ['true', '1', 'yes', 'on']
-        privacy_removal_enabled= False
+        privacy_removal_enabled = privacy_removal  # privacy_removal은 이미 get_bool()에서 boolean으로 변환됨
         privacy_result = None
         
         if privacy_removal_enabled:
@@ -584,7 +583,7 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
             )
         
         # 4. Classification (선택)
-        classification_enabled = classification.lower() in ['true', '1', 'yes', 'on']
+        classification_enabled = classification  # classification은 이미 get_bool()에서 boolean으로 변환됨
         classification_result = None
         
         if classification_enabled:
@@ -613,7 +612,7 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
                 logger.warning(f"[API] Classification 실패: {classification_response}")
         
         # 5. 요소 탐지 처리 (선택)
-        element_detection_enabled = element_detection.lower() in ['true', '1', 'yes', 'on']
+        element_detection_enabled = element_detection  # element_detection은 이미 get_bool()에서 boolean으로 변환됨
         element_result = None
         
         if element_detection_enabled:
@@ -783,7 +782,7 @@ async def transcribe(
         raise HTTPException(status_code=503, detail="STT 모델이 로드되지 않음")
     
     # is_stream 파라미터 변환
-    is_streaming = is_stream.lower() in ['true', '1', 'yes', 'on']
+    is_streaming = is_stream  # is_stream은 이미 get_bool()에서 boolean으로 변환됨
     processing_mode = "streaming" if is_streaming else "normal"
     
     # 처리 시간 측정 시작
@@ -1238,10 +1237,10 @@ async def transcribe_batch_endpoint(
         logger.info(f"[Batch API] 배치 처리 요청: {len(parsed_file_paths)}개 파일")
         
         # 배치 처리 파라미터 변환
-        is_streaming = is_stream.lower() in ['true', '1', 'yes', 'on']
-        privacy_removal_enabled = privacy_removal.lower() in ['true', '1', 'yes', 'on']
-        classification_enabled = classification.lower() in ['true', '1', 'yes', 'on']
-        ai_agent_enabled = ai_agent.lower() in ['true', '1', 'yes', 'on']
+        is_streaming = is_stream  # is_stream은 이미 get_bool()에서 boolean으로 변환됨
+        privacy_removal_enabled = privacy_removal  # privacy_removal은 이미 get_bool()에서 boolean으로 변환됨
+        classification_enabled = classification  # classification은 이미 get_bool()에서 boolean으로 변환됨
+        ai_agent_enabled = ai_agent  # ai_agent는 이미 get_bool()에서 boolean으로 변환됨
         
         # 배치 처리 실행
         from api_server.batch_endpoint import transcribe_batch
