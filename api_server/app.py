@@ -34,6 +34,7 @@ from stt_engine import WhisperSTT
 from stt_utils import check_memory_available, check_audio_file
 from utils.performance_monitor import PerformanceMonitor
 from api_server.constants import ErrorCode, PRESET_SEGMENT_CONFIG, VLLM_MODEL_NAME
+from api_server.config import FormDataConfig
 from api_server.services.privacy_remover import (
     PrivacyRemoverService,
     _async_get_privacy_remover_service
@@ -421,37 +422,39 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
       -F 'stt_text=고객님, 저희 상품 정말 좋습니다' \
       -F 'privacy_removal=true' \
       -F 'classification=true'
-    ```
     """
-    # FormData 수동 파싱
+    # FormData 파싱 및 설정 추출
     form_data = await request.form()
-    file_path = form_data.get('file_path')
-    stt_text = form_data.get('stt_text')
-    language = form_data.get('language', 'ko')
-    is_stream = form_data.get('is_stream', 'false')
+    config = FormDataConfig(form_data, debug=False)
+    
+    # 기본 입력 파라미터
+    file_path = config.get_str('file_path')
+    stt_text = config.get_str('stt_text')
+    language = config.get_str('language', 'ko')
+    is_stream = config.get_bool('is_stream')
     
     # Privacy Removal 설정
-    privacy_removal = form_data.get('privacy_removal', 'false')
-    privacy_llm_type = form_data.get('privacy_llm_type', 'vllm')
-    privacy_vllm_model_name = _normalize_model_name(form_data.get('privacy_vllm_model_name') or os.getenv('PRIVACY_VLLM_MODEL_NAME', os.getenv('VLLM_MODEL_NAME', VLLM_MODEL_NAME)))
-    privacy_prompt_type = form_data.get('privacy_prompt_type', 'privacy_remover_default_v6')
+    privacy_removal = config.get_bool('privacy_removal')
+    privacy_llm_type = config.get_str('privacy_llm_type', 'vllm')
+    privacy_vllm_model_name = config.get_vllm_model_name('privacy')
+    privacy_prompt_type = config.get_str('privacy_prompt_type', 'privacy_remover_default_v6')
     
     # Classification 설정
-    classification = form_data.get('classification', 'false')
-    classification_llm_type = form_data.get('classification_llm_type', 'openai')
-    classification_vllm_model_name = _normalize_model_name(form_data.get('classification_vllm_model_name') or os.getenv('CLASSIFICATION_VLLM_MODEL_NAME', os.getenv('VLLM_MODEL_NAME', VLLM_MODEL_NAME)))
-    classification_prompt_type = form_data.get('classification_prompt_type', 'classification_default_v1')
+    classification = config.get_bool('classification')
+    classification_llm_type = config.get_str('classification_llm_type', 'openai')
+    classification_vllm_model_name = config.get_vllm_model_name('classification')
+    classification_prompt_type = config.get_str('classification_prompt_type', 'classification_default_v1')
     
     # Element Detection 설정
-    element_detection = form_data.get('element_detection', 'false')
-    detection_types = form_data.get('detection_types', '')  # CSV: "incomplete_sales,aggressive_sales"
-    detection_api_type_input = form_data.get('detection_api_type') or os.getenv('ELEMENT_DETECTION_API_TYPE', 'fallback')
+    element_detection = config.get_bool('element_detection')
+    detection_types = config.get_str('detection_types', '')  # CSV: "incomplete_sales,aggressive_sales"
+    detection_api_type_input = config.get_str('detection_api_type') or os.getenv('ELEMENT_DETECTION_API_TYPE', 'fallback')
     detection_api_type_map = {'external': 'ai_agent', 'local': 'vllm'}  # 레거시 호환성
     detection_api_type = detection_api_type_map.get(detection_api_type_input, detection_api_type_input)
-    detection_llm_type = form_data.get('detection_llm_type', 'vllm')
-    detection_vllm_model_name = _normalize_model_name(form_data.get('detection_vllm_model_name') or os.getenv('DETECTION_VLLM_MODEL_NAME', os.getenv('VLLM_MODEL_NAME', VLLM_MODEL_NAME)))
-    element_detection_prompt_type = form_data.get('element_detection_prompt_type', 'element_detection_qwen')
-    agent_url = form_data.get('agent_url', '') or os.getenv('EXTERNAL_API_URL', os.getenv('AGENT_URL', ''))  # Element Detection 외부 API URL
+    detection_llm_type = config.get_str('detection_llm_type', 'vllm')
+    detection_vllm_model_name = config.get_vllm_model_name('detection')
+    element_detection_prompt_type = config.get_str('element_detection_prompt_type', 'element_detection_qwen')
+    agent_url = config.get_agent_url()
     
     # DEBUG: FormData 내용 로깅
     logger.info(f"[DEBUG] FormData Keys: {list(form_data.keys())}")
