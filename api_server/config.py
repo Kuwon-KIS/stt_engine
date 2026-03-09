@@ -324,6 +324,13 @@ class STTConfig(FormDataConfig):
             logger.info(f"[STTConfig] get_preset(): {repr(preset)}")
         
         return preset
+    
+    def get_device(self, default: str = "auto") -> str:
+        """
+        STT 처리에 사용할 디바이스 추출 및 검증
+        
+        *** 이 메서드는 preset == "custom"일 때만 의미가 있습니다 ***
+        
         우선순위:
         1. FormData 파라미터 (stt_device)
         2. 환경변수 (STT_DEVICE)
