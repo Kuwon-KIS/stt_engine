@@ -2,14 +2,14 @@
 API Server Services Package
 """
 
-from .privacy_remover import (
-    PrivacyRemoverService,
-    get_privacy_remover_service,
-    _async_get_privacy_remover_service
+from .privacy_removal import (
+    PrivacyRemovalService,
+    get_privacy_removal_service,
+    _async_get_privacy_removal_service
 )
 
 __all__ = [
-    "PrivacyRemoverService",
-    "get_privacy_remover_service",
-    "_async_get_privacy_remover_service",
+    "PrivacyRemovalService",
+    "get_privacy_removal_service",
+    "_async_get_privacy_removal_service",
 ]

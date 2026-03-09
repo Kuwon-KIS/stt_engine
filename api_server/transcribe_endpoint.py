@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse
 
 from stt_utils import check_memory_available, check_audio_file
 from utils.performance_monitor import PerformanceMonitor
-from api_server.services.privacy_remover import get_privacy_remover_service
+from api_server.services.privacy_removal import get_privacy_removal_service
 from api_server.llm_clients import LLMClientFactory
 from api_server.constants import (
     ProcessingStep,
@@ -49,7 +49,7 @@ class TranscribeRequestParams:
         agent_url: str = Form(""),
         agent_request_format: str = Form("text_only"),
         export: Optional[str] = None,
-        privacy_prompt_type: str = Form("privacy_remover_default_v6"),
+        privacy_prompt_type: str = Form("privacy_removal_default_v6"),
         classification_prompt_type: str = Form("classification_default_v1"),
         element_detection_prompt_type: str = Form("element_detection_qwen"),
     ):
@@ -225,7 +225,7 @@ async def perform_stt(stt_instance, file_path_obj: Path, language: str, is_strea
 
 async def perform_privacy_removal(
     text: str,
-    prompt_type: str = "privacy_remover_default_v6",
+    prompt_type: str = "privacy_removal_default_v6",
     llm_type: str = "vllm",
     vllm_model_name: Optional[str] = None
 ) -> Optional[PrivacyRemovalResult]:
@@ -233,7 +233,7 @@ async def perform_privacy_removal(
     Privacy Removal 수행
     
     STT 결과 텍스트에서 개인정보를 마스킹합니다.
-    privacy_remover.py의 PrivacyRemoverService.process_text() 호출
+    privacy_removal.py의 PrivacyRemovalService.process_text() 호출
     
     프롬프트 처리 흐름:
     1. 프롬프트 파일(privacy_remover_default_v6.prompt)에서 템플릿 로드
@@ -257,8 +257,8 @@ async def perform_privacy_removal(
     try:
         logger.info(f"[API/Transcribe] Privacy Removal 시작: prompt_type={prompt_type}, llm_type={llm_type}, text_len={len(text)}")
         
-        # PrivacyRemoverService 초기화
-        privacy_service = get_privacy_remover_service()
+        # PrivacyRemovalService 초기화
+        privacy_service = get_privacy_removal_service()
         
         # 사용할 모델명 결정
         model_name = vllm_model_name
@@ -269,19 +269,19 @@ async def perform_privacy_removal(
         
         # LLM 클라이언트 초기화
         await privacy_service.initialize(model_name)
-        logger.debug(f"[API/Transcribe] PrivacyRemoverService 초기화 완료")
+        logger.debug(f"[API/Transcribe] PrivacyRemovalService 초기화 완료")
         
         # 프롬프트 타입 정규화
         if not prompt_type:
             normalized_prompt_type = 'privacy_remover_default_v6'
-            logger.debug(f"[API/Transcribe] 빈 prompt_type → privacy_remover_default_v6으로 정규화")
+            logger.debug(f"[API/Transcribe] 빈 prompt_type → privacy_removal_default_v6으로 정규화")
         elif 'loosed' in prompt_type.lower():
-            normalized_prompt_type = 'privacy_remover_loosed_contact_v6'
-            logger.debug(f"[API/Transcribe] loosed 타입 감지 → privacy_remover_loosed_contact_v6으로 정규화")
+            normalized_prompt_type = 'privacy_removal_loosed_contact_v6'
+            logger.debug(f"[API/Transcribe] loosed 타입 감지 → privacy_removal_loosed_contact_v6으로 정규화")
         else:
             # default로 시작하면 v6으로 통일
             normalized_prompt_type = 'privacy_remover_default_v6'
-            logger.debug(f"[API/Transcribe] 기본 타입 → privacy_remover_default_v6으로 정규화")
+            logger.debug(f"[API/Transcribe] 기본 타입 → privacy_removal_default_v6으로 정규화")
         
         logger.info(f"[API/Transcribe] process_text 호출: prompt_type={normalized_prompt_type}, model={model_name or 'default'}")
         
@@ -327,13 +327,12 @@ async def perform_privacy_removal(
             text=text,
             privacy_types=[]
         )
-
-
 async def perform_classification(
     text: str,
     prompt_type: str,
     llm_type: str = "vllm",
-    vllm_model_name: Optional[str] = None
+    vllm_model_name: Optional[str] = None,
+    vllm_api_base: Optional[str] = None
 ) -> Optional[ClassificationResult]:
     """
     Classification 수행
@@ -343,6 +342,7 @@ async def perform_classification(
         prompt_type: 프롬프트 타입
         llm_type: LLM 타입 ('vllm' 기본값)
         vllm_model_name: vLLM 사용 시 모델명 (예: 'qwen30_thinking_2507')
+        vllm_api_base: vLLM API base URL (예: http://localhost:8001/v1)
     
     Returns:
         ClassificationResult 또는 None
@@ -365,10 +365,10 @@ async def perform_classification(
 {{"category": "분류", "confidence": 0.0~1.0 사이의 신뢰도}}
 """
         
-        # LLM 클라이언트 생성
+        # LLM 클라이언트 생성 (API base URL 지정)
         llm_client = LLMClientFactory.create_client(
-            llm_type=llm_type,
-            model_name=vllm_model_name
+            model_name=vllm_model_name,
+            base_url=vllm_api_base
         )
         
         # LLM 호출
@@ -746,13 +746,17 @@ async def _call_local_llm(
     """
     try:
         import os
-        from api_server.constants import (
-            VLLM_BASE_URL, VLLM_API_ENDPOINT, VLLM_MODEL_NAME
-        )
+        from pathlib import Path
+        from api_server.constants import VLLM_MODEL_NAME
+        from api_server.config import FormDataConfig
+        
+        # FormDataConfig 인스턴스 생성 (config 참조용)
+        config = FormDataConfig(form_data={})
         
         # 기본값 적용
         vllm_model_name = vllm_model_name or os.getenv("VLLM_MODEL_NAME", VLLM_MODEL_NAME)
-        vllm_base_url = vllm_base_url or os.getenv("VLLM_BASE_URL", VLLM_BASE_URL)
+        # API base_url: 작업별 전용 환경변수 → 공용 환경변수 → 기본값 순으로 확인
+        vllm_base_url = vllm_base_url or config.get_vllm_api_base('element_detection')
         
         logger.info(f"[Transcribe/ElementDetection] 로컬 LLM 호출 시작 (llm_type={llm_type})")
         logger.info(f"  - 사용 URL: {vllm_base_url}")

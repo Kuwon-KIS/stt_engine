@@ -223,17 +223,22 @@ docker run -e VLLM_MODEL_NAME=qwen30_thinking_2507 stt-api:latest
 
 **설명**: 통화 분류(Classification)에 사용할 vLLM 모델
 
-**우선순위** (Privacy와 동일):
-```
-1. 요청 파라미터 (classification_vllm_model_name)
-2. CLASSIFICATION_VLLM_MODEL_NAME 환경변수
-3. VLLM_MODEL_NAME 환경변수
-4. 기본값
-```
+**기본값**: `constants.VLLM_MODEL_NAME`
+
+**우선순위**:
+1. 환경변수 `CLASSIFICATION_VLLM_MODEL_NAME` (Classification 전용) ← **우선**
+2. 환경변수 `VLLM_MODEL_NAME` (공용)
+3. 기본값
+
+**단메**: 모델명 경로 보존 (✓ Qwen vLLM API 필요)
 
 **예시**:
 ```bash
+# Classification 전용 모델 지정
 docker run -e CLASSIFICATION_VLLM_MODEL_NAME=qwen30_thinking_2507 stt-api:latest
+
+# 공용 모델 사용
+docker run -e VLLM_MODEL_NAME=qwen30_thinking_2507 stt-api:latest
 ```
 
 ---
@@ -342,23 +347,31 @@ curl -X POST http://localhost:8003/transcribe \
 
 **설명**: Element Detection에 사용할 vLLM 모델
 
+**기본값**: `constants.VLLM_MODEL_NAME`
+
 **우선순위**:
-```
-1. 요청 파라미터 (detection_vllm_model_name)
-2. DETECTION_VLLM_MODEL_NAME 환경변수
-3. VLLM_MODEL_NAME 환경변수
-4. 기본값
-```
+1. 환경변수 `DETECTION_VLLM_MODEL_NAME` (Element Detection 전용) ← **우선**
+2. 환경변수 `VLLM_MODEL_NAME` (공용)
+3. 기본값
 
 **활성화 조건**:
 - ✅ `ELEMENT_DETECTION_API_TYPE="vllm"` 또는 `"fallback"`일 때 사용
 - ❌ `ELEMENT_DETECTION_API_TYPE="ai_agent"`일 때 무시됨
 
+**단메**: 모델명 경로 보존 (✓ Qwen vLLM API 필요)
+
 **예시**:
 ```bash
+# Element Detection 전용 모델 지정
 docker run \
   -e ELEMENT_DETECTION_API_TYPE=vllm \
   -e DETECTION_VLLM_MODEL_NAME=qwen30_thinking_2507 \
+  stt-api:latest
+
+# 공용 모델 사용
+docker run \
+  -e ELEMENT_DETECTION_API_TYPE=vllm \
+  -e VLLM_MODEL_NAME=qwen30_thinking_2507 \
   stt-api:latest
 ```
 
@@ -390,47 +403,165 @@ docker run -e VLLM_MODEL_NAME=qwen30_thinking_2507 stt-api:latest
 
 ---
 
-### **VLLM_BASE_URL** (vLLM 서버 연결)
+### **vLLM API Base URL** (Qwen vLLM 서버 연결)
 
-**설명**: 로컬 vLLM 서버의 연결 주소
+**설명**: 모든 vLLM 기반 작업 (Privacy Removal, Classification, Element Detection)용 API base_url
 
-**기본값**: `"http://localhost:8001/v1"` 또는 `"http://localhost:8001"`
+**기본값**: `"http://localhost:8001/v1"`
 
-**형식**: `http://[hostname]:[port]/v1` 또는 `http://[hostname]:[port]`
+**형식**: OpenAI SDK 호환 형식
+- 반드시 `/v1`으로 끝나야 함
+- `http://[hostname]:[port]/v1`
 
-**활성화 조건**:
-- ✅ vLLM을 사용하는 모든 LLM 작업 (Privacy, Classification, Element Detection)
-- ✅ Docker Compose에서 vLLM 서버가 별도 컨테이너일 때
+**우선순위 (작업별 설정)**:
+
+| 우선순위 | 환경변수명 | 설명 | 예시 |
+|---------|----------|------|------|
+| 1순위 | `PRIVACY_REMOVAL_VLLM_API_BASE` | Privacy Removal 전용 | `http://qwen1:8001/v1` |
+| 1순위 | `CLASSIFICATION_VLLM_API_BASE` | Classification 전용 | `http://qwen2:8001/v1` |
+| 1순위 | `ELEMENT_DETECTION_VLLM_API_BASE` | Element Detection 전용 | `http://qwen3:8001/v1` |
+| 2순위 | `VLLM_QWEN_API_BASE` | 모든 작업 공용 | `http://vllm:8001/v1` |
+| 3순위 | (기본값) | 로컬 vLLM | `http://localhost:8001/v1` |
 
 **코드 동작**:
 ```python
-# Element Detection에서 사용
-vllm_base_url = os.getenv("VLLM_BASE_URL", "http://localhost:8001")
+# FormDataConfig에서 통합 관리 (api_server/config.py)
+def get_vllm_api_base(self, task: str, default: str = "http://localhost:8001/v1") -> str:
+    # 1. 작업별 환경변수 확인
+    env_key = f"{task.upper()}_VLLM_API_BASE"
+    task_specific = os.getenv(env_key, '').strip()
+    if task_specific:
+        return task_specific
+    
+    # 2. 공용 환경변수 확인
+    common = os.getenv('VLLM_QWEN_API_BASE', '').strip()
+    if common:
+        return common
+    
+    # 3. 기본값
+    return default
 
-# Privacy Removal, Classification에서도 동일하게 사용
+# 사용 예시
+config = FormDataConfig(form_data={})
+api_base = config.get_vllm_api_base('privacy_removal')    # PRIVACY_REMOVAL_VLLM_API_BASE → VLLM_QWEN_API_BASE → 기본값
+api_base = config.get_vllm_api_base('classification')       # CLASSIFICATION_VLLM_API_BASE → VLLM_QWEN_API_BASE → 기본값
+api_base = config.get_vllm_api_base('element_detection')    # ELEMENT_DETECTION_VLLM_API_BASE → VLLM_QWEN_API_BASE → 기본값
 ```
+
+**배포 시나리오**:
+
+| 시나리오 | 설정 | 명령어 |
+|---------|------|--------|
+| 로컬 개발 (모두 동일 서버) | 없음 | `docker run stt-api:latest` |
+| 공용 vLLM 서버 | `VLLM_QWEN_API_BASE` | `docker run -e VLLM_QWEN_API_BASE=http://vllm:8001/v1 stt-api:latest` |
+| Privacy만 별도 | `PRIVACY_VLLM_API_BASE` | `docker run -e PRIVACY_VLLM_API_BASE=http://qwen-gpu1:8001/v1 stt-api:latest` |
+| 모두 별도 | 3개 변수 | `docker run -e PRIVACY_VLLM_API_BASE=http://q1:8001/v1 -e CLASSIFICATION_VLLM_API_BASE=http://q2:8001/v1 -e DETECTION_VLLM_API_BASE=http://q3:8001/v1 stt-api:latest` |
+| 혼합 | 1개 공용 + 1개 전용 | `docker run -e VLLM_QWEN_API_BASE=http://vllm:8001/v1 -e PRIVACY_VLLM_API_BASE=http://qwen-gpu:8001/v1 stt-api:latest` |
+
+---
+
+### **PRIVACY_VLLM_API_KEY**
+
+**설명**: Qwen vLLM API 키 (OpenAI 호환)
+
+**기본값**: `"dummy"` (로컬 테스트)
+
+**특징**:
+- Qwen vLLM은 OpenAI SDK를 사용하므로 OPENAI_API_KEY 형식
+- 로컬 vLLM 서버는 실제 키 불필요 → "dummy" 사용 가능
+- 원격 서버는 유효한 키 필요
+
+**우선순위**:
+1. 환경변수 `OPENAI_API_KEY` (명시적 설정)
+2. 기본값 `"dummy"`
 
 **예시**:
 ```bash
-# 로컬 vLLM 서버 (같은 마신)
-docker run stt-api:latest  # 기본값 사용
+# 로컬 테스트 (키 불필요)
+docker run stt-api:latest
 
-# 별도 vLLM 서버 (다른 호스트)
-docker run -e VLLM_BASE_URL=http://vllm-server:8001/v1 stt-api:latest
-
-# Docker Compose 사용
-docker run -e VLLM_BASE_URL=http://vllm-service:8001/v1 stt-api:latest
+# 원격 API 사용 (키 필요)
+docker run -e OPENAI_API_KEY=sk-xxxx stt-api:latest
 ```
 
 ---
 
-## 🚀 실전 설정 예제
+### **PRIVACY_VLLM_MODEL_NAME**
+
+**설명**: Privacy Removal에 사용할 Qwen vLLM 모델명
+
+**기본값**: `constants.VLLM_MODEL_NAME` (일반적으로 `"qwen30_thinking_2507"`)
+
+**우선순위**:
+1. 환경변수 `PRIVACY_VLLM_MODEL_NAME` (Privacy Removal 전용) ← **우선**
+2. 환경변수 `VLLM_MODEL_NAME` (공용)
+3. 기본값 (constants.VLLM_MODEL_NAME)
+
+**특징**:
+- 모델명 경로 보존: `/model/qwen30_thinking_2507` → 그대로 반환 (Qwen vLLM API 필요)
+- Privacy 작업에만 적용
+- Classification/Element Detection은 별도의 우선순위 사용
+
+**코드 동작**:
+```python
+model_name = os.getenv('PRIVACY_VLLM_MODEL_NAME', '')  # 1순위
+if not model_name:
+    model_name = os.getenv('VLLM_MODEL_NAME', VLLM_MODEL_NAME)  # 2, 3순위
+return model_name  # 경로 정규화 없음
+```
+
+**예시**:
+```bash
+# Privacy 전용 모델 지정
+docker run -e PRIVACY_VLLM_MODEL_NAME=/model/qwen30_thinking_2507 stt-api:latest
+
+# 공용 모델 사용 (Privacy 포함)
+docker run -e VLLM_MODEL_NAME=/model/qwen30_thinking_2507 stt-api:latest
+
+# 기본값 사용
+docker run stt-api:latest
+```
+
+---
+
+### **PRIVACY_REMOVAL_PROMPT_TYPE**
+
+**설명**: Privacy Removal 프롬프트 템플릿 타입
+
+**기본값**: `"privacy_remover_default_v6"`
+
+**허용값**:
+- `"privacy_remover_default_v6"` - 기본 프롬프트 (전체 개인정보 감지)
+- `"privacy_remover_loosed_contact_v6"` - 완화된 프롬프트 (연락처 중심)
+
+**정규화**:
+- `"privacy_remover_default"` → `"privacy_remover_default_v6"`
+- `"privacy_remover_loosed_contact"` → `"privacy_remover_loosed_contact_v6"`
+
+**우선순위**:
+1. 환경변수 `PRIVACY_REMOVAL_PROMPT_TYPE`
+2. 기본값 `"privacy_remover_default_v6"`
+
+**참고**: 프롬프트 파일은 `api_server/services/prompts/{prompt_type}.prompt`에서 로드
+
+**예시**:
+```bash
+# 기본 프롬프트
+docker run stt-api:latest
+
+# 완화된 프롬프트
+docker run -e PRIVACY_REMOVAL_PROMPT_TYPE=privacy_remover_loosed_contact_v6 stt-api:latest
+```
+
+---
+
+## �🚀 실전 설정 예제
 
 ### 예제 1: 로컬 개발 (기본)
 ```bash
 docker run \
   -e STT_PRESET=balanced \
-  -e VLLM_BASE_URL=http://localhost:8001/v1 \
+  -e VLLM_QWEN_API_BASE=http://localhost:8001/v1 \
   -e VLLM_MODEL_NAME=qwen30_thinking_2507 \
   -e EXTERNAL_API_URL=https://api.kis.com/v1/detect \
   -p 8003:8003 \
@@ -442,7 +573,7 @@ docker run \
 docker run \
   -e STT_PRESET=accuracy \
   -e STT_DEVICE=cuda \
-  -e VLLM_BASE_URL=http://vllm-server:8001/v1 \
+  -e VLLM_QWEN_API_BASE=http://vllm-server:8001/v1 \
   -e VLLM_MODEL_NAME=qwen30_thinking_2507 \
   -e ELEMENT_DETECTION_API_TYPE=fallback \
   -e EXTERNAL_API_URL=https://api.kis.com/v1/detect \
@@ -455,7 +586,7 @@ docker run \
 docker run \
   -e ELEMENT_DETECTION_API_TYPE=vllm \
   -e DETECTION_VLLM_MODEL_NAME=qwen30_thinking_2507 \
-  -e VLLM_BASE_URL=http://vllm-server:8001/v1 \
+  -e VLLM_QWEN_API_BASE=http://vllm-server:8001/v1 \
   -p 8003:8003 \
   stt-api:latest
 ```
@@ -467,6 +598,18 @@ docker run \
   -e STT_DEVICE=cpu \
   -e STT_COMPUTE_TYPE=float32 \
   -e STT_BACKEND=transformers \
+  -p 8003:8003 \
+  stt-api:latest
+```
+
+### 예제 5: 작업별 다중 vLLM 서버 (고성능)
+```bash
+docker run \
+  -e STT_PRESET=accuracy \
+  -e PRIVACY_VLLM_API_BASE=http://qwen-gpu1:8001/v1 \
+  -e CLASSIFICATION_VLLM_API_BASE=http://qwen-gpu2:8001/v1 \
+  -e DETECTION_VLLM_API_BASE=http://qwen-gpu3:8001/v1 \
+  -e VLLM_MODEL_NAME=qwen30_thinking_2507 \
   -p 8003:8003 \
   stt-api:latest
 ```
@@ -485,12 +628,14 @@ docker run \
   ├─ 작업별: PRIVACY_VLLM_MODEL_NAME, CLASSIFICATION_VLLM_MODEL_NAME, DETECTION_VLLM_MODEL_NAME
   └─ 또는 공통: VLLM_MODEL_NAME
 
-☐ vLLM 서버 연결
-  └─ VLLM_BASE_URL (기본값: http://localhost:8001/v1)
+☐ vLLM API Base URL 설정
+  ├─ 작업별: PRIVACY_VLLM_API_BASE, CLASSIFICATION_VLLM_API_BASE, DETECTION_VLLM_API_BASE
+  ├─ 또는 공통: VLLM_QWEN_API_BASE
+  └─ 기본값: http://localhost:8001/v1 (로컬 개발)
 
 ☐ Element Detection API
   ├─ ELEMENT_DETECTION_API_TYPE=ai_agent/fallback → EXTERNAL_API_URL 필수
-  └─ ELEMENT_DETECTION_API_TYPE=vllm → DETECTION_VLLM_MODEL_NAME + VLLM_BASE_URL 필수
+  └─ ELEMENT_DETECTION_API_TYPE=vllm → DETECTION_VLLM_MODEL_NAME + VLLM_QWEN_API_BASE/DETECTION_VLLM_API_BASE 필수
 
 ☐ 레거시 호환성
   ├─ AGENT_URL 대신 EXTERNAL_API_URL 사용
@@ -504,5 +649,6 @@ docker run \
 1. **STT_PRESET이 primary 설정**: 모든 STT 동작을 이것이 결정합니다
 2. **ELEMENT_DETECTION_API_TYPE에 따라 필수 환경변수가 달라짐**: 확인 필수
 3. **EXTERNAL_API_URL과 AGENT_URL은 중복**: EXTERNAL_API_URL 사용 권장
-4. **.env 파일**: 프로젝트 루트의 `.env` 파일에서 자동 로드됨
+4. **vLLM API Base URL 통합**: VLLM_BASE_URL (구식) → VLLM_QWEN_API_BASE (권장)
+5. **.env 파일**: 프로젝트 루트의 `.env` 파일에서 자동 로드됨
 

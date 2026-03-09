@@ -127,56 +127,52 @@ class FormDataConfig:
         3. 공용 환경변수 (VLLM_MODEL_NAME)
         4. 코드 기본값 (constants.VLLM_MODEL_NAME)
         
-        모델명 정규화: "/model/xxx" -> "xxx" 형식의 경로 제거
+        주의: 모델명 경로 (/model/ 접두사)는 보존됩니다. Qwen vLLM API 호출에서 필요합니다.
         
         Args:
-            task: 작업명 (privacy, classification, detection)
+            task: 작업명 (privacy_removal, classification, element_detection)
             default_fallback: 추가 기본값 (constants.VLLM_MODEL_NAME 이전에 시도)
         
         Returns:
-            정규화된 vLLM 모델명 (경로 없는 순수 모델명)
+            vLLM 모델명 (/model/ 경로를 포함한 형태로 반환 가능)
+            예: /model/qwen30_thinking_2507 또는 qwen30_thinking_2507
         """
         # 1. FormData 파라미터에서 먼저 확인
         form_key = f"{task}_vllm_model_name"
         form_value = self.form_data.get(form_key, "").strip()
         
         if form_value:
-            result = self._normalize_model_name(form_value)
             if self.debug:
-                logger.info(f"[FormDataConfig] get_vllm_model_name('{task}'): from FormData[{form_key}] -> {repr(result)}")
-            return result
+                logger.info(f"[FormDataConfig] get_vllm_model_name('{task}'): from FormData[{form_key}] -> {repr(form_value)}")
+            return form_value
         
         # 2. 작업별 환경변수에서 확인
         env_key = f"{task.upper()}_VLLM_MODEL_NAME"
         env_value = os.getenv(env_key, "").strip()
         
         if env_value:
-            result = self._normalize_model_name(env_value)
             if self.debug:
-                logger.info(f"[FormDataConfig] get_vllm_model_name('{task}'): from env[{env_key}] -> {repr(result)}")
-            return result
+                logger.info(f"[FormDataConfig] get_vllm_model_name('{task}'): from env[{env_key}] -> {repr(env_value)}")
+            return env_value
         
         # 3. 공용 환경변수에서 확인
         common_env_value = os.getenv("VLLM_MODEL_NAME", "").strip()
         
         if common_env_value:
-            result = self._normalize_model_name(common_env_value)
             if self.debug:
-                logger.info(f"[FormDataConfig] get_vllm_model_name('{task}'): from env[VLLM_MODEL_NAME] -> {repr(result)}")
-            return result
+                logger.info(f"[FormDataConfig] get_vllm_model_name('{task}'): from env[VLLM_MODEL_NAME] -> {repr(common_env_value)}")
+            return common_env_value
         
         # 4. 추가 기본값 시도
         if default_fallback:
-            result = self._normalize_model_name(default_fallback)
             if self.debug:
-                logger.info(f"[FormDataConfig] get_vllm_model_name('{task}'): from default_fallback -> {repr(result)}")
-            return result
+                logger.info(f"[FormDataConfig] get_vllm_model_name('{task}'): from default_fallback -> {repr(default_fallback)}")
+            return default_fallback
         
         # 5. 코드 기본값
-        result = self._normalize_model_name(VLLM_MODEL_NAME)
         if self.debug:
-            logger.info(f"[FormDataConfig] get_vllm_model_name('{task}'): from constants.VLLM_MODEL_NAME -> {repr(result)}")
-        return result
+            logger.info(f"[FormDataConfig] get_vllm_model_name('{task}'): from constants.VLLM_MODEL_NAME -> {repr(VLLM_MODEL_NAME)}")
+        return VLLM_MODEL_NAME
     
     def get_agent_url(self) -> str:
         """
@@ -215,7 +211,12 @@ class FormDataConfig:
     @staticmethod
     def _normalize_model_name(model_name: str) -> str:
         """
-        모델명 정규화: 경로 제거
+        [레거시] 모델명 정규화: 경로 제거
+        
+        ⚠️ 더 이상 get_vllm_model_name()에서 호출되지 않습니다.
+        Qwen vLLM API는 /model/ 경로를 필요로 합니다.
+        
+        이 메서드는 레거시 호환성 및 향후 참고용으로만 유지됩니다.
         
         예:
         - "/model/qwen30_thinking_2507" -> "qwen30_thinking_2507"
@@ -443,7 +444,7 @@ class LLMConfig(FormDataConfig):
     
     설정 우선순위:
     1. HTTP FormData 파라미터
-    2. 작업별 환경변수 (PRIVACY_VLLM_MODEL_NAME 등)
+    2. 작업별 환경변수 (PRIVACY_REMOVAL_VLLM_MODEL_NAME 등)
     3. 공용 환경변수 (VLLM_MODEL_NAME)
     4. 코드 기본값
     """
@@ -460,7 +461,7 @@ class LLMConfig(FormDataConfig):
         3. 기본값
         
         Args:
-            task: 작업명 (privacy, classification, detection)
+            task: 작업명 (privacy_removal, classification, element_detection)
             default: 기본값 (일반적으로 "vllm")
         
         Returns:
@@ -491,6 +492,44 @@ class LLMConfig(FormDataConfig):
             logger.info(f"[LLMConfig] get_llm_type('{task}'): using default -> {repr(default)}")
         return default
     
+    def get_vllm_api_base(self, task: str, default: str = "http://localhost:8001/v1") -> str:
+        """
+        vLLM API base_url (Qwen vLLM용 OpenAI SDK 호환)
+        
+        우선순위:
+        1. 작업별 환경변수 (예: PRIVACY_VLLM_API_BASE)
+        2. 공용 환경변수 (VLLM_QWEN_API_BASE)
+        3. 기본값
+        
+        Args:
+            task: 작업명 (privacy_removal, classification, element_detection)
+            default: 기본값
+        
+        Returns:
+            vLLM API base_url (/v1으로 끝남)
+        """
+        # 1. 작업별 환경변수에서 먼저 확인
+        env_key = f"{task.upper()}_VLLM_API_BASE"
+        task_specific_value = os.getenv(env_key, '').strip()
+        
+        if task_specific_value:
+            if self.debug:
+                logger.info(f"[FormDataConfig] get_vllm_api_base('{task}'): from env[{env_key}] -> {repr(task_specific_value)}")
+            return task_specific_value
+        
+        # 2. 공용 환경변수에서 확인
+        common_value = os.getenv('VLLM_QWEN_API_BASE', '').strip()
+        
+        if common_value:
+            if self.debug:
+                logger.info(f"[FormDataConfig] get_vllm_api_base('{task}'): from env[VLLM_QWEN_API_BASE] -> {repr(common_value)}")
+            return common_value
+        
+        # 3. 기본값
+        if self.debug:
+            logger.info(f"[FormDataConfig] get_vllm_api_base('{task}'): using default -> {repr(default)}")
+        return default
+    
     def get_vllm_endpoint(self, task: str, default: str = "http://localhost:8000/v1") -> str:
         """
         vLLM 서버 엔드포인트 URL 추출
@@ -502,7 +541,7 @@ class LLMConfig(FormDataConfig):
         4. 기본값
         
         Args:
-            task: 작업명 (privacy, classification, detection)
+            task: 작업명 (privacy_removal, classification, element_detection)
             default: 기본값
         
         Returns:
@@ -538,6 +577,116 @@ class LLMConfig(FormDataConfig):
         if self.debug:
             logger.info(f"[LLMConfig] get_vllm_endpoint('{task}'): using default -> {repr(default)}")
         return default
+
+
+class PrivacyRemovalVLLMConfig(FormDataConfig):
+    """
+    Privacy Removal vLLM 설정 전용 클래스
+    
+    개인정보 제거 작업에 필요한 모든 Qwen vLLM 설정을 관리합니다.
+    모든 설정은 환경변수에서만 읽습니다 (FormData 파라미터 미지원).
+    
+    필수 정보:
+    1. api_base: Qwen vLLM base_url (PRIVACY_VLLM_API_BASE)
+    2. api_key: OpenAI API 키 (OPENAI_API_KEY)
+    3. model_name: vLLM 모델명 (VLLM_MODEL_NAME)
+    4. prompt_type: 프롬프트 타입 (PRIVACY_REMOVAL_PROMPT_TYPE)
+    """
+    
+    def get_api_base(self, default: str = "http://localhost:8001/v1") -> str:
+        """
+        Qwen vLLM API base_url (OpenAI SDK 호환)
+        
+        우선순위:
+        1. 환경변수 PRIVACY_VLLM_API_BASE
+        2. 기본값
+        
+        Returns:
+            /v1으로 끝나는 정규화된 URL
+        """
+        api_base = os.getenv('PRIVACY_VLLM_API_BASE', default).strip()
+        return self._normalize_api_base(api_base)
+    
+    def get_api_key(self, default: str = "dummy") -> str:
+        """
+        Qwen vLLM API 키 (OpenAI SDK 호환)
+        
+        우선순위:
+        1. 환경변수 OPENAI_API_KEY
+        2. 기본값 "dummy"
+        
+        Returns:
+            API 키
+        """
+        return os.getenv('OPENAI_API_KEY', default).strip()
+    
+    def get_model_name(self) -> str:
+        """
+        Privacy Removal에 사용할 vLLM 모델명
+        
+        우선순위:
+        1. 환경변수 PRIVACY_VLLM_MODEL_NAME (Privacy Removal 전용)
+        2. 환경변수 VLLM_MODEL_NAME (공용)
+        3. constants.VLLM_MODEL_NAME
+        
+        Returns:
+            모델명 (/model/ 경로를 포함한 형태로 반환)
+            예: /model/qwen30_thinking_2507 또는 qwen30_thinking_2507
+        """
+        from api_server.constants import VLLM_MODEL_NAME
+        
+        # 1. Privacy 전용 환경변수 우선
+        model_name = os.getenv('PRIVACY_VLLM_MODEL_NAME', '').strip()
+        if model_name:
+            return model_name
+        
+        # 2. 공용 환경변수
+        model_name = os.getenv('VLLM_MODEL_NAME', VLLM_MODEL_NAME).strip()
+        return model_name  # 경로 정규화 없이 그대로 반환
+    
+    def get_prompt_type(self, default: str = "privacy_remover_default_v6") -> str:
+        """
+        Privacy Removal 프롬프트 타입
+        
+        우선순위:
+        1. 환경변수 PRIVACY_REMOVAL_PROMPT_TYPE
+        2. 기본값
+        
+        Returns:
+            프롬프트 타입 (privacy_remover_default_v6 등)
+        """
+        prompt_type = os.getenv('PRIVACY_REMOVAL_PROMPT_TYPE', default).strip()
+        
+        # 정규화: 버전 추가
+        if 'loosed' in prompt_type.lower():
+            if not prompt_type.endswith('_v6'):
+                prompt_type = 'privacy_remover_loosed_contact_v6'
+        elif 'default' in prompt_type.lower():
+            if not prompt_type.endswith('_v6'):
+                prompt_type = 'privacy_remover_default_v6'
+        
+        return prompt_type
+    
+    @staticmethod
+    def _normalize_api_base(api_base: str) -> str:
+        """
+        Qwen vLLM base_url 정규화 (OpenAI SDK 호환)
+        
+        - /chat/completions 제거 (OpenAI SDK가 자동으로 추가)
+        - /v1로 끝남 (없으면 추가)
+        """
+        if not api_base:
+            return api_base
+        
+        api_base = api_base.strip()
+        
+        if api_base.endswith("/chat/completions"):
+            api_base = api_base.replace("/chat/completions", "")
+        
+        if not api_base.endswith("/v1"):
+            api_base = api_base + ("/v1" if api_base.endswith("/") else "/v1")
+        
+        return api_base
 
 
 class ElementDetectionConfig(FormDataConfig):

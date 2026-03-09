@@ -632,13 +632,13 @@ class PrivacyRemovalService:
                 await self.initialize(model_name)
             
             actual_model = model_name or self.model_name
-            logger.info(f"[PrivacyRemover] 텍스트 처리 시작: prompt_type={prompt_type}, model={actual_model}, text_len={len(usertxt)}")
+            logger.info(f"[PrivacyRemoval] 텍스트 처리 시작: prompt_type={prompt_type}, model={actual_model}, text_len={len(usertxt)}")
             
             # 프롬프트 생성
             prompt = self.prompt_processor.get_prompt(prompt_type, usertxt)
             
             # LLM API 호출
-            logger.debug(f"[PrivacyRemover] LLM API 호출: model={actual_model}")
+            logger.debug(f"[PrivacyRemoval] LLM API 호출: model={actual_model}")
             llm_response = await self.llm_client.generate_response(
                 prompt=prompt,
                 model_name=actual_model,
@@ -646,7 +646,7 @@ class PrivacyRemovalService:
                 temperature=temperature
             )
             
-            logger.debug(f"[PrivacyRemover] LLM 응답 수신: {llm_response['input_tokens']} input tokens, {llm_response['output_tokens']} output tokens")
+            logger.debug(f"[PrivacyRemoval] LLM 응답 수신: {llm_response['input_tokens']} input tokens, {llm_response['output_tokens']} output tokens")
             
             # 응답 파싱
             response_text = llm_response['text'].strip()
@@ -663,7 +663,7 @@ class PrivacyRemovalService:
                 
                 result = json.loads(response_text)
                 
-                logger.info(f"[PrivacyRemover] 텍스트 처리 완료 (LLM): privacy_exist={result.get('privacy_exist', 'N')}")
+                logger.info(f"[PrivacyRemoval] 텍스트 처리 완료 (LLM): privacy_exist={result.get('privacy_exist', 'N')}")
                 
                 return {
                     'success': True,
@@ -676,13 +676,13 @@ class PrivacyRemovalService:
                 }
             
             except json.JSONDecodeError as e:
-                logger.error(f"[PrivacyRemover] JSON 파싱 실패 (LLM 응답 형식 오류): {str(e)}")
-                logger.error(f"[PrivacyRemover] LLM 응답 내용: {response_text[:100]}...")
+                logger.error(f"[PrivacyRemoval] JSON 파싱 실패 (LLM 응답 형식 오류): {str(e)}")
+                logger.error(f"[PrivacyRemoval] LLM 응답 내용: {response_text[:100]}...")
                 raise RuntimeError(f"LLM 응답 형식 오류: {str(e)}")
         
         except RuntimeError as e:
             # LLM API 오류 (연결 실패, 타임아웃 등)
-            logger.error(f"[PrivacyRemover] LLM API 오류: {str(e)}")
+            logger.error(f"[PrivacyRemoval] LLM API 오류: {str(e)}")
             raise
     
     async def remove_privacy_from_stt(

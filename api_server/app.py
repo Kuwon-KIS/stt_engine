@@ -35,9 +35,9 @@ from stt_utils import check_memory_available, check_audio_file
 from utils.performance_monitor import PerformanceMonitor
 from api_server.constants import ErrorCode, PRESET_SEGMENT_CONFIG, VLLM_MODEL_NAME
 from api_server.config import FormDataConfig
-from api_server.services.privacy_remover import (
-    PrivacyRemoverService,
-    _async_get_privacy_remover_service
+from api_server.services.privacy_removal import (
+    PrivacyRemovalService,
+    _async_get_privacy_removal_service
 )
 import torch
 from api_server.transcribe_endpoint import (
@@ -399,7 +399,7 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
     - detection_types: 탐지할 요소 타입 (CSV 또는 JSON, 예: "incomplete_sales,aggressive_sales")
     - detection_api_type: 요소 탐지 방식 (fallback/ai_agent/vllm) (기본: "fallback", 레거시: external->ai_agent, local->vllm)
     - detection_llm_type: 요소 탐지 LLM 타입 (vllm, ollama) (기본: "vllm", detection_api_type='vllm'일 때만)
-    - privacy_prompt_type: Privacy Removal 프롬프트 타입 (기본: "privacy_remover_default_v6")
+    - privacy_prompt_type: Privacy Removal 프롬프트 타입 (기본: "privacy_removal_default_v6")
     - classification_prompt_type: Classification 프롬프트 타입 (기본: "classification_default_v1")
     
     Query Parameters:
@@ -436,13 +436,14 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
     # Privacy Removal 설정
     privacy_removal = config.get_bool('privacy_removal')
     privacy_llm_type = config.get_str('privacy_llm_type', 'vllm')
-    privacy_vllm_model_name = config.get_vllm_model_name('privacy')
-    privacy_prompt_type = config.get_str('privacy_prompt_type', 'privacy_remover_default_v6')
+    privacy_vllm_model_name = config.get_vllm_model_name('privacy_removal')
+    privacy_prompt_type = config.get_str('privacy_prompt_type', 'privacy_removal_default_v6')
     
     # Classification 설정
     classification = config.get_bool('classification')
     classification_llm_type = config.get_str('classification_llm_type', 'openai')
     classification_vllm_model_name = config.get_vllm_model_name('classification')
+    classification_vllm_api_base = config.get_vllm_api_base('classification')
     classification_prompt_type = config.get_str('classification_prompt_type', 'classification_default_v1')
     
     # Element Detection 설정
@@ -452,7 +453,7 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
     detection_api_type_map = {'external': 'ai_agent', 'local': 'vllm'}  # 레거시 호환성
     detection_api_type = detection_api_type_map.get(detection_api_type_input, detection_api_type_input)
     detection_llm_type = config.get_str('detection_llm_type', 'vllm')
-    detection_vllm_model_name = config.get_vllm_model_name('detection')
+    detection_vllm_model_name = config.get_vllm_model_name('element_detection')
     element_detection_prompt_type = config.get_str('element_detection_prompt_type', 'element_detection_qwen')
     agent_url = config.get_agent_url()
     
@@ -598,7 +599,8 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
                 text=classification_text,
                 prompt_type=classification_prompt_type,
                 llm_type=classification_llm_type,
-                vllm_model_name=classification_vllm_model_name
+                vllm_model_name=classification_vllm_model_name,
+                vllm_api_base=classification_vllm_api_base
             )
             
             if classification_response and classification_response.get('success', False):
@@ -738,7 +740,7 @@ async def transcribe(
     is_stream: str = Form("false"),
     export: str = Query(None, description="Export format: 'txt' or 'json', default: None (JSON response)"),
     remove_privacy: str = Form("false", description="개인정보 제거 활성화 (true/false)"),
-    privacy_prompt_type: str = Form("privacy_remover_default_v6", description="프롬프트 타입"),
+    privacy_prompt_type: str = Form("privacy_removal_default_v6", description="프롬프트 타입"),
 ):
     """
     서버 로컬 파일을 음성인식으로 변환 (권장 방식)
@@ -755,7 +757,7 @@ async def transcribe(
     - remove_privacy: 개인정보 제거 활성화 (기본: "false")
                  - "true": vLLM을 사용하여 개인정보 자동 제거
                  - "false": 개인정보 제거 미적용
-    - privacy_prompt_type: 프롬프트 타입 (기본: "privacy_remover_default_v6")
+    - privacy_prompt_type: 프롬프트 타입 (기본: "privacy_removal_default_v6")
     
     Returns:
     - success: 처리 성공 여부
@@ -1042,7 +1044,7 @@ async def transcribe(
         if remove_privacy.lower() == "true":
             try:
                 logger.info(f"[API] Privacy Removal 시작 (텍스트 길이: {len(result.get('text', ''))})")
-                privacy_service = await _async_get_privacy_remover_service()
+                privacy_service = await _async_get_privacy_removal_service()
                 privacy_result = await privacy_service.remove_privacy_from_stt(
                     stt_text=result.get('text', ''),
                     prompt_type=privacy_prompt_type
@@ -1190,7 +1192,7 @@ async def transcribe_batch_endpoint(
     privacy_removal: str = Form("false"),
     classification: str = Form("false"),
     ai_agent: str = Form("false"),
-    privacy_prompt_type: str = Form("privacy_remover_default_v6"),
+    privacy_prompt_type: str = Form("privacy_removal_default_v6"),
     classification_prompt_type: str = Form("classification_default_v1"),
 ):
     """
@@ -1904,17 +1906,17 @@ async def transcribe_by_upload(
 @app.post("/api/privacy-removal/process")
 async def process_privacy_removal(
     text: str = Body(..., description="개인정보를 제거할 텍스트"),
-    prompt_type: str = Query("privacy_remover_default_v6", description="프롬프트 타입"),
+    prompt_type: str = Query("privacy_removal_default_v6", description="프롬프트 타입"),
     max_tokens: int = Query(8192, description="최대 토큰 수"),
     temperature: float = Query(0.3, description="LLM 온도"),
-    service: PrivacyRemoverService = Depends(_async_get_privacy_remover_service)
+    service: PrivacyRemovalService = Depends(_async_get_privacy_removal_service)
 ):
     """
     텍스트에서 개인정보를 제거합니다.
     
     **Request Body:**
     - text: 개인정보를 제거할 텍스트 (필수)
-    - prompt_type: 프롬프트 타입 (기본값: privacy_remover_default_v6)
+    - prompt_type: 프롬프트 타입 (기본값: privacy_removal_default_v6)
     - max_tokens: 최대 토큰 수 (기본값: 8192)
     - temperature: LLM 온도 (기본값: 0.3)
     
@@ -1972,7 +1974,7 @@ async def process_privacy_removal(
 
 @app.get("/api/privacy-removal/prompts")
 async def list_available_prompts(
-    service: PrivacyRemoverService = Depends(_async_get_privacy_remover_service)
+    service: PrivacyRemovalService = Depends(_async_get_privacy_removal_service)
 ):
     """
     사용 가능한 프롬프트 타입 목록을 반환합니다.

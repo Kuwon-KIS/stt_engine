@@ -117,51 +117,51 @@ class TestFormDataConfig:
     def test_get_vllm_model_name_from_form_data(self):
         """FormData에서 모델명 추출"""
         config = self.create_config({'privacy_vllm_model_name': 'custom_model'})
-        result = config.get_vllm_model_name('privacy')
+        result = config.get_vllm_model_name('privacy_removal')
         assert result == 'custom_model'
     
     def test_get_vllm_model_name_with_path_normalization(self):
         """경로 제거 정규화"""
         config = self.create_config({'privacy_vllm_model_name': '/model/qwen30_thinking_2507'})
-        result = config.get_vllm_model_name('privacy')
+        result = config.get_vllm_model_name('privacy_removal')
         assert result == 'qwen30_thinking_2507'
     
     def test_get_vllm_model_name_from_task_env_var(self, monkeypatch):
         """작업별 환경변수 우선순위"""
-        monkeypatch.setenv('PRIVACY_VLLM_MODEL_NAME', 'env_privacy_model')
+        monkeypatch.setenv('PRIVACY_REMOVAL_VLLM_MODEL_NAME', 'env_privacy_model')
         config = self.create_config({})
-        result = config.get_vllm_model_name('privacy')
+        result = config.get_vllm_model_name('privacy_removal')
         assert result == 'env_privacy_model'
     
     def test_get_vllm_model_name_from_common_env_var(self, monkeypatch):
         """공용 환경변수 우선순위"""
-        monkeypatch.delenv('PRIVACY_VLLM_MODEL_NAME', raising=False)
+        monkeypatch.delenv('PRIVACY_REMOVAL_VLLM_MODEL_NAME', raising=False)
         monkeypatch.setenv('VLLM_MODEL_NAME', 'common_model')
         config = self.create_config({})
-        result = config.get_vllm_model_name('privacy')
+        result = config.get_vllm_model_name('privacy_removal')
         assert result == 'common_model'
     
     def test_get_vllm_model_name_from_default_fallback(self, monkeypatch):
         """기본값 fallback"""
-        monkeypatch.delenv('PRIVACY_VLLM_MODEL_NAME', raising=False)
+        monkeypatch.delenv('PRIVACY_REMOVAL_VLLM_MODEL_NAME', raising=False)
         monkeypatch.delenv('VLLM_MODEL_NAME', raising=False)
         config = self.create_config({})
-        result = config.get_vllm_model_name('privacy', default_fallback='fallback_model')
+        result = config.get_vllm_model_name('privacy_removal', default_fallback='fallback_model')
         assert result == 'fallback_model'
     
     def test_get_vllm_model_name_priority_form_over_env(self, monkeypatch):
         """FormData가 환경변수보다 우선"""
-        monkeypatch.setenv('PRIVACY_VLLM_MODEL_NAME', 'env_model')
+        monkeypatch.setenv('PRIVACY_REMOVAL_VLLM_MODEL_NAME', 'env_model')
         config = self.create_config({'privacy_vllm_model_name': 'form_model'})
-        result = config.get_vllm_model_name('privacy')
+        result = config.get_vllm_model_name('privacy_removal')
         assert result == 'form_model'
     
     def test_get_vllm_model_name_priority_task_over_common_env(self, monkeypatch):
         """작업별 환경변수가 공용 환경변수보다 우선"""
-        monkeypatch.setenv('PRIVACY_VLLM_MODEL_NAME', 'task_specific')
+        monkeypatch.setenv('PRIVACY_REMOVAL_VLLM_MODEL_NAME', 'task_specific')
         monkeypatch.setenv('VLLM_MODEL_NAME', 'common')
         config = self.create_config({})
-        result = config.get_vllm_model_name('privacy')
+        result = config.get_vllm_model_name('privacy_removal')
         assert result == 'task_specific'
     
     # ============================================================================
@@ -251,7 +251,7 @@ class TestFormDataConfig:
         assert config.get_bool('privacy_removal') is True
         assert config.get_bool('classification') is False
         assert config.get_bool('element_detection') is True
-        assert config.get_vllm_model_name('privacy') == 'privacy_model_v2'
+        assert config.get_vllm_model_name('privacy_removal') == 'privacy_model_v2'
         assert config.get_vllm_model_name('classification') == 'default_model'
         assert config.get_agent_url() == 'http://api.example.com/detect'
         assert config.get_str('detection_types') == 'aggressive_sales,incomplete_sales'
@@ -376,18 +376,18 @@ class TestLLMConfig:
     def test_get_vllm_endpoint_from_form_data(self):
         """FormData에서 vLLM 엔드포인트 추출"""
         cfg = self.create_config({'privacy_vllm_endpoint': 'http://api.example.com:8000/v1'})
-        assert cfg.get_vllm_endpoint('privacy') == 'http://api.example.com:8000/v1'
+        assert cfg.get_vllm_endpoint('privacy_removal') == 'http://api.example.com:8000/v1'
     
     def test_get_vllm_endpoint_default(self):
         """vLLM 엔드포인트 기본값"""
         cfg = self.create_config({})
-        assert cfg.get_vllm_endpoint('privacy') == 'http://localhost:8000/v1'
+        assert cfg.get_vllm_endpoint('privacy_removal') == 'http://localhost:8000/v1'
     
     def test_get_vllm_endpoint_from_env(self, monkeypatch):
         """환경변수에서 vLLM 엔드포인트 추출"""
-        monkeypatch.setenv('PRIVACY_VLLM_ENDPOINT', 'http://custom.example.com:8000/v1')
+        monkeypatch.setenv('PRIVACY_REMOVAL_VLLM_ENDPOINT', 'http://custom.example.com:8000/v1')
         cfg = self.create_config({})
-        assert cfg.get_vllm_endpoint('privacy') == 'http://custom.example.com:8000/v1'
+        assert cfg.get_vllm_endpoint('privacy_removal') == 'http://custom.example.com:8000/v1'
 
 
 # ============================================================================

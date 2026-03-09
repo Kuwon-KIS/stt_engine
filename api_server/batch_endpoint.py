@@ -38,7 +38,7 @@ async def transcribe_batch(
     privacy_removal: bool = False,
     classification: bool = False,
     ai_agent: bool = False,
-    privacy_prompt_type: str = "privacy_remover_default_v6",
+    privacy_prompt_type: str = "privacy_removal_default_v6",
     classification_prompt_type: str = "classification_default_v1",
     batch_id: str = None,
 ) -> BatchResponse:
