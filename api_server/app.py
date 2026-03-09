@@ -399,7 +399,7 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
     - detection_types: 탐지할 요소 타입 (CSV 또는 JSON, 예: "incomplete_sales,aggressive_sales")
     - detection_api_type: 요소 탐지 방식 (fallback/ai_agent/vllm) (기본: "fallback", 레거시: external->ai_agent, local->vllm)
     - detection_llm_type: 요소 탐지 LLM 타입 (vllm, ollama) (기본: "vllm", detection_api_type='vllm'일 때만)
-    - privacy_prompt_type: Privacy Removal 프롬프트 타입 (기본: "privacy_removal_default_v6")
+    - privacy_prompt_type: Privacy Removal 프롬프트 타입 (기본: "privacy_remover_default_v6")
     - classification_prompt_type: Classification 프롬프트 타입 (기본: "classification_default_v1")
     
     Query Parameters:
@@ -435,7 +435,7 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
     privacy_removal = config.get_bool('privacy_removal')
     privacy_llm_type = config.get_str('privacy_llm_type', 'vllm')
     privacy_vllm_model_name = config.get_vllm_model_name('privacy_removal')
-    privacy_prompt_type = config.get_str('privacy_prompt_type', 'privacy_removal_default_v6')
+    privacy_prompt_type = config.get_str('privacy_prompt_type', 'privacy_remover_default_v6')
     
     # Classification 설정
     classification = config.get_bool('classification')
@@ -655,7 +655,7 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
                     llm_type=detection_llm_type,
                     vllm_model_name=detection_vllm_model_name,
                     vllm_base_url=vllm_base_url,
-                    agent_url=agent_url
+                    prompt_type=element_detection_prompt_type
                 )
             
             logger.info(f"[API] Element Detection 응답: success={element_response.get('success')}, api_type={element_response.get('api_type')}, error={element_response.get('error')}")
@@ -748,7 +748,7 @@ async def transcribe(
     is_stream: str = Form("false"),
     export: str = Query(None, description="Export format: 'txt' or 'json', default: None (JSON response)"),
     remove_privacy: str = Form("false", description="개인정보 제거 활성화 (true/false)"),
-    privacy_prompt_type: str = Form("privacy_removal_default_v6", description="프롬프트 타입"),
+    privacy_prompt_type: str = Form("privacy_remover_default_v6", description="프롬프트 타입"),
 ):
     """
     서버 로컬 파일을 음성인식으로 변환 (권장 방식)
@@ -765,7 +765,7 @@ async def transcribe(
     - remove_privacy: 개인정보 제거 활성화 (기본: "false")
                  - "true": vLLM을 사용하여 개인정보 자동 제거
                  - "false": 개인정보 제거 미적용
-    - privacy_prompt_type: 프롬프트 타입 (기본: "privacy_removal_default_v6")
+    - privacy_prompt_type: 프롬프트 타입 (기본: "privacy_remover_default_v6")
     
     Returns:
     - success: 처리 성공 여부
@@ -1200,7 +1200,7 @@ async def transcribe_batch_endpoint(
     privacy_removal: str = Form("false"),
     classification: str = Form("false"),
     ai_agent: str = Form("false"),
-    privacy_prompt_type: str = Form("privacy_removal_default_v6"),
+    privacy_prompt_type: str = Form("privacy_remover_default_v6"),
     classification_prompt_type: str = Form("classification_default_v1"),
 ):
     """
@@ -1914,7 +1914,7 @@ async def transcribe_by_upload(
 @app.post("/api/privacy-removal/process")
 async def process_privacy_removal(
     text: str = Body(..., description="개인정보를 제거할 텍스트"),
-    prompt_type: str = Query("privacy_removal_default_v6", description="프롬프트 타입"),
+    prompt_type: str = Query("privacy_remover_default_v6", description="프롬프트 타입"),
     max_tokens: int = Query(8192, description="최대 토큰 수"),
     temperature: float = Query(0.3, description="LLM 온도"),
     service: PrivacyRemovalService = Depends(_async_get_privacy_removal_service)
@@ -1924,7 +1924,7 @@ async def process_privacy_removal(
     
     **Request Body:**
     - text: 개인정보를 제거할 텍스트 (필수)
-    - prompt_type: 프롬프트 타입 (기본값: privacy_removal_default_v6)
+    - prompt_type: 프롬프트 타입 (기본값: privacy_remover_default_v6)
     - max_tokens: 최대 토큰 수 (기본값: 8192)
     - temperature: LLM 온도 (기본값: 0.3)
     

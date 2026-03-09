@@ -50,7 +50,7 @@ class TranscribeRequestParams:
         agent_url: str = Form(""),
         agent_request_format: str = Form("text_only"),
         export: Optional[str] = None,
-        privacy_prompt_type: str = Form("privacy_removal_default_v6"),
+        privacy_prompt_type: str = Form("privacy_remover_default_v6"),
         classification_prompt_type: str = Form("classification_default_v1"),
         element_detection_prompt_type: str = Form("element_detection_qwen"),
     ):
@@ -226,7 +226,7 @@ async def perform_stt(stt_instance, file_path_obj: Path, language: str, is_strea
 
 async def perform_privacy_removal(
     text: str,
-    prompt_type: str = "privacy_removal_default_v6",
+    prompt_type: str = "privacy_remover_default_v6",
     llm_type: str = "vllm",
     vllm_model_name: Optional[str] = None
 ) -> Optional[PrivacyRemovalResult]:
@@ -275,14 +275,14 @@ async def perform_privacy_removal(
         # 프롬프트 타입 정규화
         if not prompt_type:
             normalized_prompt_type = 'privacy_remover_default_v6'
-            logger.debug(f"[API/Transcribe] 빈 prompt_type → privacy_removal_default_v6으로 정규화")
+            logger.debug(f"[API/Transcribe] 빈 prompt_type → privacy_remover_default_v6으로 정규화")
         elif 'loosed' in prompt_type.lower():
             normalized_prompt_type = 'privacy_removal_loosed_contact_v6'
             logger.debug(f"[API/Transcribe] loosed 타입 감지 → privacy_removal_loosed_contact_v6으로 정규화")
         else:
             # default로 시작하면 v6으로 통일
             normalized_prompt_type = 'privacy_remover_default_v6'
-            logger.debug(f"[API/Transcribe] 기본 타입 → privacy_removal_default_v6으로 정규화")
+            logger.debug(f"[API/Transcribe] 기본 타입 → privacy_remover_default_v6으로 정규화")
         
         logger.info(f"[API/Transcribe] process_text 호출: prompt_type={normalized_prompt_type}, model={model_name or 'default'}")
         
@@ -530,7 +530,8 @@ async def perform_element_detection(
     llm_type: str = "vllm",
     vllm_model_name: Optional[str] = None,
     vllm_base_url: Optional[str] = None,
-    agent_url: Optional[str] = None
+    agent_url: Optional[str] = None,
+    prompt_type: Optional[str] = None
 ) -> dict:
     """
     요소 탐지 (불완전판매, 부당권유 판매 등)를 수행
@@ -545,6 +546,7 @@ async def perform_element_detection(
         vllm_model_name: vLLM 모델명 (vllm 모드에서만 사용)
         vllm_base_url: vLLM 엔드포인트 URL (vllm 모드에서만 사용)
         agent_url: AI Agent 엔드포인트 URL (env ELEMENT_DETECTION_AGENT_URL에서도 읽음)
+        prompt_type: vLLM 프롬프트 타입 (기본값: "element_detection_qwen", vllm 모드에서만 사용)
     
     Returns:
         {
@@ -562,6 +564,10 @@ async def perform_element_detection(
         if not detection_types:
             detection_types = ["incomplete_sales", "aggressive_sales"]
         
+        # prompt_type이 지정되지 않았으면 기본값 사용 (vllm 모드에서만 필요)
+        if prompt_type is None:
+            prompt_type = "element_detection_qwen"
+        
         # ElementDetectionService 싱글톤 사용
         service = get_element_detection_service()
         
@@ -573,7 +579,7 @@ async def perform_element_detection(
             vllm_base_url=vllm_base_url,
             agent_url=agent_url,
             detection_types=detection_types,
-            prompt_type=element_detection_prompt_type
+            prompt_type=prompt_type
         )
         
         return result
