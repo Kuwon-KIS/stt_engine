@@ -645,9 +645,7 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
                 vllm_model_name=detection_vllm_model_name,
                 vllm_base_url=vllm_base_url,
                 element_detection_prompt_type=element_detection_prompt_type,
-                classification_result=classification_result,
-                privacy_removal_result=privacy_result,
-                external_api_url=agent_url
+                agent_url=agent_url
             )
             
             logger.info(f"[API] Element Detection 응답: success={element_response.get('success')}, api_type={element_response.get('api_type')}, error={element_response.get('error')}")

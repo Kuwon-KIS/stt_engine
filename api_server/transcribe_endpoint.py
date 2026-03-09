@@ -526,56 +526,33 @@ async def perform_incomplete_elements_check(
 async def perform_element_detection(
     text: str,
     detection_types: list = None,
-    api_type: str = "fallback",
+    api_type: str = "ai_agent",
     llm_type: str = "vllm",
     vllm_model_name: Optional[str] = None,
     vllm_base_url: Optional[str] = None,
-    element_detection_prompt_type: str = "element_detection_qwen",
-    classification_result: dict = None,
-    privacy_removal_result: dict = None,
-    external_api_url: Optional[str] = None
+    agent_url: Optional[str] = None
 ) -> dict:
     """
-    요소 탐지 (불완전판매, 부당권유 판매 등)를 수행 - Fallback 메커니즘 포함
+    요소 탐지 (불완전판매, 부당권유 판매 등)를 수행
     
-    Fallback 흐름:
-    1. api_type이 'fallback'이면:
-       - 1️⃣ 외부 AI Agent 호출 시도
-       - 2️⃣ 실패 시 → 로컬 vLLM 호출 (localhost 기본값 사용)
-       - 3️⃣ 그것도 실패 시 → Dummy 결과 반환
-    2. api_type이 'external'이면:
-       - 외부 AI Agent만 호출
-    3. api_type이 'vllm'이면:
-       - 로컬 vLLM만 호출
+    AI Agent 우선, 필요 시 vLLM으로 폴백 가능
     
     Args:
         text: 처리할 텍스트 (정제되거나 원본 STT 결과)
         detection_types: 탐지 대상 목록 (예: ["incomplete_sales", "aggressive_sales"])
-        api_type: API 방식 ("ai_agent"=외부 AI Agent, "vllm"=로컬 vLLM, "fallback"=자동 선택, 기본값: "fallback")
-        llm_type: LLM 타입 ('vllm' 기본값) - api_type이 "vllm"이나 "fallback"일 때 사용
-        vllm_model_name: vLLM 사용 시 모델명 (기본값: env VLLM_MODEL_NAME 또는 "qwen30_thinking_2507")
-        vllm_base_url: vLLM 엔드포인트 베이스 URL (기본값: env VLLM_BASE_URL 또는 "http://localhost:8001")
-        element_detection_prompt_type: 요소 탐지 프롬프트 타입 (기본값: "element_detection_qwen")
-        classification_result: 분류 결과
-        privacy_removal_result: 개인정보 제거 결과
-        external_api_url: 외부 API 엔드포인트 URL (env EXTERNAL_API_URL에서도 읽음)
+        api_type: API 방식 ("ai_agent"=AI Agent만 (기본값), "vllm"=로컬 vLLM만, "fallback"=AI Agent→vLLM)
+        llm_type: LLM 타입 ('vllm' 기본값)
+        vllm_model_name: vLLM 모델명 (vllm 모드에서만 사용)
+        vllm_base_url: vLLM 엔드포인트 URL (vllm 모드에서만 사용)
+        agent_url: AI Agent 엔드포인트 URL (env ELEMENT_DETECTION_AGENT_URL에서도 읽음)
     
     Returns:
         {
             'success': bool,
-            'detection_results': list,  # 탐지된 요소 목록 (표준 형식)
-            'api_type': str,           # 사용된 API 방식 ('external', 'local', 'dummy')
-            'llm_type': str,           # 사용된 LLM (local/fallback 모드일 때)
+            'detection_results': dict,  # 탐지된 요소
+            'api_type': str,           # 사용된 API 방식
             'fallback_chain': list,    # fallback 모드일 때 시도한 방법들
             'error': str               # 에러 발생시
-        }
-        
-    응답 형식 (detection_results 요소):
-        {
-            "detected_yn": "Y" or "N",           # 탐지 여부
-            "detected_sentences": list of string, # 탐지된 문장들
-            "detected_reasons": list of string,   # 탐지 근거들
-            "detected_keywords": list of string   # 탐지된 키워드들
         }
     """
     try:
@@ -594,8 +571,9 @@ async def perform_element_detection(
             llm_type=llm_type,
             vllm_model_name=vllm_model_name,
             vllm_base_url=vllm_base_url,
-            external_api_url=external_api_url,
-            detection_types=detection_types
+            agent_url=agent_url,
+            detection_types=detection_types,
+            prompt_type=element_detection_prompt_type
         )
         
         return result

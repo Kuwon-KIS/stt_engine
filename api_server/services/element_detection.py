@@ -66,31 +66,33 @@ class ElementDetectionService:
     async def detect_elements(
         self,
         text: str,
-        api_type: str = "fallback",
+        api_type: str = "ai_agent",
         llm_type: str = "vllm",
         vllm_model_name: Optional[str] = None,
         vllm_base_url: Optional[str] = None,
-        external_api_url: Optional[str] = None,
-        detection_types: Optional[List[str]] = None
+        agent_url: Optional[str] = None,
+        detection_types: Optional[List[str]] = None,
+        prompt_type: str = "element_detection_qwen"
     ) -> Dict[str, Any]:
         """
-        요소 탐지 (Fallback 메커니즘 포함)
+        요소 탐지 (에이전트 우선, vLLM 폴백)
         
         Args:
             text: 처리할 텍스트
-            api_type: "fallback"=자동선택, "external"=외부만, "vllm"=로컬만
+            api_type: "ai_agent"=AI Agent만 (기본값), "vllm"=로컬 vLLM만, "fallback"=Agent→vLLM
             llm_type: LLM 타입 ('vllm')
-            vllm_model_name: vLLM 모델명
-            vllm_base_url: vLLM API base URL
-            external_api_url: 외부 API 주소
+            vllm_model_name: vLLM 모델명 (ai_agent 모드에서는 무시됨)
+            vllm_base_url: vLLM API base URL (ai_agent 모드에서는 무시됨)
+            agent_url: AI Agent 엔드포인트 URL
             detection_types: 탐지 대상 목록
+            prompt_type: vLLM 프롬프트 타입 (기본값: "element_detection_qwen")
         
         Returns:
             {
                 'success': bool,
                 'detection_results': dict,
                 'api_type': str,
-                'fallback_chain': list,
+                'fallback_chain': list (fallback 모드일 때만),
                 'error': str
             }
         """
@@ -104,26 +106,26 @@ class ElementDetectionService:
             
             # Fallback 흐름
             if api_type_normalized == "fallback":
-                logger.info("[ElementDetection] Fallback 모드: 외부 API → 로컬 vLLM")
+                logger.info("[ElementDetection] Fallback 모드: AI Agent → 로컬 vLLM")
                 
-                # 1️⃣ 외부 AI Agent 시도
-                fallback_chain.append("external_api")
-                result = await self._call_external_api(text, external_api_url)
+                # 1️⃣ AI Agent 시도
+                fallback_chain.append("agent_api")
+                result = await self._call_agent_api(text, agent_url)
                 if result:
-                    logger.info("[ElementDetection] ✅ 외부 API 성공")
+                    logger.info("[ElementDetection] ✅ AI Agent 성공")
                     return {
                         'success': True,
                         'detection_results': result,
-                        'api_type': 'external',
+                        'api_type': 'ai_agent',
                         'fallback_chain': fallback_chain
                     }
                 
-                logger.warning("[ElementDetection] 외부 API 실패, 로컬 vLLM으로 전환")
+                logger.warning("[ElementDetection] AI Agent 실패, 로컬 vLLM으로 전환")
                 
                 # 2️⃣ 로컬 vLLM 호출
-                fallback_chain.append("local_vllm")
-                result = await self._call_local_llm(
-                    text, vllm_model_name, vllm_base_url, detection_types
+                fallback_chain.append("vllm_service")
+                result = await self._call_vllm_service(
+                    text, vllm_model_name, vllm_base_url, detection_types, prompt_type
                 )
                 if result:
                     logger.info("[ElementDetection] ✅ 로컬 vLLM 성공")
@@ -144,29 +146,29 @@ class ElementDetectionService:
                     'error': 'All detection methods failed, returning dummy result'
                 }
             
-            # Single API 모드
-            elif api_type_normalized == "external":
-                logger.info("[ElementDetection] 외부 API 모드")
-                result = await self._call_external_api(text, external_api_url)
+            # AI Agent 단독 모드
+            elif api_type_normalized == "ai_agent":
+                logger.info("[ElementDetection] AI Agent 모드")
+                result = await self._call_agent_api(text, agent_url)
                 
                 if result:
                     return {
                         'success': True,
                         'detection_results': result,
-                        'api_type': 'external'
+                        'api_type': 'ai_agent'
                     }
                 else:
                     return {
                         'success': False,
                         'detection_results': None,
-                        'api_type': 'external',
-                        'error': 'External API call failed'
+                        'api_type': 'ai_agent',
+                        'error': 'AI Agent API call failed'
                     }
             
             elif api_type_normalized == "vllm":
                 logger.info("[ElementDetection] 로컬 vLLM 모드")
-                result = await self._call_local_llm(
-                    text, vllm_model_name, vllm_base_url, detection_types
+                result = await self._call_vllm_service(
+                    text, vllm_model_name, vllm_base_url, detection_types, prompt_type
                 )
                 
                 if result:
@@ -196,19 +198,19 @@ class ElementDetectionService:
                 'error': f"{type(e).__name__}: {str(e)}"
             }
     
-    async def _call_external_api(self, text: str, external_api_url: Optional[str]) -> Optional[Dict[str, Any]]:
+    async def _call_agent_api(self, text: str, agent_url: Optional[str]) -> Optional[Dict[str, Any]]:
         """
-        외부 AI Agent API 호출
+        AI Agent API 호출
         
         Returns:
             성공 시 dict, 실패 시 None
         """
-        if not external_api_url:
-            logger.warning("[ElementDetection] 외부 API URL 미설정")
+        if not agent_url:
+            logger.warning("[ElementDetection] AI Agent URL 미설정")
             return None
         
         try:
-            logger.info(f"[ElementDetection] 외부 AI Agent 호출: {external_api_url}")
+            logger.info(f"[ElementDetection] AI Agent 호출: {agent_url}")
             
             payload = {
                 "chat_thread_id": "",
@@ -219,7 +221,7 @@ class ElementDetectionService:
             
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
-                    external_api_url,
+                    agent_url,
                     json=payload,
                     headers={"Content-Type": "application/json"}
                 )
@@ -232,7 +234,7 @@ class ElementDetectionService:
             logger.info(f"[ElementDetection] ✅ 외부 API 응답 수신")
             
             # 응답 파싱 및 정규화
-            detection_data = self._parse_external_api_response(result)
+            detection_data = self._parse_agent_api_response(result)
             
             return {
                 "detected_yn": detection_data.get("detected_yn", "N"),
@@ -243,18 +245,26 @@ class ElementDetectionService:
             }
         
         except Exception as e:
-            logger.warning(f"[ElementDetection] 외부 API 호출 중 오류: {type(e).__name__}: {str(e)}")
+            logger.warning(f"[ElementDetection] AI Agent 호출 중 오류: {type(e).__name__}: {str(e)}")
             return None
     
-    async def _call_local_llm(
+    async def _call_vllm_service(
         self,
         text: str,
         vllm_model_name: Optional[str],
         vllm_base_url: Optional[str],
-        detection_types: Optional[List[str]]
+        detection_types: Optional[List[str]],
+        prompt_type: str = "element_detection_qwen"
     ) -> Optional[Dict[str, Any]]:
         """
-        로컬 vLLM 호출
+        로컬 vLLM 서비스 호출
+        
+        Args:
+            text: 처리할 텍스트
+            vllm_model_name: vLLM 모델명
+            vllm_base_url: vLLM API base URL
+            detection_types: 탐지 대상 목록
+            prompt_type: 프롬프트 타입 (기본값: "element_detection_qwen")
         
         Returns:
             성공 시 dict, 실패 시 None
@@ -262,17 +272,34 @@ class ElementDetectionService:
         try:
             config = FormDataConfig(form_data={})
             
-            # 기본값 설정
+            # 기본값 설정 (둘 다 필수)
             vllm_model_name = vllm_model_name or os.getenv("VLLM_MODEL_NAME", "qwen30_thinking_2507")
             vllm_base_url = vllm_base_url or config.get_vllm_api_base('element_detection')
+            
+            # vLLM이 미설정이면 실패 반환
+            if not vllm_model_name or not vllm_base_url:
+                logger.warning(f"[ElementDetection] vLLM 미설정: model={vllm_model_name}, url={vllm_base_url}")
+                return None
             
             logger.info(f"[ElementDetection] 로컬 vLLM 호출: model={vllm_model_name}, url={vllm_base_url}")
             
             # LLM 클라이언트 초기화
             await self.initialize(vllm_model_name, vllm_base_url)
             
-            # 요소 탐지 프롬프트 생성
-            prompt = self._build_element_detection_prompt(text, detection_types)
+            # 프롬프트 파일 로드
+            try:
+                from pathlib import Path
+                prompt_file_path = Path(__file__).parent / "prompts" / f"{prompt_type}.prompt"
+                with open(prompt_file_path, 'r', encoding='utf-8') as f:
+                    prompt_template = f.read()
+                
+                # {usertxt} 플레이스홀더를 실제 텍스트로 교체
+                prompt = prompt_template.replace("{usertxt}", text)
+                logger.info(f"[ElementDetection] 프롬프트 파일 로드 완료: {prompt_type}")
+            except Exception as file_err:
+                logger.warning(f"[ElementDetection] 프롬프트 파일 로드 실패: {str(file_err)}, 기본 프롬프트 사용")
+                # Fallback: 기본 프롬프트 사용
+                prompt = self._build_element_detection_prompt(text, detection_types)
             
             # LLM API 호출
             response = await self.llm_client.call(
@@ -291,7 +318,7 @@ class ElementDetectionService:
             return result
         
         except Exception as e:
-            logger.warning(f"[ElementDetection] 로컬 vLLM 호출 중 오류: {type(e).__name__}: {str(e)}")
+            logger.warning(f"[ElementDetection] vLLM 서비스 호출 중 오류: {type(e).__name__}: {str(e)}")
             return None
     
     @staticmethod
@@ -311,7 +338,7 @@ class ElementDetectionService:
     
     @staticmethod
     def _build_element_detection_prompt(text: str, detection_types: Optional[List[str]]) -> str:
-        """요소 탐지 프롬프트 생성"""
+        """요소 탐지 기본 프롬프트 생성 (Fallback용)"""
         types_str = ", ".join(detection_types) if detection_types else "사전판매, 부당권유 등"
         
         return f"""다음 고객 상담 통화 전사문을 분석하여 규제 대상 요소를 탐지하세요.
@@ -359,8 +386,8 @@ JSON 형식으로 다음과 같이 반환하세요:
             }
     
     @staticmethod
-    def _parse_external_api_response(result: dict) -> Dict[str, Any]:
-        """외부 API 응답 파싱"""
+    def _parse_agent_api_response(result: dict) -> Dict[str, Any]:
+        """AI Agent API 응답 파싱"""
         try:
             # 다양한 응답 형식 대응
             if "detected_yn" in result:
