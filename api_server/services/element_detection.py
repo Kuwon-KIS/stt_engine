@@ -323,17 +323,15 @@ class ElementDetectionService:
     
     @staticmethod
     def _normalize_api_type(api_type: str) -> str:
-        """API 타입 정규화 (레거시 지원)"""
+        """API 타입 정규화"""
         api_type_map = {
-            'external': 'external',
-            'ai_agent': 'external',
-            'local': 'vllm',
+            'ai_agent': 'ai_agent',
             'vllm': 'vllm',
             'fallback': 'fallback'
         }
-        normalized = api_type_map.get(api_type.lower(), 'fallback')
-        if normalized != api_type:
-            logger.debug(f"API 타입 정규화: {api_type} → {normalized}")
+        normalized = api_type_map.get(api_type.lower())
+        if normalized is None:
+            raise ValueError(f"지원하지 않는 api_type: {api_type}. 지원 값: ai_agent, vllm, fallback")
         return normalized
     
     @staticmethod

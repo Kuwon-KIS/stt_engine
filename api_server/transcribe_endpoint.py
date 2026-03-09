@@ -473,7 +473,7 @@ async def perform_incomplete_elements_check(
             'success': bool,
             'incomplete_elements': dict,      # 불완전판매요소 구조
             'analysis': str,                  # 상세 분석
-            'agent_type': str,                # 'external' 또는 'vllm'
+            'agent_type': str,                # 'ai_agent' 또는 'vllm'
             'processing_time_sec': float,
             'error': str                      # 에러 메시지 (실패 시)
         }

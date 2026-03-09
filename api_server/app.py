@@ -397,7 +397,7 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
     - classification_llm_type: Classification LLM 타입 (openai, vllm, ollama) (기본: "openai")
     - element_detection: 요소 탐지 여부 (기본: "false") - 불완전판매/부당권유 판매 등 탐지
     - detection_types: 탐지할 요소 타입 (CSV 또는 JSON, 예: "incomplete_sales,aggressive_sales")
-    - detection_api_type: 요소 탐지 방식 (fallback/ai_agent/vllm) (기본: "fallback", 레거시: external->ai_agent, local->vllm)
+    - detection_api_type: 요소 탐지 방식 (ai_agent/vllm/fallback) (기본: "ai_agent")
     - detection_llm_type: 요소 탐지 LLM 타입 (vllm, ollama) (기본: "vllm", detection_api_type='vllm'일 때만)
     - privacy_prompt_type: Privacy Removal 프롬프트 타입 (기본: "privacy_remover_default_v6")
     - classification_prompt_type: Classification 프롬프트 타입 (기본: "classification_default_v1")
@@ -447,9 +447,9 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
     # Element Detection 설정
     element_detection = config.get_bool('element_detection')
     detection_types = config.get_str('detection_types', '')  # CSV: "incomplete_sales,aggressive_sales"
-    detection_api_type_input = config.get_str('detection_api_type') or os.getenv('ELEMENT_DETECTION_API_TYPE', 'fallback')
-    detection_api_type_map = {'external': 'ai_agent', 'local': 'vllm'}  # 레거시 호환성
-    detection_api_type = detection_api_type_map.get(detection_api_type_input, detection_api_type_input)
+    # 우선순위: Form 파라미터 → 환경변수 → 기본값 'ai_agent'
+    # 지원 값: 'ai_agent', 'vllm', 'fallback'
+    detection_api_type = config.get_str('detection_api_type') or os.getenv('ELEMENT_DETECTION_API_TYPE', 'ai_agent')
     detection_llm_type = config.get_str('detection_llm_type', 'vllm')
     detection_vllm_model_name = config.get_vllm_model_name('element_detection')
     element_detection_prompt_type = config.get_str('element_detection_prompt_type', 'element_detection_qwen')
