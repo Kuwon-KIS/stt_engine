@@ -1,7 +1,7 @@
 """
 Privacy Remover Service
 LLM을 사용하여 STT 텍스트에서 개인정보를 제거합니다.
-프롬프트는 외부 파일에서 로드되며, Regex fallback이 포함되어 있습니다.
+프롬프트는 외부 파일에서 로드됩니다.
 
 프롬프트 파일 위치: api_server/services/prompts/
 - privacy_remover_default_v6.prompt: 기본 프롬프트 (전체 개인정보)
@@ -9,8 +9,6 @@ LLM을 사용하여 STT 텍스트에서 개인정보를 제거합니다.
 
 scratch/prompt_test_all의 privacy_remover_runner.py 로직을 독립적으로 구현합니다.
 """
-
-import re
 import os
 import json
 import asyncio
@@ -672,67 +670,14 @@ class PrivacyRemoverService:
                 }
             
             except json.JSONDecodeError as e:
-                logger.warning(f"[PrivacyRemover] JSON 파싱 실패 (LLM 응답 형식 오류): {str(e)}")
-                logger.warning(f"[PrivacyRemover] LLM 응답 내용: {response_text[:100]}...")
-                logger.warning(f"[PrivacyRemover] Regex fallback으로 전환")
-                
-                # Regex fallback: 기본 패턴으로 개인정보 제거
-                fallback_result = self._regex_fallback(usertxt)
-                
-                return {
-                    'success': True,
-                    'privacy_exist': fallback_result['privacy_exist'],
-                    'exist_reason': fallback_result['exist_reason'],
-                    'privacy_rm_usertxt': fallback_result['privacy_rm_usertxt'],
-                    'input_tokens': llm_response['input_tokens'],
-                    'output_tokens': llm_response['output_tokens'],
-                    'cached_tokens': llm_response['cached_tokens']
-                }
+                logger.error(f"[PrivacyRemover] JSON 파싱 실패 (LLM 응답 형식 오류): {str(e)}")
+                logger.error(f"[PrivacyRemover] LLM 응답 내용: {response_text[:100]}...")
+                raise RuntimeError(f"LLM 응답 형식 오류: {str(e)}")
         
         except RuntimeError as e:
             # LLM API 오류 (연결 실패, 타임아웃 등)
             logger.error(f"[PrivacyRemover] LLM API 오류: {str(e)}")
-            logger.warning(f"[PrivacyRemover] Regex fallback으로 전환")
-            
-            try:
-                fallback_result = self._regex_fallback(usertxt)
-                return {
-                    'success': False,
-                    'privacy_exist': fallback_result['privacy_exist'],
-                    'exist_reason': f"[Fallback] LLM 호출 실패: {str(e)[:50]}",
-                    'privacy_rm_usertxt': fallback_result['privacy_rm_usertxt']
-                }
-            except Exception as fallback_error:
-                logger.error(f"[PrivacyRemover] Regex fallback도 실패: {str(fallback_error)}", exc_info=True)
-                return {
-                    'success': False,
-                    'privacy_exist': 'N',
-                    'exist_reason': f"[Error] 모든 처리 실패: {str(e)[:40]}",
-                    'privacy_rm_usertxt': usertxt  # 원본 반환
-                }
-        
-        except Exception as e:
-            # 예상치 못한 오류
-            logger.error(f"[PrivacyRemover] 예상치 못한 오류: {type(e).__name__}: {str(e)}", exc_info=True)
-            logger.warning(f"[PrivacyRemover] Regex fallback으로 전환")
-            
-            # 실패 시 regex fallback
-            try:
-                fallback_result = self._regex_fallback(usertxt)
-                return {
-                    'success': False,
-                    'privacy_exist': fallback_result['privacy_exist'],
-                    'exist_reason': f"[Fallback] 처리 오류: {type(e).__name__}",
-                    'privacy_rm_usertxt': fallback_result['privacy_rm_usertxt']
-                }
-            except Exception as fallback_error:
-                logger.error(f"[PrivacyRemover] Regex fallback도 실패: {str(fallback_error)}", exc_info=True)
-                return {
-                    'success': False,
-                    'privacy_exist': 'N',
-                    'exist_reason': f"[Error] 모든 처리 실패",
-                    'privacy_rm_usertxt': usertxt  # 원본 반환
-                }
+            raise
     
     async def remove_privacy_from_stt(
         self,
@@ -763,79 +708,6 @@ class PrivacyRemoverService:
             model_name=model_name
         )
     
-    def _regex_fallback(self, text: str) -> Dict[str, str]:
-        """
-        정규표현식을 사용한 기본 개인정보 제거 (LLM 실패 시 fallback)
-        
-        Args:
-            text: 원본 텍스트
-            
-        Returns:
-            {
-                'privacy_exist': str,       # 'Y' 또는 'N'
-                'exist_reason': str,        # 개인정보 타입
-                'privacy_rm_usertxt': str   # 처리된 텍스트
-            }
-        """
-        logger.info(f"[Fallback] Regex 기반 개인정보 제거 시작 (text_len={len(text)})")
-        
-        processed_text = text
-        privacy_types = []
-        
-        # 전화번호 (010-xxxx-xxxx 형식 또는 연속된 10자리 숫자)
-        phone_pattern = r'01[0-9]-\d{3,4}-\d{4}|\b01[0-9]\d{8}\b|\+\d{1,3}\s?\d{6,}'
-        matches = re.findall(phone_pattern, processed_text)
-        if matches:
-            privacy_types.append(f"전화번호({len(matches)}개)")
-            logger.debug(f"[Fallback] 전화번호 발견: {len(matches)}개")
-            for match in matches:
-                masked = match[0] + '*' * (len(match) - 1)
-                processed_text = processed_text.replace(match, masked)
-        
-        # 이메일
-        email_pattern = r'[\w\.-]+@[\w\.-]+\.\w+'
-        matches = re.findall(email_pattern, processed_text)
-        if matches:
-            privacy_types.append(f"이메일({len(matches)}개)")
-            logger.debug(f"[Fallback] 이메일 발견: {len(matches)}개")
-            for match in matches:
-                masked = match[0] + '*' * (len(match) - 1)
-                processed_text = processed_text.replace(match, masked)
-        
-        # 계좌번호 (최소 6자리 연속 숫자)
-        account_pattern = r'\b\d{6,}\b'
-        matches = re.findall(account_pattern, processed_text)
-        if matches:
-            # 날짜나 다른 패턴과 구분 (가능한 계좌 범위: 8-16자리)
-            account_matches = [m for m in matches if 8 <= len(m) <= 16]
-            if account_matches:
-                privacy_types.append(f"계좌번호({len(account_matches)}개)")
-                logger.debug(f"[Fallback] 계좌번호 발견: {len(account_matches)}개")
-                for match in account_matches:
-                    masked = match[0] + '*' * (len(match) - 1)
-                    processed_text = processed_text.replace(match, masked)
-        
-        # 주민등록번호 (XXXXXX-XXXXXXX)
-        ssn_pattern = r'\d{6}-\d{7}'
-        matches = re.findall(ssn_pattern, processed_text)
-        if matches:
-            privacy_types.append(f"주민등록번호({len(matches)}개)")
-            logger.debug(f"[Fallback] 주민등록번호 발견: {len(matches)}개")
-            for match in matches:
-                masked = match[0] + '*' * (len(match) - 1)
-                processed_text = processed_text.replace(match, masked)
-        
-        privacy_exist = 'Y' if privacy_types else 'N'
-        exist_reason = ', '.join(privacy_types)[:50] if privacy_types else ''
-        
-        logger.info(f"[Fallback] Regex 처리 완료: privacy_exist={privacy_exist}, found={len(privacy_types)}개 타입: {exist_reason}")
-        
-        return {
-            'privacy_exist': privacy_exist,
-            'exist_reason': exist_reason,
-            'privacy_rm_usertxt': processed_text
-        }
-
 
 # ============================================================================
 # Singleton 패턴: 전역 서비스 인스턴스
@@ -876,18 +748,3 @@ async def _async_get_privacy_remover_service(prompts_dir: Optional[str] = None) 
     """
     return get_privacy_remover_service(prompts_dir)
 
-
-if __name__ == "__main__":
-    # 기본 로깅 설정
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    
-    # 테스트 코드
-    async def test():
-        service = get_privacy_remover_service()
-        result = await service.process_text("홍길동님께서 010-1234-5678로 연락주셨습니다.")
-        print("Result:", result)
-    
-    asyncio.run(test())
