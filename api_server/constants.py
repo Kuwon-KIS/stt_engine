@@ -212,8 +212,8 @@ STREAM_OVERLAP_DURATION = 3  # 기존 12초에서 변경 (40% → 10%)
 # 세그멘트 오버랩은 수% 정도만 영향을 미치므로 모든 PRESET에서 동일하게 설정합니다.
 PRESET_SEGMENT_CONFIG = {
     "accuracy": {
-        "chunk_duration": 30,
-        "overlap_duration": 3,
+        "chunk_duration": 15,  # 30초 → 15초 (메모리 최적화)
+        "overlap_duration": 2,
         "backend": "transformers",
         "compute_type": "float32",
         "description": "Highest accuracy (transformers + float32, ~25sec/30sec audio) ⚠️ SLOW"
