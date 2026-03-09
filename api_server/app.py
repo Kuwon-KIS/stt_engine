@@ -412,16 +412,14 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
     ```bash
     curl -X POST http://localhost:8003/transcribe \
       -F 'file_path=/app/audio/test.wav' \
-      -F 'privacy_removal=true' \
-      -F 'classification=true'
+      -F 'privacy_removal=true'
     ```
     
     Example (텍스트 입력):
     ```bash
     curl -X POST http://localhost:8003/transcribe \
       -F 'stt_text=고객님, 저희 상품 정말 좋습니다' \
-      -F 'privacy_removal=true' \
-      -F 'classification=true'
+      -F 'privacy_removal=true'
     """
     # FormData 파싱 및 설정 추출
     form_data = await request.form()
@@ -610,6 +608,9 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
                     confidence=classification_response['confidence'],
                     reason=classification_response.get('reason')
                 )
+                logger.info(f"[API] Classification 완료: {classification_result.code}")
+            else:
+                logger.warning(f"[API] Classification 실패: {classification_response}")
         
         # 5. 요소 탐지 처리 (선택)
         element_detection_enabled = element_detection.lower() in ['true', '1', 'yes', 'on']

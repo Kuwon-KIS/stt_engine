@@ -174,6 +174,54 @@ class FormDataConfig:
             logger.info(f"[FormDataConfig] get_vllm_model_name('{task}'): from constants.VLLM_MODEL_NAME -> {repr(VLLM_MODEL_NAME)}")
         return VLLM_MODEL_NAME
     
+    def get_vllm_api_base(self, task: str, default: str = "http://localhost:8001/v1") -> str:
+        """
+        vLLM API base_url (Qwen vLLM용 OpenAI SDK 호환)
+        
+        우선순위:
+        1. FormData 파라미터 (예: privacy_vllm_api_base, classification_vllm_api_base)
+        2. 작업별 환경변수 (예: PRIVACY_VLLM_API_BASE, CLASSIFICATION_VLLM_API_BASE)
+        3. 공용 환경변수 (VLLM_API_BASE)
+        4. 기본값
+        
+        Args:
+            task: 작업명 (privacy_removal, classification, element_detection)
+            default: 기본값
+        
+        Returns:
+            vLLM API base_url (/v1으로 끝남)
+        """
+        # 1. FormData 파라미터에서 확인
+        form_key = f"{task}_vllm_api_base"
+        form_value = self.form_data.get(form_key, "").strip()
+        
+        if form_value:
+            if self.debug:
+                logger.info(f"[FormDataConfig] get_vllm_api_base('{task}'): from FormData[{form_key}] -> {repr(form_value)}")
+            return form_value
+        
+        # 2. 작업별 환경변수에서 먼저 확인
+        env_key = f"{task.upper()}_VLLM_API_BASE"
+        task_specific_value = os.getenv(env_key, '').strip()
+        
+        if task_specific_value:
+            if self.debug:
+                logger.info(f"[FormDataConfig] get_vllm_api_base('{task}'): from env[{env_key}] -> {repr(task_specific_value)}")
+            return task_specific_value
+        
+        # 3. 공용 환경변수에서 확인
+        common_value = os.getenv('VLLM_API_BASE', '').strip()
+        
+        if common_value:
+            if self.debug:
+                logger.info(f"[FormDataConfig] get_vllm_api_base('{task}'): from env[VLLM_API_BASE] -> {repr(common_value)}")
+            return common_value
+        
+        # 4. 기본값
+        if self.debug:
+            logger.info(f"[FormDataConfig] get_vllm_api_base('{task}'): using default -> {repr(default)}")
+        return default
+    
     def get_agent_url(self) -> str:
         """
         Element Detection Agent URL 추출 (Element Detection ai_agent 모드 전용)
