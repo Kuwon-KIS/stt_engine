@@ -667,7 +667,10 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
             
             if element_response.get('success'):
                 detected_yn = element_response.get('detection_results', {}).get('detected_yn', 'N')
-                logger.info(f"[API] ✅ 요소 탐지 완료 (api_type={element_response.get('api_type')}, llm_type={element_response.get('llm_type')}, detected_yn={detected_yn})")
+                detection_details = element_response.get('detection_results', {})
+                logger.info(f"[API] ✅ 요소 탐지 완료 (api_type={element_response.get('api_type')}, detected_yn={detected_yn})")
+                logger.info(f"[API] 요소 탐지 상세 결과 (JSON): {json.dumps(detection_details, ensure_ascii=False, indent=2)}")
+                logger.debug(f"[API] element_result type: {type(element_result)}, keys: {element_result.keys() if isinstance(element_result, dict) else 'N/A'}")
             else:
                 logger.warning(f"[API] ⚠️ 요소 탐지 실패: {element_response.get('error')}")
         

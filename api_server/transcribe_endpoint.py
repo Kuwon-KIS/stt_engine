@@ -431,6 +431,12 @@ def build_transcribe_response(
         # 텍스트 입력: duration을 None으로 설정
         duration = None
     
+    # 디버깅: 응답 구성 전 element_detection 확인
+    if element_detection_result:
+        logger.debug(f"[build_response] element_detection_result 존재, type={type(element_detection_result)}")
+        logger.debug(f"[build_response] detection_results={element_detection_result.get('detection_results')}")
+        logger.debug(f"[build_response] 응답의 element_detection={element_detection_result.get('detection_results')}")
+    
     return TranscribeResponse(
         success=True,
         text=stt_result.get('text', ''),
