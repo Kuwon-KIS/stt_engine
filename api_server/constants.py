@@ -255,4 +255,4 @@ VLLM_MODEL_NAME = "qwen30_thinking_2507"
 
 # 외부 Element Detection Agent (ai_agent 모드 사용 시에만 필요)
 # - 환경변수: ELEMENT_DETECTION_AGENT_URL
-EXTERNAL_API_URL = None  # 레거시 호환성용 (사용하지 말 것)
+# - FormData 파라미터: agent_url

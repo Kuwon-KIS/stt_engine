@@ -193,8 +193,7 @@ class TestFormDataConfig:
     
     def test_get_agent_url_empty_string_fallback(self, monkeypatch):
         """모든 소스가 없을 때 빈 문자열 반환"""
-        monkeypatch.delenv('EXTERNAL_API_URL', raising=False)
-        monkeypatch.delenv('AGENT_URL', raising=False)
+        monkeypatch.delenv('ELEMENT_DETECTION_AGENT_URL', raising=False)
         config = self.create_config({})
         result = config.get_agent_url()
         assert result == ''
@@ -231,7 +230,7 @@ class TestFormDataConfig:
     def test_full_transcribe_config_scenario(self, monkeypatch):
         """전체 transcribe 요청 설정 파싱"""
         monkeypatch.setenv('VLLM_MODEL_NAME', 'default_model')
-        monkeypatch.setenv('EXTERNAL_API_URL', 'http://api.example.com/detect')
+        monkeypatch.setenv('ELEMENT_DETECTION_AGENT_URL', 'http://api.example.com/detect')
         
         form_data_dict = {
             'file_path': '/app/audio/test.wav',

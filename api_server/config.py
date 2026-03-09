@@ -15,7 +15,7 @@ import logging
 from typing import Optional, Any
 from starlette.datastructures import FormData
 
-from api_server.constants import VLLM_MODEL_NAME, EXTERNAL_API_URL
+from api_server.constants import VLLM_MODEL_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -181,7 +181,7 @@ class FormDataConfig:
         우선순위:
         1. FormData 파라미터 (agent_url)
         2. 환경변수 (ELEMENT_DETECTION_AGENT_URL)
-        3. 코드 기본값 (constants.EXTERNAL_API_URL)
+        3. 빈 문자열 (기본값)
         
         Returns:
             Element Detection Agent URL (없을 경우 빈 문자열)
@@ -202,11 +202,10 @@ class FormDataConfig:
                 logger.info(f"[FormDataConfig] get_agent_url(): from env[ELEMENT_DETECTION_AGENT_URL] -> {repr(env_url)}")
             return env_url
         
-        # 3. 코드 기본값
-        default_url = EXTERNAL_API_URL or ""
+        # 3. 기본값
         if self.debug:
-            logger.info(f"[FormDataConfig] get_agent_url(): from constants.EXTERNAL_API_URL -> {repr(default_url)}")
-        return default_url
+            logger.info(f"[FormDataConfig] get_agent_url(): using default (empty string)")
+        return ""
     
     @staticmethod
     def _normalize_model_name(model_name: str) -> str:
@@ -497,9 +496,10 @@ class LLMConfig(FormDataConfig):
         vLLM API base_url (Qwen vLLM용 OpenAI SDK 호환)
         
         우선순위:
-        1. 작업별 환경변수 (예: PRIVACY_VLLM_API_BASE)
-        2. 공용 환경변수 (VLLM_QWEN_API_BASE)
-        3. 기본값
+        1. FormData 파라미터 (예: privacy_vllm_api_base)
+        2. 작업별 환경변수 (예: PRIVACY_VLLM_API_BASE)
+        3. 공용 환경변수 (VLLM_API_BASE)
+        4. 기본값
         
         Args:
             task: 작업명 (privacy_removal, classification, element_detection)
@@ -508,7 +508,16 @@ class LLMConfig(FormDataConfig):
         Returns:
             vLLM API base_url (/v1으로 끝남)
         """
-        # 1. 작업별 환경변수에서 먼저 확인
+        # 1. FormData 파라미터에서 확인
+        form_key = f"{task}_vllm_api_base"
+        form_value = self.form_data.get(form_key, "").strip()
+        
+        if form_value:
+            if self.debug:
+                logger.info(f"[FormDataConfig] get_vllm_api_base('{task}'): from FormData[{form_key}] -> {repr(form_value)}")
+            return form_value
+        
+        # 2. 작업별 환경변수에서 먼저 확인
         env_key = f"{task.upper()}_VLLM_API_BASE"
         task_specific_value = os.getenv(env_key, '').strip()
         
@@ -517,15 +526,15 @@ class LLMConfig(FormDataConfig):
                 logger.info(f"[FormDataConfig] get_vllm_api_base('{task}'): from env[{env_key}] -> {repr(task_specific_value)}")
             return task_specific_value
         
-        # 2. 공용 환경변수에서 확인
-        common_value = os.getenv('VLLM_QWEN_API_BASE', '').strip()
+        # 3. 공용 환경변수에서 확인
+        common_value = os.getenv('VLLM_API_BASE', '').strip()
         
         if common_value:
             if self.debug:
-                logger.info(f"[FormDataConfig] get_vllm_api_base('{task}'): from env[VLLM_QWEN_API_BASE] -> {repr(common_value)}")
+                logger.info(f"[FormDataConfig] get_vllm_api_base('{task}'): from env[VLLM_API_BASE] -> {repr(common_value)}")
             return common_value
         
-        # 3. 기본값
+        # 4. 기본값
         if self.debug:
             logger.info(f"[FormDataConfig] get_vllm_api_base('{task}'): using default -> {repr(default)}")
         return default
@@ -598,14 +607,49 @@ class PrivacyRemovalVLLMConfig(FormDataConfig):
         Qwen vLLM API base_url (OpenAI SDK 호환)
         
         우선순위:
-        1. 환경변수 PRIVACY_VLLM_API_BASE
-        2. 기본값
+        1. FormData 파라미터 (privacy_removal_vllm_api_base)
+        2. 환경변수 PRIVACY_REMOVAL_VLLM_API_BASE
+        3. 환경변수 VLLM_API_BASE
+        4. 기본값
         
         Returns:
             /v1으로 끝나는 정규화된 URL
         """
-        api_base = os.getenv('PRIVACY_VLLM_API_BASE', default).strip()
-        return self._normalize_api_base(api_base)
+        # 1. FormData 파라미터 확인
+        form_value = self.form_data.get("privacy_removal_vllm_api_base", "").strip()
+        if form_value:
+            return self._normalize_api_base(form_value)
+        
+        # 2. 환경변수 PRIVACY_REMOVAL_VLLM_API_BASE 확인
+        api_base = os.getenv('PRIVACY_REMOVAL_VLLM_API_BASE', '').strip()
+        if api_base:
+            return self._normalize_api_base(api_base)
+        
+        # 3. 공용 환경변수 VLLM_API_BASE 확인
+        common_base = os.getenv('VLLM_API_BASE', '').strip()
+        if common_base:
+            return self._normalize_api_base(common_base)
+        
+        # 4. 기본값
+        return self._normalize_api_base(default)
+    
+    def get_vllm_api_base(self, default: str = "http://localhost:8001/v1") -> str:
+        """
+        Privacy Removal vLLM API base_url (get_api_base()의 별칭)
+        
+        우선순위:
+        1. FormData 파라미터 (privacy_removal_vllm_api_base)
+        2. 환경변수 PRIVACY_VLLM_API_BASE
+        3. 환경변수 VLLM_API_BASE
+        4. 기본값
+        
+        Args:
+            default: 기본값
+        
+        Returns:
+            vLLM API base_url
+        """
+        return super().get_vllm_api_base('privacy_removal', default)
     
     def get_api_key(self, default: str = "dummy") -> str:
         """
@@ -687,6 +731,91 @@ class PrivacyRemovalVLLMConfig(FormDataConfig):
             api_base = api_base + ("/v1" if api_base.endswith("/") else "/v1")
         
         return api_base
+
+
+class ClassificationConfig(FormDataConfig):
+    """
+    분류 (Classification) 설정 추상화
+    
+    FormDataConfig를 기반으로 분류 설정에 특화된 메서드를 제공합니다.
+    
+    설정 우선순위:
+    1. HTTP FormData 파라미터
+    2. 환경변수 (CLASSIFICATION_VLLM_MODEL_NAME, CLASSIFICATION_VLLM_API_BASE 등)
+    3. 코드 기본값
+    """
+    
+    def get_vllm_model_name(self, default_fallback: Optional[str] = None) -> str:
+        """
+        분류용 vLLM 모델명
+        
+        우선순위:
+        1. FormData 파라미터 (classification_vllm_model_name)
+        2. 환경변수 CLASSIFICATION_VLLM_MODEL_NAME
+        3. 환경변수 VLLM_MODEL_NAME
+        4. 코드 기본값 (constants.VLLM_MODEL_NAME)
+        
+        Args:
+            default_fallback: 추가 기본값
+        
+        Returns:
+            모델명 (/model/ 경로를 포함한 형태로 반환 가능)
+        """
+        return super().get_vllm_model_name('classification', default_fallback)
+    
+    def get_vllm_api_base(self, default: str = "http://localhost:8001/v1") -> str:
+        """
+        분류용 vLLM API base_url
+        
+        우선순위:
+        1. FormData 파라미터 (classification_vllm_api_base)
+        2. 환경변수 CLASSIFICATION_VLLM_API_BASE
+        3. 환경변수 VLLM_API_BASE
+        4. 기본값
+        
+        Args:
+            default: 기본값
+        
+        Returns:
+            vLLM API base_url
+        """
+        return super().get_vllm_api_base('classification', default)
+    
+    def get_prompt_type(self, default: str = "classification_default_v1") -> str:
+        """
+        분류 프롬프트 타입
+        
+        우선순위:
+        1. FormData 파라미터 (classification_prompt_type)
+        2. 환경변수 (CLASSIFICATION_PROMPT_TYPE)
+        3. 기본값
+        
+        Args:
+            default: 기본값
+        
+        Returns:
+            프롬프트 타입
+        """
+        # 1. FormData에서 확인
+        form_value = self.form_data.get("classification_prompt_type", "").strip()
+        
+        if form_value:
+            if self.debug:
+                logger.info(f"[ClassificationConfig] get_prompt_type(): from FormData -> {repr(form_value)}")
+            return form_value
+        
+        # 2. 환경변수에서 확인
+        env_value = os.getenv("CLASSIFICATION_PROMPT_TYPE", "").strip()
+        
+        if env_value:
+            if self.debug:
+                logger.info(f"[ClassificationConfig] get_prompt_type(): from env[CLASSIFICATION_PROMPT_TYPE] -> {repr(env_value)}")
+            return env_value
+        
+        # 3. 기본값
+        if self.debug:
+            logger.info(f"[ClassificationConfig] get_prompt_type(): using default -> {repr(default)}")
+        return default
 
 
 class ElementDetectionConfig(FormDataConfig):
@@ -777,6 +906,42 @@ class ElementDetectionConfig(FormDataConfig):
             vllm 모드에서 필수 파라미터입니다.
         """
         return self.get_vllm_model_name('detection', default_fallback)
+    
+    def get_vllm_model_name(self, default_fallback: Optional[str] = None) -> str:
+        """
+        Element Detection vLLM 모델명 (get_vllm_model_name_for_detection의 별칭)
+        
+        우선순위:
+        1. FormData 파라미터 (element_detection_vllm_model_name)
+        2. 환경변수 ELEMENT_DETECTION_VLLM_MODEL_NAME
+        3. 환경변수 VLLM_MODEL_NAME
+        4. 코드 기본값
+        
+        Args:
+            default_fallback: 추가 기본값
+        
+        Returns:
+            모델명
+        """
+        return super().get_vllm_model_name('element_detection', default_fallback)
+    
+    def get_vllm_api_base(self, default: str = "http://localhost:8001/v1") -> str:
+        """
+        Element Detection vLLM API base_url
+        
+        우선순위:
+        1. FormData 파라미터 (element_detection_vllm_api_base)
+        2. 환경변수 ELEMENT_DETECTION_VLLM_API_BASE
+        3. 환경변수 VLLM_API_BASE
+        4. 기본값
+        
+        Args:
+            default: 기본값
+        
+        Returns:
+            vLLM API base_url
+        """
+        return super().get_vllm_api_base('element_detection', default)
     
     def get_vllm_endpoint_for_detection(self, default: str = "http://localhost:8000/v1") -> str:
         """
