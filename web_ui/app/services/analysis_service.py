@@ -348,7 +348,8 @@ class AnalysisService:
                     "status": r.status,
                     "confidence": None,
                     "risk_level": None,
-                    "improper_detection_results": r.improper_detection_results
+                    "improper_detection_results": r.improper_detection_results,
+                    "element_detection": r.improper_detection_results  # 프론트엔드에서 element_detection으로 사용
                 }
                 
                 # stt_metadata에서 confidence 추출
