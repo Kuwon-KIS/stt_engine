@@ -151,10 +151,10 @@ class STTService:
                                 logger.info(f"[STT Service] 처리 단계: STT={steps.get('stt')}, Privacy={steps.get('privacy_removal')}, Classification={steps.get('classification')}, ElementDetection={steps.get('element_detection')}")
                                 
                                 # 요소 탐지 결과 로깅
-                                if element_detection and result.get('element_detection'):
+                                if result.get('element_detection'):
                                     element_result = result.get('element_detection', {})
-                                    logger.info(f"[STT Service] 요소 탐지 완료: agent_type={element_result.get('agent_type')}")
-                                logger.error(f"[STT Service] 전체 응답: {result}")
+                                    detected_yn = element_result.get('detected_yn', 'N')
+                                    logger.info(f"[STT Service] 요소 탐지 완료: detected_yn={detected_yn}")
                             return result
                         else:
                             logger.error(f"[STT Service] HTTP {response.status} 에러")
