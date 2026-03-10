@@ -257,7 +257,7 @@ async def perform_privacy_removal(
         PrivacyRemovalResult 객체
     """
     try:
-        logger.info(f"[API/Transcribe] Privacy Removal 시작: prompt_type={prompt_type}, llm_type={llm_type}, text_len={len(text)}")
+        logger.info(f"[API/Transcribe] Privacy Removal 시작: prompt_type={prompt_type}, llm_type={llm_type}, text_len={len(text)}, text_preview={text[:100] if text else '(empty)'}")
         
         # PrivacyRemovalService 초기화
         privacy_service = get_privacy_removal_service()
@@ -302,10 +302,19 @@ async def perform_privacy_removal(
         privacy_exist_str = result.get('privacy_exist', 'N')
         privacy_exist_value = PrivacyExistence.YES.value if privacy_exist_str == 'Y' else PrivacyExistence.NO.value
         
+        # 처리된 텍스트 추출 (privacy_exist 값과 관계없이 항상 포함되어야 함)
+        processed_text = result.get('privacy_rm_usertxt')
+        if not processed_text:  # None 또는 empty string 모두 처리
+            logger.warning(f"[API/Transcribe] privacy_rm_usertxt 없음 또는 공백 (value={repr(processed_text)}), 원본 텍스트 사용")
+            processed_text = text
+        
         logger.info(
             f"[API/Transcribe] ✅ Privacy Removal 완료: "
             f"success={result.get('success')}, "
             f"privacy_exist={privacy_exist_str}, "
+            f"text_modified={processed_text != text}, "
+            f"output_text_len={len(processed_text)}, "
+            f"output_text_preview={processed_text[:100] if processed_text else '(empty)'}, "
             f"tokens={result.get('input_tokens', 0)}+{result.get('output_tokens', 0)}"
         )
         
@@ -313,7 +322,7 @@ async def perform_privacy_removal(
         return PrivacyRemovalResult(
             privacy_exist=privacy_exist_value,
             exist_reason=result.get('exist_reason', ''),
-            text=result.get('privacy_rm_usertxt', text),
+            text=processed_text,
             privacy_types=result.get('exist_reason', '').split(',') if result.get('exist_reason') else []
         )
     
