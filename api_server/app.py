@@ -708,7 +708,6 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
                 )
             elif export.lower() == "json":
                 # JSON 파일 다운로드
-                import json
                 content = json.dumps(response.dict(), ensure_ascii=False, indent=2).encode('utf-8')
                 return FileResponse(
                     content=content,
