@@ -651,7 +651,7 @@ class AnalysisService:
                         # STT API 호출 (순서: STT → privacy_removal → element_detection)
                         logger.info(f"[process_analysis_sync] STT API 호출 시작: {filename}")
                         logger.info(f"[process_analysis_sync]   - file_path: {file_path}")
-                        logger.info(f"[process_analysis_sync]   - privacy_removal: True (항상 수행)")
+                        logger.info(f"[process_analysis_sync]   - privacy_removal: False (현재는 일시적으로 수행 안함)")
                         logger.info(f"[process_analysis_sync]   - element_detection: True (항상 수행)")
                         logger.info(f"[process_analysis_sync]   - classification: {include_classification} (요청에 따라)")
                         
@@ -659,7 +659,7 @@ class AnalysisService:
                             file_path=str(file_path),
                             language="ko",
                             is_stream=False,
-                            privacy_removal=True,  # privacy_removal 항상 수행
+                            privacy_removal=False,  # privacy_removal 현재는 일시적으로 수행 안함
                             classification=False,
                             element_detection=True  # element_detection 항상 수행
                         )
