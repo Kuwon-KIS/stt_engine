@@ -32,55 +32,55 @@ SAMPLE_DETECTION_RESULTS = [
     {
         "category": "사전판매",
         "detected_yn": "Y",
-        "detected_sentence": [
+        "detected_sentences": [
             "그 모바일로 이제 청약 개설 하시면 거기서 뭐 담보대출이나 이런 거 뭐 이용하시는 데도 편리하시고 뭐 사실 오프라인 일반 계좌하고 동일하다고 보시면 돼요",
             "그냥 온라인 해버리면 안 되세요."
         ],
-        "detected_reason": [
+        "detected_reasons": [
             "온라인가입유도(부당권유 위배)",
             "온라인가입유도(부당권유 위배)"
         ],
-        "detected_keyword": []
+        "detected_keywords": []
     },
     # Sample 2: 이상없음
     {
         "category": "사전판매",
         "detected_yn": "N",
-        "detected_sentence": [],
-        "detected_reason": [],
-        "detected_keyword": []
+        "detected_sentences": [],
+        "detected_reasons": [],
+        "detected_keywords": []
     },
     # Sample 3: 위반탐지 
     {
         "category": "사전판매",
         "detected_yn": "Y",
-        "detected_sentence": [
+        "detected_sentences": [
             "저는 훨씬 더 지금 이제 IMA 쪽이 훨씬 더 빨리 만기가 되고 수익이 날 거라고 봅니다.",
             "수익 부분은 IMA 쪽이 지금 가지고 계신 국채보다는 더 좋을 겁니다.",
             "원금 보장도 되고."
         ],
-        "detected_reason": [
+        "detected_reasons": [
             "단정적판단 금지(부당권유 위배)",
             "비교 왜곡 금지(부당권유 위배)",
             "단정적판단 금지(부당권유 위배)"
         ],
-        "detected_keyword": ["보장"]
+        "detected_keywords": ["보장"]
     },
     # Sample 4: 위반탐지 
     {
         "category": "사전판매",
         "detected_yn": "Y",
-        "detected_sentence": [
+        "detected_sentences": [
             "회사에서 4에서 8% 정도 목표로 운영을 하는 거다.",
             "연간 수익이 한 5에서 7%로 되게 안정적으로 운영이 되고요.",
             "저희 회사에서 보장하는 원금 보장하는 이거 IMA로 다 들어가셔도 괜찮고요."
         ],
-        "detected_reason": [
+        "detected_reasons": [
             "단정적판단 금지(부당권유 위배)",
             "단정적판단 금지(부당권유 위배)",
             "단정적판단 금지(부당권유 위배)"
         ],
-        "detected_keyword": ["보장", "괜찮"]
+        "detected_keywords": ["보장", "괜찮"]
     }
 ]
 
@@ -720,13 +720,13 @@ class AnalysisService:
                                     # STT API의 element_detection 결과 (Dict 형식)
                                     element_data = stt_result.get('element_detection', {})
                                     
-                                    # 이미 표준 형식(detected_yn, detected_sentences 등)이므로 바로 사용
+                                    # API 응답 필드명과 동일하게 저장 (단수형 아님)
                                     detection_result = {
-                                        "category": element_data.get("category", []),
                                         "detected_yn": element_data.get("detected_yn", "N"),
-                                        "detected_sentence": element_data.get("detected_sentences", []),
-                                        "detected_reason": element_data.get("detected_reasons", []),
-                                        "detected_keyword": element_data.get("detected_keywords", [])
+                                        "detected_sentences": element_data.get("detected_sentences", []),
+                                        "detected_reasons": element_data.get("detected_reasons", []),
+                                        "detected_keywords": element_data.get("detected_keywords", []),
+                                        "category": element_data.get("category", [])
                                     }
                                     logger.info(f"[process_analysis_sync] Using STT API element_detection result for {filename}: detected_yn={detection_result.get('detected_yn')}")
                                 

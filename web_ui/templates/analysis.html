@@ -1466,11 +1466,11 @@
             const violationCards = document.getElementById('violationCards');
             const violationSection = document.getElementById('violationSection');
             
-            if (detection.detected_yn === 'Y' && detection.detected_sentence && detection.detected_sentence.length > 0) {
+            if (detection.detected_yn === 'Y' && detection.detected_sentences && detection.detected_sentences.length > 0) {
                 violationSection.style.display = 'block';
-                violationCards.innerHTML = detection.detected_sentence.map((sentence, index) => {
-                    const reason = detection.detected_reason && detection.detected_reason[index] 
-                        ? detection.detected_reason[index] 
+                violationCards.innerHTML = detection.detected_sentences.map((sentence, index) => {
+                    const reason = detection.detected_reasons && detection.detected_reasons[index]
+                        ? detection.detected_reasons[index]
                         : '위반 사유 미제공';
                     
                     return `
@@ -1498,9 +1498,9 @@
             const keywordBadges = document.getElementById('keywordBadges');
             const keywordSection = document.getElementById('keywordSection');
             
-            if (detection.detected_keyword && detection.detected_keyword.length > 0) {
+            if (detection.detected_keywords && detection.detected_keywords.length > 0) {
                 keywordSection.style.display = 'block';
-                keywordBadges.innerHTML = detection.detected_keyword.map(keyword => {
+                keywordBadges.innerHTML = detection.detected_keywords.map(keyword => {
                     return `<span style="background-color: #3b82f6; color: white; padding: 6px 14px; border-radius: 16px; font-size: 13px; font-weight: 500;">${keyword}</span>`;
                 }).join('');
             } else {
@@ -1597,18 +1597,18 @@
                             }
                             
                             // Detected Sentence
-                            if (detection.detected_sentence && Array.isArray(detection.detected_sentence)) {
-                                detectedSentences = detection.detected_sentence.join(' | ');
+                            if (detection.detected_sentences && Array.isArray(detection.detected_sentences)) {
+                                detectedSentences = detection.detected_sentences.join(' | ');
                             }
                             
                             // Detected Reason
-                            if (detection.detected_reason && Array.isArray(detection.detected_reason)) {
-                                detectedReasons = detection.detected_reason.join(' | ');
+                            if (detection.detected_reasons && Array.isArray(detection.detected_reasons)) {
+                                detectedReasons = detection.detected_reasons.join(' | ');
                             }
                             
                             // Detected Keyword
-                            if (detection.detected_keyword && Array.isArray(detection.detected_keyword)) {
-                                detectedKeywords = detection.detected_keyword.join(', ');
+                            if (detection.detected_keywords && Array.isArray(detection.detected_keywords)) {
+                                detectedKeywords = detection.detected_keywords.join(', ');
                             }
                         } catch (e) {
                             console.error('JSON 파싱 에러:', e);
@@ -1702,18 +1702,18 @@
                             }
                             
                             // Detected Sentence
-                            if (detection.detected_sentence && Array.isArray(detection.detected_sentence)) {
-                                detectedSentences = detection.detected_sentence.join(' | ');
+                            if (detection.detected_sentences && Array.isArray(detection.detected_sentences)) {
+                                detectedSentences = detection.detected_sentences.join(' | ');
                             }
                             
                             // Detected Reason
-                            if (detection.detected_reason && Array.isArray(detection.detected_reason)) {
-                                detectedReasons = detection.detected_reason.join(' | ');
+                            if (detection.detected_reasons && Array.isArray(detection.detected_reasons)) {
+                                detectedReasons = detection.detected_reasons.join(' | ');
                             }
                             
                             // Detected Keyword
-                            if (detection.detected_keyword && Array.isArray(detection.detected_keyword)) {
-                                detectedKeywords = detection.detected_keyword.join(', ');
+                            if (detection.detected_keywords && Array.isArray(detection.detected_keywords)) {
+                                detectedKeywords = detection.detected_keywords.join(', ');
                             }
                         } catch (e) {
                             console.error('JSON 파싱 에러:', e);
