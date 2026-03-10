@@ -325,6 +325,12 @@ class WhisperSTT:
         self.backend = None
         self.preset = None  # 현재 선택된 프리셋 저장용
         
+        # Custom preset용 세그먼트 설정 저장소
+        self.custom_segment_config = {
+            "chunk_duration": 30,
+            "overlap_duration": 3
+        }
+        
         # 사용 가능한 백엔드 추적용 플래그
         self.faster_whisper_available = False
         self.transformers_available = False
@@ -760,11 +766,25 @@ class WhisperSTT:
             
             # 현재 프리셋 또는 기본값(accuracy) 사용
             current_preset = self.preset or "accuracy"
-            if current_preset == "custom" or current_preset not in PRESET_SEGMENT_CONFIG:
-                current_preset = "accuracy"
             
-            preset_config = PRESET_SEGMENT_CONFIG.get(current_preset, PRESET_SEGMENT_CONFIG["accuracy"])
-            overlap_seconds = preset_config["overlap_duration"]
+            # ✅ Custom preset 처리: custom_segment_config 사용
+            if current_preset == "custom":
+                chunk_duration = self.custom_segment_config.get("chunk_duration", 30)
+                overlap_seconds = self.custom_segment_config.get("overlap_duration", 3)
+                logger.info(f"[transformers] 세그멘트 설정 (프리셋: CUSTOM)")
+                logger.info(f"  - chunk_duration: {chunk_duration}초")
+                logger.info(f"  - overlap_duration: {overlap_seconds}초")
+            elif current_preset in PRESET_SEGMENT_CONFIG:
+                # 표준 프리셋 사용
+                preset_config = PRESET_SEGMENT_CONFIG[current_preset]
+                overlap_seconds = preset_config["overlap_duration"]
+                logger.info(f"[transformers] 세그멘트 설정 (프리셋: {current_preset})")
+                logger.info(f"  - overlap_duration: {overlap_seconds}초")
+            else:
+                # ❌ 프리셋이 존재하지 않음 - 오류 처리
+                error_msg = f"지원하지 않는 프리셋: {current_preset}. 사용 가능: {list(PRESET_SEGMENT_CONFIG.keys())} 또는 'custom'"
+                logger.error(f"❌ {error_msg}")
+                raise ValueError(error_msg)
             overlap_samples = int(overlap_seconds * sr)
             
             # hop_length 계산: 세그먼트 사이의 이동 거리
@@ -1169,7 +1189,9 @@ class WhisperSTT:
     def reload_backend(self, backend: Optional[str] = None, 
                        compute_type: Optional[str] = None,
                        device: Optional[str] = None,
-                       preset: Optional[str] = None) -> Dict:
+                       preset: Optional[str] = None,
+                       chunk_duration: Optional[float] = None,
+                       overlap_duration: Optional[float] = None) -> Dict:
         """
         백엔드를 동적으로 재로드합니다.
         기존 백엔드를 언로드하고 새 백엔드를 로드합니다.
@@ -1196,6 +1218,10 @@ class WhisperSTT:
                     - "balanced": faster-whisper + float16 (균형)
                     - "accuracy": transformers + float32 (최고 정확도) ⭐ 권장
                     - "custom": backend/compute_type/device를 사용자 지정값으로 사용
+            
+            chunk_duration: (custom preset용) 청크 크기 (초, 기본: 30)
+            
+            overlap_duration: (custom preset용) 오버랩 크기 (초, 기본: 3)
         
         Returns:
             {
@@ -1203,6 +1229,8 @@ class WhisperSTT:
                 "current_backend": 로드된 백엔드 이름,
                 "device": 사용 디바이스,
                 "compute_type": 적용된 컴퓨트 타입,
+                "preset": 적용된 프리셋,
+                "custom_config": (custom preset 사용 시) 저장된 설정값,
                 "message": 상세 메시지
             }
             
@@ -1213,10 +1241,40 @@ class WhisperSTT:
             # 속도 우선 모드 (faster-whisper + int8)
             result = stt.reload_backend(preset="speed")
             
-            # 커스텀 설정
-            result = stt.reload_backend(backend="transformers", device="cuda", compute_type="float32")
+            # 커스텀 설정 (세그먼트 크기 커스터마이징)
+            result = stt.reload_backend(
+                preset="custom",
+                backend="transformers",
+                compute_type="float32",
+                chunk_duration=20,      # 20초 청크
+                overlap_duration=2      # 2초 오버랩
+            )
         """
         import gc
+        
+        # ✅ Custom preset용 세그먼트 설정 저장
+        if chunk_duration is not None or overlap_duration is not None:
+            if chunk_duration is not None:
+                self.custom_segment_config["chunk_duration"] = chunk_duration
+                logger.info(f"   → chunk_duration: {chunk_duration}초 저장")
+            if overlap_duration is not None:
+                self.custom_segment_config["overlap_duration"] = overlap_duration
+                logger.info(f"   → overlap_duration: {overlap_duration}초 저장")
+        
+        # ✅ 반환값 생성 헬퍼 함수
+        def _make_success_response(backend_name: str, msg: str):
+            """성공 응답 생성 (preset 및 custom_config 포함)"""
+            response = {
+                "status": "success",
+                "current_backend": backend_name,
+                "preset": self.preset,
+                "device": self.device,
+                "compute_type": self.compute_type,
+                "message": msg
+            }
+            if self.preset == "custom":
+                response["custom_config"] = self.custom_segment_config.copy()
+            return response
         
         # Preset 처리
         if preset:
@@ -1254,10 +1312,40 @@ class WhisperSTT:
                 logger.info(f"      device={device}")
             else:
                 # custom: 사용자가 지정한 backend/compute_type/device 사용
+                # ✅ custom preset 유지
+                self.preset = "custom"
                 self.preset = "custom"
                 logger.info(f"   📌 CUSTOM 모드 (사용자 지정값 사용):")
                 logger.info(f"      backend={backend}")
                 logger.info(f"      compute_type={compute_type}")
+        else:
+            # ⚠️ Preset이 지정되지 않았을 때: backend 기반으로 자동 추론
+            # backend만 지정된 경우 적절한 프리셋 결정
+            if backend:
+                backend_lower = backend.lower().strip()
+                logger.info(f"📋 백엔드 기반 자동 프리셋 설정: {backend_lower}")
+                
+                if backend_lower == "transformers":
+                    self.preset = "accuracy"  # transformers → accuracy preset
+                    logger.info(f"   → transformers 감지: accuracy preset 적용")
+                elif backend_lower == "faster-whisper":
+                    # compute_type이 있으면 그에 맞는 프리셋, 없으면 balanced
+                    if compute_type and compute_type.lower() == "int8":
+                        self.preset = "speed"
+                        logger.info(f"   → faster-whisper + int8 감지: speed preset 적용")
+                    elif compute_type and compute_type.lower() == "float16":
+                        self.preset = "balanced"
+                        logger.info(f"   → faster-whisper + float16 감지: balanced preset 적용")
+                    else:
+                        self.preset = "balanced"  # 기본값
+                        logger.info(f"   → faster-whisper 감지: balanced preset 적용 (기본값)")
+                else:
+                    self.preset = "accuracy"  # 기본값
+                    logger.info(f"   → 기본값: accuracy preset 적용")
+            else:
+                # preset도 backend도 지정되지 않으면 기본값
+                self.preset = "accuracy"
+                logger.info(f"📋 기본값 적용: accuracy preset")
                 logger.info(f"      device={device}")
         
         # 기존 백엔드 언로드 (메모리 정리)
@@ -1349,13 +1437,7 @@ class WhisperSTT:
                     self._try_faster_whisper()
                     if self.backend is not None and self.faster_whisper_available:
                         logger.info(f"✅ faster-whisper 로드 성공")
-                        return {
-                            "status": "success",
-                            "current_backend": "faster-whisper",
-                            "device": self.device,
-                            "compute_type": self.compute_type,
-                            "message": "faster-whisper 로드 완료"
-                        }
+                        return _make_success_response("faster-whisper", "faster-whisper 로드 완료")
                     raise RuntimeError("faster-whisper 로드 실패")
                 
                 elif backend_canonical == "transformers":
@@ -1365,13 +1447,7 @@ class WhisperSTT:
                     self._try_transformers()
                     if self.backend is not None and self.transformers_available:
                         logger.info(f"✅ transformers 로드 성공")
-                        return {
-                            "status": "success",
-                            "current_backend": "transformers",
-                            "device": self.device,
-                            "compute_type": "float32 (transformers는 compute_type 미지원)",
-                            "message": "transformers 로드 완료"
-                        }
+                        return _make_success_response("transformers", "transformers 로드 완료")
                     raise RuntimeError("transformers 로드 실패")
                 
                 elif backend_canonical == "openai-whisper":
@@ -1381,13 +1457,7 @@ class WhisperSTT:
                     self._try_whisper()
                     if self.backend is not None and self.whisper_available:
                         logger.info(f"✅ openai-whisper 로드 성공")
-                        return {
-                            "status": "success",
-                            "current_backend": "openai-whisper",
-                            "device": self.device,
-                            "compute_type": "N/A",
-                            "message": "openai-whisper 로드 완료"
-                        }
+                        return _make_success_response("openai-whisper", "openai-whisper 로드 완료")
                     raise RuntimeError("openai-whisper 로드 실패")
             
             except Exception as e:
@@ -1409,13 +1479,7 @@ class WhisperSTT:
                     self._try_faster_whisper()
                     if self.backend is not None:
                         logger.info(f"✅ faster-whisper 로드 성공")
-                        return {
-                            "status": "success",
-                            "current_backend": "faster-whisper",
-                            "device": self.device,
-                            "compute_type": self.compute_type,
-                            "message": "faster-whisper 로드 완료 (자동 선택)"
-                        }
+                        return _make_success_response("faster-whisper", "faster-whisper 로드 완료 (자동 선택)")
                 except Exception as e:
                     logger.warning(f"⚠️  faster-whisper 로드 실패: {e}")
             
@@ -1425,13 +1489,7 @@ class WhisperSTT:
                     self._try_transformers()
                     if self.backend is not None:
                         logger.info(f"✅ transformers 로드 성공")
-                        return {
-                            "status": "success",
-                            "current_backend": "transformers",
-                            "device": self.device,
-                            "compute_type": "float32",
-                            "message": "transformers 로드 완료 (자동 선택)"
-                        }
+                        return _make_success_response("transformers", "transformers 로드 완료 (자동 선택)")
                 except Exception as e:
                     logger.warning(f"⚠️  transformers 로드 실패: {e}")
             
@@ -1441,13 +1499,7 @@ class WhisperSTT:
                     self._try_whisper()
                     if self.backend is not None:
                         logger.info(f"✅ openai-whisper 로드 성공")
-                        return {
-                            "status": "success",
-                            "current_backend": "openai-whisper",
-                            "device": self.device,
-                            "compute_type": "N/A",
-                            "message": "openai-whisper 로드 완료 (자동 선택)"
-                        }
+                        return _make_success_response("openai-whisper", "openai-whisper 로드 완료 (자동 선택)")
                 except Exception as e:
                     logger.warning(f"⚠️  openai-whisper 로드 실패: {e}")
             
@@ -1531,7 +1583,18 @@ class WhisperSTT:
                 result = self._transcribe_faster_whisper(audio_path_str, language, **kwargs)
             elif backend_name == "transformers" or backend_type == 'TransformersBackend':
                 logger.info(f"[STT] transformers 백엔드로 변환 시작")
-                result = self._transcribe_with_transformers(audio_path_str, language)
+                try:
+                    result = self._transcribe_with_transformers(audio_path_str, language)
+                except ValueError as e:
+                    # Preset 설정 오류
+                    logger.error(f"[STT] Preset 설정 오류: {e}")
+                    return {
+                        "success": False,
+                        "error": f"Preset 설정 오류: {str(e)}",
+                        "audio_path": audio_path_str,
+                        "backend": "transformers",
+                        "error_type": "InvalidPreset"
+                    }
             elif backend_name == "openai-whisper" or backend_type == 'WhisperBackend':
                 logger.info(f"[STT] openai-whisper 백엔드로 변환 시작")
                 result = self._transcribe_with_whisper(audio_path_str, language)
