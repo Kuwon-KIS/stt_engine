@@ -924,16 +924,13 @@ class WhisperSTT:
                     else:
                         logger.debug(f"[TRANSCRIBE] 세그먼트 {segment_idx}: (무음)")
                     
-                    # 메모리 정리
+                    # 메모리 정리 (Lock 제외 - 세그먼트 루프 내에서는 경합 피함)
                     del input_features, predicted_ids
-                    # 🔒 Lock으로 보호하여 동시 요청 중 GPU 메모리 정리 충돌 방지
-                    with self._memory_cleanup_lock:
-                        gc.collect()
-                        if self.device == "cuda":
-                            torch.cuda.empty_cache()
+                    gc.collect()  # Python 메모리만 정리 (빠름)
+                    # CUDA 캐시는 세그먼트 루프 후에 한 번만 정리
                     
-                    # 📊 메모리 상태 모니터링 (매 세그먼트마다)
-                    if segment_idx % 5 == 0:  # 5개 세그먼트마다 체크
+                    # 📊 메모리 상태 모니터링 (매 10개 세그먼트마다)
+                    if segment_idx % 10 == 0:  # 10개 세그먼트마다 체크
                         current_memory = check_memory_available()
                         logger.debug(f"[transformers] 세그먼트 {segment_idx} 후 메모리: "
                                    f"{current_memory['available_mb']}MB ({current_memory['used_percent']:.1f}%)")
