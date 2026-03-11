@@ -768,10 +768,7 @@ class WhisperSTT:
                     "backend": "transformers"
                 }
             
-            # Whisper 최대 입력: 30초 (480,000 샘플 @ 16kHz)
-            max_samples = 30 * sr  # 480,000 샘플
-            
-            # 프리셋에 따라 동적으로 오버랩 조정
+            # 프리셋에 따라 동적으로 세그먼트 설정 조정
             from api_server.constants import PRESET_SEGMENT_CONFIG
             
             # 현재 프리셋 또는 기본값(accuracy) 사용
@@ -782,27 +779,32 @@ class WhisperSTT:
                 chunk_duration = self.custom_segment_config.get("chunk_duration", 30)
                 overlap_seconds = self.custom_segment_config.get("overlap_duration", 3)
                 logger.info(f"[transformers] 세그멘트 설정 (프리셋: CUSTOM)")
-                logger.info(f"  - chunk_duration: {chunk_duration}초")
-                logger.info(f"  - overlap_duration: {overlap_seconds}초")
+                logger.debug(f"  - chunk_duration: {chunk_duration}초")
+                logger.debug(f"  - overlap_duration: {overlap_seconds}초")
             elif current_preset in PRESET_SEGMENT_CONFIG:
-                # 표준 프리셋 사용
+                # ✅ 표준 프리셋 사용 - constants.py 설정값 적용
                 preset_config = PRESET_SEGMENT_CONFIG[current_preset]
+                chunk_duration = preset_config["chunk_duration"]
                 overlap_seconds = preset_config["overlap_duration"]
                 logger.info(f"[transformers] 세그멘트 설정 (프리셋: {current_preset})")
-                logger.info(f"  - overlap_duration: {overlap_seconds}초")
+                logger.debug(f"  - chunk_duration: {chunk_duration}초")
+                logger.debug(f"  - overlap_duration: {overlap_seconds}초")
             else:
                 # ❌ 프리셋이 존재하지 않음 - 오류 처리
                 error_msg = f"지원하지 않는 프리셋: {current_preset}. 사용 가능: {list(PRESET_SEGMENT_CONFIG.keys())} 또는 'custom'"
                 logger.error(f"❌ {error_msg}")
                 raise ValueError(error_msg)
+            
+            # ✅ chunk_duration에 따라 max_samples 동적 계산
+            max_samples = int(chunk_duration * sr)
             overlap_samples = int(overlap_seconds * sr)
             
             # hop_length 계산: 세그먼트 사이의 이동 거리
             hop_length = max_samples - overlap_samples
             
-            logger.info(f"[transformers] 세그멘트 설정 (프리셋: {current_preset})")
-            logger.info(f"  - 세그먼트 크기: 30초 ({max_samples:,} 샘플)")
-            logger.info(f"  - 오버랩: {overlap_seconds}초 ({overlap_samples:,} 샘플)")
+            logger.info(f"[transformers] 세그멘트 처리 준비")
+            logger.debug(f"  - 세그먼트 크기: {chunk_duration}초 ({max_samples:,} 샘플)")
+            logger.debug(f"  - 오버랩: {overlap_seconds}초 ({overlap_samples:,} 샘플)")
             logger.info(f"  - 이동거리(hop_length): {hop_length/sr:.1f}초 ({hop_length:,} 샘플)")
             
             all_texts = []
@@ -830,7 +832,7 @@ class WhisperSTT:
                     logger.info(f"[transformers] 세그먼트 {segment_idx+1}/{total_segments}: {start_idx//sr:.1f}~{end_idx//sr:.1f}초 ({segment_duration:.1f}초)")
                     
                     # 프로세싱 (메모리 체크)
-                    logger.info(f"[transformers] 세그먼트 {segment_idx} 프로세싱 중...")
+                    logger.debug(f"[transformers] 세그먼트 {segment_idx} 프로세싱 중...")
                     try:
                         # ⚠️ CRITICAL: 임시 변수 사용으로 메모리 누수 방지
                         processor_output = self.backend.processor(
@@ -841,7 +843,7 @@ class WhisperSTT:
                         input_features = processor_output.input_features
                         del processor_output  # 즉시 삭제 (메모리 누수 방지)
                         del segment  # segment도 삭제
-                        logger.info(f"✓ 프로세싱 완료 (input_features shape: {input_features.shape})")
+                        logger.debug(f"✓ 프로세싱 완료 (input_features shape: {input_features.shape})")
                     except MemoryError:
                         error_msg = f"transformers transcription failed: 메모리 부족 - 세그먼트 {segment_idx} 처리 중"
                         logger.error(f"❌ {error_msg}", exc_info=True)
@@ -864,7 +866,7 @@ class WhisperSTT:
                     
                     # 모델의 dtype에 맞추기 (float32 → float16)
                     model_dtype = self.backend.model.dtype
-                    logger.info(f"[transformers] 모델 dtype: {model_dtype}, device: {self.device}")
+                    logger.debug(f"[transformers] 모델 dtype: {model_dtype}, device: {self.device}")
                     input_features = input_features.to(model_dtype)
                     
                     if self.device == "cuda":
@@ -872,24 +874,18 @@ class WhisperSTT:
                         torch.cuda.synchronize()  # 동기화 지점
                     
                     # 추론 (language 지정)
-                    logger.info(f"[transformers] 세그먼트 {segment_idx} 추론 시작 (num_beams={1 if current_preset == 'speed' else 2})...")
+                    logger.debug(f"[transformers] 세그먼트 {segment_idx} 추론 시작 (num_beams=1)...")
                     try:
                         with torch.no_grad():
                             # 프리셋별 generate 파라미터 조정
                             if current_preset == "speed":
                                 num_beams_val = 1
-                                logger.info(f"[transformers] generate() 파라미터 (speed preset):")
-                                logger.info(f"  - num_beams=1 (빠른 추론)")
+                                logger.debug(f"[transformers] generate() 호출 (speed preset, num_beams=1)")
                             else:
                                 num_beams_val = 1  # accuracy preset도 1로 설정 (안정성 우선)
-                                logger.info(f"[transformers] generate() 파라미터 ({current_preset} preset):")
-                                logger.info(f"  - num_beams=1 (안정성 우선, hang 방지)")
+                                logger.debug(f"[transformers] generate() 호출 ({current_preset} preset, num_beams=1)")
                             
-                            logger.info(f"  - early_stopping=True")
-                            logger.info(f"  - temperature=0.0 (Greedy)")
-                            logger.info(f"  - max_length=448")
-                            
-                            logger.info(f"[transformers] model.generate() 호출 중...")
+                            logger.debug(f"[transformers] model.generate() 호출 중...")
                             predicted_ids = self.backend.model.generate(
                                 input_features, 
                                 language=language_to_use,
@@ -946,16 +942,18 @@ class WhisperSTT:
                         logger.info(f"[TRANSCRIBE] 세그먼트 {segment_idx}: (무음)")
                     
                     # 메모리 정리 (Lock 제외 - 세그먼트 루프 내에서는 경합 피함)
-                    logger.info(f"[transformers] 세그먼트 {segment_idx} 메모리 정리 중...")
+                    logger.debug(f"[transformers] 세그먼트 {segment_idx} 메모리 정리 중...")
                     del input_features, predicted_ids
                     gc.collect()  # Python 메모리만 정리 (빠름)
                     
-                    # 🔒 CRITICAL: 매 세그먼트마다 GPU 캐시 정리 (메모리 누수 방지)
-                    if self.device == "cuda":
+                    # 🔒 GPU 캐시 정리 (3개 세그먼트마다 - 메모리 누수 방지와 성능 균형)
+                    # accuracy: 15초 → 3개 = 45초
+                    # balanced/speed: 30초 → 3개 = 90초
+                    if self.device == "cuda" and segment_idx % 3 == 0:
                         torch.cuda.empty_cache()
                     
-                    # 📊 메모리 상태 모니터링 (매 5개 세그먼트마다)
-                    if segment_idx % 5 == 0:  # 5개 세그먼트마다 체크
+                    # 📊 메모리 상태 모니터링 (매 3개 세그먼트마다)
+                    if segment_idx % 3 == 0:  # 3개 세그먼트마다 체크
                         current_memory = check_memory_available()
                         logger.info(f"[transformers] 세그먼트 {segment_idx} 후 메모리: "
                                    f"{current_memory['available_mb']}MB ({current_memory['used_percent']:.1f}%)")
