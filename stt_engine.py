@@ -812,6 +812,14 @@ class WhisperSTT:
             
             logger.info(f"[transformers] 세그먼트 처리 시작 (총 {total_segments}개 세그먼트)")
             
+            # 📊 세그먼트 루프 시작 전 메모리 정리
+            logger.debug(f"[transformers] 세그먼트 루프 시작 전 메모리 정리")
+            gc.collect()
+            if self.device == "cuda":
+                torch.cuda.empty_cache()
+            pre_loop_memory = check_memory_available()
+            logger.info(f"[transformers] 루프 시작 전 메모리: {pre_loop_memory['available_mb']}MB ({pre_loop_memory['used_percent']:.1f}%)")
+            
             while start_idx < len(audio):
                 try:
                     # 세그먼트 추출
@@ -927,7 +935,10 @@ class WhisperSTT:
                     # 메모리 정리 (Lock 제외 - 세그먼트 루프 내에서는 경합 피함)
                     del input_features, predicted_ids
                     gc.collect()  # Python 메모리만 정리 (빠름)
-                    # CUDA 캐시는 세그먼트 루프 후에 한 번만 정리
+                    
+                    # 🔒 주기적으로 GPU 메모리 정리 (매 세그먼트마다, 하지만 Lock 제외)
+                    if self.device == "cuda" and segment_idx % 3 == 0:  # 3개 세그먼트마다
+                        torch.cuda.empty_cache()
                     
                     # 📊 메모리 상태 모니터링 (매 10개 세그먼트마다)
                     if segment_idx % 10 == 0:  # 10개 세그먼트마다 체크
