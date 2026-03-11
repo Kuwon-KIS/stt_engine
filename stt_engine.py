@@ -832,11 +832,15 @@ class WhisperSTT:
                     # 프로세싱 (메모리 체크)
                     logger.info(f"[transformers] 세그먼트 {segment_idx} 프로세싱 중...")
                     try:
-                        input_features = self.backend.processor(
+                        # ⚠️ CRITICAL: 임시 변수 사용으로 메모리 누수 방지
+                        processor_output = self.backend.processor(
                             segment, 
                             sampling_rate=16000, 
                             return_tensors="pt"
-                        ).input_features
+                        )
+                        input_features = processor_output.input_features
+                        del processor_output  # 즉시 삭제 (메모리 누수 방지)
+                        del segment  # segment도 삭제
                         logger.info(f"✓ 프로세싱 완료 (input_features shape: {input_features.shape})")
                     except MemoryError:
                         error_msg = f"transformers transcription failed: 메모리 부족 - 세그먼트 {segment_idx} 처리 중"
@@ -946,10 +950,9 @@ class WhisperSTT:
                     del input_features, predicted_ids
                     gc.collect()  # Python 메모리만 정리 (빠름)
                     
-                    # 🔒 주기적으로 GPU 메모리 정리 (매 세그먼트마다, 하지만 Lock 제외)
-                    if self.device == "cuda" and segment_idx % 2 == 0:  # 2개 세그먼트마다
+                    # 🔒 CRITICAL: 매 세그먼트마다 GPU 캐시 정리 (메모리 누수 방지)
+                    if self.device == "cuda":
                         torch.cuda.empty_cache()
-                        logger.debug(f"[transformers] GPU 캐시 정리 완료")
                     
                     # 📊 메모리 상태 모니터링 (매 5개 세그먼트마다)
                     if segment_idx % 5 == 0:  # 5개 세그먼트마다 체크
