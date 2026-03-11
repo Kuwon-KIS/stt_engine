@@ -988,7 +988,6 @@ class WhisperSTT:
                     raise
                 
                 # 다음 세그먼트 (50% 오버랩)
-                logger.info(f"[transformers] 세그먼트 {segment_idx} 완료 → 다음 세그먼트로 이동")
                 start_idx += hop_length
                 segment_idx += 1
             
