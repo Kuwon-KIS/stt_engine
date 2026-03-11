@@ -20,6 +20,8 @@ import tarfile
 import logging
 import json
 import numpy as np
+import threading
+import gc
 
 # 로깅 설정
 logging.basicConfig(
@@ -330,6 +332,9 @@ class WhisperSTT:
             "chunk_duration": 30,
             "overlap_duration": 3
         }
+        
+        # 🔒 GPU 메모리 정리용 Lock (동시 요청 시 gc/cuda 충돌 방지)
+        self._memory_cleanup_lock = threading.Lock()
         
         # 사용 가능한 백엔드 추적용 플래그
         self.faster_whisper_available = False
@@ -657,6 +662,7 @@ class WhisperSTT:
         import torch
         import numpy as np
         import gc
+        from stt_utils import check_memory_available
         
         # 기본값: 한국어 (명시하지 않으면 "ko" 사용)
         language_to_use = language or "ko"
@@ -667,6 +673,10 @@ class WhisperSTT:
             language_to_use = language_to_use.lower()
         
         logger.info(f"[transformers] 변환 시작 (파일: {Path(audio_path).name}, 언어: {language_to_use})")
+        
+        # 📊 처리 시작 메모리 상태
+        start_memory = check_memory_available()
+        logger.info(f"[transformers] 시작 메모리: {start_memory['available_mb']}MB ({start_memory['used_percent']:.1f}% 사용)")
         
         try:
             from stt_utils import check_memory_available, check_audio_file
@@ -916,9 +926,21 @@ class WhisperSTT:
                     
                     # 메모리 정리
                     del input_features, predicted_ids
-                    gc.collect()
-                    if self.device == "cuda":
-                        torch.cuda.empty_cache()
+                    # 🔒 Lock으로 보호하여 동시 요청 중 GPU 메모리 정리 충돌 방지
+                    with self._memory_cleanup_lock:
+                        gc.collect()
+                        if self.device == "cuda":
+                            torch.cuda.empty_cache()
+                    
+                    # 📊 메모리 상태 모니터링 (매 세그먼트마다)
+                    if segment_idx % 5 == 0:  # 5개 세그먼트마다 체크
+                        current_memory = check_memory_available()
+                        logger.debug(f"[transformers] 세그먼트 {segment_idx} 후 메모리: "
+                                   f"{current_memory['available_mb']}MB ({current_memory['used_percent']:.1f}%)")
+                        
+                        # 메모리가 위험 수준이면 경고
+                        if current_memory['critical']:
+                            logger.warning(f"⚠️  메모리 위험 상태: {current_memory['message']}")
                     
                 except Exception as e:
                     if "out of memory" not in str(e).lower():
@@ -932,7 +954,21 @@ class WhisperSTT:
             # 결과 합치기
             full_text = " ".join(all_texts)
             
+            # 📊 최종 메모리 상태
+            end_memory = check_memory_available()
+            memory_peak = start_memory['used_percent'] - end_memory['available_mb'] / start_memory['total_mb'] * 100
+            
             logger.info(f"[TRANSCRIBE] 완료 - {segment_idx}개 세그먼트, 총 {duration_seconds:.1f}초 처리")
+            logger.info(f"[TRANSCRIBE] 최종 메모리: {end_memory['available_mb']}MB ({end_memory['used_percent']:.1f}%)")
+            logger.info(f"[TRANSCRIBE] 메모리 변화: {start_memory['available_mb']}MB → {end_memory['available_mb']}MB")
+            
+            # 최종 메모리 정리
+            del audio, all_texts
+            # 🔒 Lock으로 보호하여 동시 요청 중 GPU 메모리 정리 충돌 방지
+            with self._memory_cleanup_lock:
+                gc.collect()
+                if self.device == "cuda":
+                    torch.cuda.empty_cache()
             
             return {
                 "success": True,
@@ -1052,6 +1088,9 @@ class WhisperSTT:
     
     def _transcribe_with_whisper(self, audio_path: str, language: Optional[str] = None) -> Dict:
         """OpenAI Whisper를 사용한 음성 인식"""
+        import torch
+        import gc
+        
         # 기본값: 한국어 (명시하지 않으면 "ko" 사용)
         language_to_use = language or "ko"
         
@@ -1072,6 +1111,12 @@ class WhisperSTT:
             detected_language = result.get("language", "unknown")
             logger.info(f"  결과: {len(text)} 글자, 언어: {detected_language}")
             
+            # 🔒 메모리 정리 (동시 요청 시 Lock으로 보호)
+            with self._memory_cleanup_lock:
+                gc.collect()
+                if self.device == "cuda":
+                    torch.cuda.empty_cache()
+            
             return {
                 "success": True,
                 "text": text.strip(),
@@ -1080,6 +1125,13 @@ class WhisperSTT:
             }
         except Exception as e:
             logger.error(f"❌ openai-whisper 변환 실패: {type(e).__name__}: {e}", exc_info=True)
+            
+            # 🔒 메모리 정리 (에러 발생 시에도 정리)
+            with self._memory_cleanup_lock:
+                gc.collect()
+                if self.device == "cuda":
+                    torch.cuda.empty_cache()
+            
             return {
                 "success": False,
                 "text": "",
@@ -1377,13 +1429,14 @@ class WhisperSTT:
                 self.transformers_available = False
                 self.whisper_available = False
                 
-                # GPU 메모리 정리
-                gc.collect()
-                try:
-                    import torch
-                    torch.cuda.empty_cache()
-                except:
-                    pass
+                # GPU 메모리 정리 (🔒 Lock으로 보호)
+                with self._memory_cleanup_lock:
+                    gc.collect()
+                    try:
+                        import torch
+                        torch.cuda.empty_cache()
+                    except:
+                        pass
                 
                 logger.info(f"✓ 기존 백엔드 언로드 완료 + 플래그 초기화")
             except Exception as e:
@@ -1686,6 +1739,8 @@ class WhisperSTT:
         turbo 모델은 128 mel-bins을 필요로 합니다.
         """
         import locale
+        import torch
+        import gc
         
         logger.info(f"[faster-whisper] 변환 시작 (파일: {Path(audio_path).name})")
         
@@ -1740,6 +1795,12 @@ class WhisperSTT:
             logger.info(f"  결과: {len(text)} 글자, 감지된 언어: {detected_language}")
             logger.debug(f"  변환된 텍스트 (처음 200자): {text[:200]}")
             
+            # 🔒 메모리 정리 (동시 요청 시 Lock으로 보호)
+            with self._memory_cleanup_lock:
+                gc.collect()
+                if self.device == "cuda":
+                    torch.cuda.empty_cache()
+            
             return {
                 "success": True,
                 "text": text.strip(),
@@ -1761,6 +1822,12 @@ class WhisperSTT:
                 logger.error(f"   분석: mel-spectrogram 형상 오류 - preprocessor_config.json이 로드되지 않음")
             elif "model.bin" in error_msg.lower():
                 logger.error(f"   분석: model.bin 로드 오류 - CTranslate2 변환 실패 가능")
+            
+            # 🔒 메모리 정리 (에러 발생 시에도 정리)
+            with self._memory_cleanup_lock:
+                gc.collect()
+                if self.device == "cuda":
+                    torch.cuda.empty_cache()
             
             return {
                 "success": False,
