@@ -827,17 +827,17 @@ class WhisperSTT:
                     segment = audio[start_idx:end_idx]
                     segment_duration = len(segment) / sr
                     
-                    logger.debug(f"[transformers] 세그먼트 {segment_idx+1}/{total_segments}: {start_idx//sr:.1f}~{end_idx//sr:.1f}초 ({segment_duration:.1f}초)")
+                    logger.info(f"[transformers] 세그먼트 {segment_idx+1}/{total_segments}: {start_idx//sr:.1f}~{end_idx//sr:.1f}초 ({segment_duration:.1f}초)")
                     
                     # 프로세싱 (메모리 체크)
-                    logger.debug(f"[transformers] 세그먼트 {segment_idx} 프로세싱 중...")
+                    logger.info(f"[transformers] 세그먼트 {segment_idx} 프로세싱 중...")
                     try:
                         input_features = self.backend.processor(
                             segment, 
                             sampling_rate=16000, 
                             return_tensors="pt"
                         ).input_features
-                        logger.debug(f"✓ 프로세싱 완료 (input_features shape: {input_features.shape})")
+                        logger.info(f"✓ 프로세싱 완료 (input_features shape: {input_features.shape})")
                     except MemoryError:
                         error_msg = f"transformers transcription failed: 메모리 부족 - 세그먼트 {segment_idx} 처리 중"
                         logger.error(f"❌ {error_msg}", exc_info=True)
@@ -860,39 +860,47 @@ class WhisperSTT:
                     
                     # 모델의 dtype에 맞추기 (float32 → float16)
                     model_dtype = self.backend.model.dtype
+                    logger.info(f"[transformers] 모델 dtype: {model_dtype}, device: {self.device}")
                     input_features = input_features.to(model_dtype)
                     
                     if self.device == "cuda":
                         input_features = input_features.to(self.device)
+                        torch.cuda.synchronize()  # 동기화 지점
                     
                     # 추론 (language 지정)
-                    logger.debug(f"[transformers] 세그먼트 {segment_idx} 추론 중 (device: {self.device}, dtype: {model_dtype})...")
+                    logger.info(f"[transformers] 세그먼트 {segment_idx} 추론 시작 (num_beams={1 if current_preset == 'speed' else 2})...")
                     try:
                         with torch.no_grad():
-                            # 🎯 정확도 & 성능 균형 파라미터
-                            # num_beams=2: 정확도 거의 동일(+0.5%), 속도 1.8배 향상
-                            logger.debug(f"[transformers] generate() 파라미터:")
-                            logger.debug(f"  - num_beams=2 (빔 서치, 성능 균형)")
-                            logger.debug(f"  - early_stopping=True (안정적 결과)")
-                            logger.debug(f"  - temperature=0.0 (Greedy 선택)")
-                            logger.debug(f"  - repetition_penalty=1.2 (중복 방지)")
-                            logger.debug(f"  - no_repeat_ngram_size=2 (2-gram 반복 방지)")
+                            # 프리셋별 generate 파라미터 조정
+                            if current_preset == "speed":
+                                num_beams_val = 1
+                                logger.info(f"[transformers] generate() 파라미터 (speed preset):")
+                                logger.info(f"  - num_beams=1 (빠른 추론)")
+                            else:
+                                num_beams_val = 1  # accuracy preset도 1로 설정 (안정성 우선)
+                                logger.info(f"[transformers] generate() 파라미터 ({current_preset} preset):")
+                                logger.info(f"  - num_beams=1 (안정성 우선, hang 방지)")
                             
+                            logger.info(f"  - early_stopping=True")
+                            logger.info(f"  - temperature=0.0 (Greedy)")
+                            logger.info(f"  - max_length=448")
+                            
+                            logger.info(f"[transformers] model.generate() 호출 중...")
                             predicted_ids = self.backend.model.generate(
                                 input_features, 
                                 language=language_to_use,
-                                # === 정확도 & 성능 균형 ===
-                                num_beams=2,              # 빔 서치 (1 → 2) - 정확도 미미(0.5%) vs 속도 1.8배 향상
-                                early_stopping=True,      # 조기 종료로 안정성 확보
-                                length_penalty=1.0,       # 길이 패널티 (기본값)
-                                temperature=0.0,          # 0 = greedy (최고 확신 선택)
+                                # === 안정성 우선 ===
+                                num_beams=num_beams_val,
+                                early_stopping=True,
+                                length_penalty=1.0,
+                                temperature=0.0,
                                 # === 반복 방지 ===
-                                repetition_penalty=1.2,   # 중복 단어 억제
+                                repetition_penalty=1.2,
                                 # === 선택사항 ===
-                                max_length=448,           # 최대 시퀀스 길이 (안전하게 설정)
-                                no_repeat_ngram_size=2    # 2-gram 반복 방지 추가
+                                max_length=448,
+                                no_repeat_ngram_size=2
                             )
-                        logger.debug(f"✓ 추론 완료 (predicted_ids shape: {predicted_ids.shape})")
+                            logger.info(f"✓ 추론 완료 (predicted_ids shape: {predicted_ids.shape})")
                     except RuntimeError as e:
                         if "out of memory" in str(e).lower() or "cuda" in str(e).lower():
                             error_msg = f"transformers transcription failed: GPU 메모리 부족 - 세그먼트 {segment_idx} 추론 중"
@@ -919,31 +927,34 @@ class WhisperSTT:
                         }
                     
                     # 디코딩
-                    logger.debug(f"[transformers] 세그먼트 {segment_idx} 디코딩 중...")
+                    logger.info(f"[transformers] 세그먼트 {segment_idx} 디코딩 중...")
                     transcription = self.backend.processor.batch_decode(
                         predicted_ids, 
                         skip_special_tokens=True
                     )
+                    logger.info(f"✓ 디코딩 완료")
                     
                     text = transcription[0] if transcription else ""
                     if text.strip():
                         all_texts.append(text)
                         logger.info(f"[TRANSCRIBE] 세그먼트 {segment_idx}: '{text[:60]}...'")
                     else:
-                        logger.debug(f"[TRANSCRIBE] 세그먼트 {segment_idx}: (무음)")
+                        logger.info(f"[TRANSCRIBE] 세그먼트 {segment_idx}: (무음)")
                     
                     # 메모리 정리 (Lock 제외 - 세그먼트 루프 내에서는 경합 피함)
+                    logger.info(f"[transformers] 세그먼트 {segment_idx} 메모리 정리 중...")
                     del input_features, predicted_ids
                     gc.collect()  # Python 메모리만 정리 (빠름)
                     
                     # 🔒 주기적으로 GPU 메모리 정리 (매 세그먼트마다, 하지만 Lock 제외)
-                    if self.device == "cuda" and segment_idx % 3 == 0:  # 3개 세그먼트마다
+                    if self.device == "cuda" and segment_idx % 2 == 0:  # 2개 세그먼트마다
                         torch.cuda.empty_cache()
+                        logger.debug(f"[transformers] GPU 캐시 정리 완료")
                     
-                    # 📊 메모리 상태 모니터링 (매 10개 세그먼트마다)
-                    if segment_idx % 10 == 0:  # 10개 세그먼트마다 체크
+                    # 📊 메모리 상태 모니터링 (매 5개 세그먼트마다)
+                    if segment_idx % 5 == 0:  # 5개 세그먼트마다 체크
                         current_memory = check_memory_available()
-                        logger.debug(f"[transformers] 세그먼트 {segment_idx} 후 메모리: "
+                        logger.info(f"[transformers] 세그먼트 {segment_idx} 후 메모리: "
                                    f"{current_memory['available_mb']}MB ({current_memory['used_percent']:.1f}%)")
                         
                         # 메모리가 위험 수준이면 경고
@@ -956,10 +967,12 @@ class WhisperSTT:
                     raise
                 
                 # 다음 세그먼트 (50% 오버랩)
+                logger.info(f"[transformers] 세그먼트 {segment_idx} 완료 → 다음 세그먼트로 이동")
                 start_idx += hop_length
                 segment_idx += 1
             
             # 결과 합치기
+            logger.info(f"[transformers] 모든 세그먼트 처리 완료! (총 {segment_idx}개 처리됨)")
             full_text = " ".join(all_texts)
             
             # 📊 최종 메모리 상태
