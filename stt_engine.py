@@ -768,6 +768,22 @@ class WhisperSTT:
                     "backend": "transformers"
                 }
             
+            # 🔒 파일 처리 전 강제 메모리 정리 (파일 간 누적 메모리 방지)
+            logger.info(f"[transformers] 파일 처리 시작 전 메모리 강제 정리...")
+            gc.collect()
+            if self.device == "cuda":
+                torch.cuda.synchronize()
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
+                # 모델을 GPU로 복원 (CPU에서 내려온 경우)
+                logger.info(f"[transformers] 모델 GPU 로드: model.to(cuda)")
+                try:
+                    self.backend.model.to(self.device)
+                except Exception as e:
+                    logger.warning(f"⚠️  모델 GPU 로드 실패: {e}")
+            start_file_memory = check_memory_available()
+            logger.info(f"[transformers] 파일 처리 시작 전 메모리: {start_file_memory['available_mb']}MB ({start_file_memory['used_percent']:.1f}%)")
+            
             # 프리셋에 따라 동적으로 세그먼트 설정 조정
             from api_server.constants import PRESET_SEGMENT_CONFIG
             
@@ -814,11 +830,13 @@ class WhisperSTT:
             
             logger.info(f"[transformers] 세그먼트 처리 시작 (총 {total_segments}개 세그먼트)")
             
-            # 📊 세그먼트 루프 시작 전 메모리 정리
-            logger.debug(f"[transformers] 세그먼트 루프 시작 전 메모리 정리")
+            # 📊 세그먼트 루프 시작 전 메모리 정리 (파일 간 누적 메모리 방지)
+            logger.info(f"[transformers] 루프 시작 전 메모리 강제 정리...")
             gc.collect()
             if self.device == "cuda":
+                torch.cuda.synchronize()  # GPU 작업 완료 대기
                 torch.cuda.empty_cache()
+                torch.cuda.synchronize()  # 정리 완료 대기
             pre_loop_memory = check_memory_available()
             logger.info(f"[transformers] 루프 시작 전 메모리: {pre_loop_memory['available_mb']}MB ({pre_loop_memory['used_percent']:.1f}%)")
             
@@ -950,7 +968,9 @@ class WhisperSTT:
                     # accuracy: 15초 → 3개 = 45초
                     # balanced/speed: 30초 → 3개 = 90초
                     if self.device == "cuda" and segment_idx % 3 == 0:
+                        torch.cuda.synchronize()  # GPU 작업 완료 대기
                         torch.cuda.empty_cache()
+                        torch.cuda.synchronize()  # 정리 완료 대기
                     
                     # 📊 메모리 상태 모니터링 (매 3개 세그먼트마다)
                     if segment_idx % 3 == 0:  # 3개 세그먼트마다 체크
@@ -990,7 +1010,15 @@ class WhisperSTT:
             with self._memory_cleanup_lock:
                 gc.collect()
                 if self.device == "cuda":
+                    # 🔴 CRITICAL: 모델을 GPU에서 내려서 다음 파일을 위한 GPU 메모리 확보
+                    try:
+                        logger.info(f"[transformers] 모델 GPU 메모리 반환: model.cpu()")
+                        self.backend.model.cpu()
+                    except Exception as e:
+                        logger.warning(f"⚠️  모델 CPU 이동 실패: {e}")
+                    torch.cuda.synchronize()
                     torch.cuda.empty_cache()
+                    torch.cuda.synchronize()
             
             return {
                 "success": True,
