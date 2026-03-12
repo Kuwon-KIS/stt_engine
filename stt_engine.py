@@ -333,9 +333,6 @@ class WhisperSTT:
             "overlap_duration": 3
         }
         
-        # 🔒 GPU 메모리 정리용 Lock (동시 요청 시 gc/cuda 충돌 방지)
-        self._memory_cleanup_lock = threading.Lock()
-        
         # 사용 가능한 백엔드 추적용 플래그
         self.faster_whisper_available = False
         self.transformers_available = False
@@ -1023,11 +1020,11 @@ class WhisperSTT:
                 del audio, all_texts, full_text
                 logger.debug(f"[transformers] 로컬 변수 삭제 완료")
                 
-                # 2단계: Python 메모리 강제 정리 (Lock 사용)
-                with self._memory_cleanup_lock:
-                    logger.debug(f"[transformers] gc.collect() 실행...")
-                    gc.collect()
-                    logger.debug(f"[transformers] gc.collect() 완료")
+                # 2단계: Python 메모리 강제 정리 (Lock 제거 - PATCH 08)
+                # Lock을 사용하면 동시 요청 시 hang이 발생할 수 있으므로 제거
+                logger.debug(f"[transformers] gc.collect() 실행...")
+                gc.collect()
+                logger.debug(f"[transformers] gc.collect() 완료")
                 
                 # 3단계: GPU 메모리 정리 (model.cpu() + CUDA cache)
                 if self.device == "cuda":
@@ -1184,11 +1181,10 @@ class WhisperSTT:
             detected_language = result.get("language", "unknown")
             logger.info(f"  결과: {len(text)} 글자, 언어: {detected_language}")
             
-            # 🔒 메모리 정리 (동시 요청 시 Lock으로 보호)
-            with self._memory_cleanup_lock:
-                gc.collect()
-                if self.device == "cuda":
-                    torch.cuda.empty_cache()
+            # 🔒 메모리 정리 (Lock 제거 - PATCH 08)
+            gc.collect()
+            if self.device == "cuda":
+                torch.cuda.empty_cache()
             
             return {
                 "success": True,
@@ -1199,11 +1195,10 @@ class WhisperSTT:
         except Exception as e:
             logger.error(f"❌ openai-whisper 변환 실패: {type(e).__name__}: {e}", exc_info=True)
             
-            # 🔒 메모리 정리 (에러 발생 시에도 정리)
-            with self._memory_cleanup_lock:
-                gc.collect()
-                if self.device == "cuda":
-                    torch.cuda.empty_cache()
+            # 🔒 메모리 정리 (Lock 제거 - PATCH 08)
+            gc.collect()
+            if self.device == "cuda":
+                torch.cuda.empty_cache()
             
             return {
                 "success": False,
@@ -1502,14 +1497,13 @@ class WhisperSTT:
                 self.transformers_available = False
                 self.whisper_available = False
                 
-                # GPU 메모리 정리 (🔒 Lock으로 보호)
-                with self._memory_cleanup_lock:
-                    gc.collect()
-                    try:
-                        import torch
-                        torch.cuda.empty_cache()
-                    except:
-                        pass
+                # GPU 메모리 정리 (Lock 제거 - PATCH 08)
+                gc.collect()
+                try:
+                    import torch
+                    torch.cuda.empty_cache()
+                except:
+                    pass
                 
                 logger.info(f"✓ 기존 백엔드 언로드 완료 + 플래그 초기화")
             except Exception as e:
@@ -1868,11 +1862,10 @@ class WhisperSTT:
             logger.info(f"  결과: {len(text)} 글자, 감지된 언어: {detected_language}")
             logger.debug(f"  변환된 텍스트 (처음 200자): {text[:200]}")
             
-            # 🔒 메모리 정리 (동시 요청 시 Lock으로 보호)
-            with self._memory_cleanup_lock:
-                gc.collect()
-                if self.device == "cuda":
-                    torch.cuda.empty_cache()
+            # 🔒 메모리 정리 (Lock 제거 - PATCH 08)
+            gc.collect()
+            if self.device == "cuda":
+                torch.cuda.empty_cache()
             
             return {
                 "success": True,
@@ -1896,11 +1889,10 @@ class WhisperSTT:
             elif "model.bin" in error_msg.lower():
                 logger.error(f"   분석: model.bin 로드 오류 - CTranslate2 변환 실패 가능")
             
-            # 🔒 메모리 정리 (에러 발생 시에도 정리)
-            with self._memory_cleanup_lock:
-                gc.collect()
-                if self.device == "cuda":
-                    torch.cuda.empty_cache()
+            # 🔒 메모리 정리 (Lock 제거 - PATCH 08)
+            gc.collect()
+            if self.device == "cuda":
+                torch.cuda.empty_cache()
             
             return {
                 "success": False,
