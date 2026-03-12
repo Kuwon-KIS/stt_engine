@@ -226,11 +226,11 @@ check_file_handles() {
     echo "  파일 디스크립터: $FD_COUNT개"
     
     log_info "네트워크 연결:"
-    docker exec "${CONTAINER_NAME}" netstat -tupn 2>/dev/null | grep ESTABLISHED | wc -l || true
+    docker exec "${CONTAINER_NAME}" sh -c "(netstat -tupn 2>/dev/null || ss -tupn 2>/dev/null) | grep ESTABLISHED | wc -l" || true
     echo "  활성 연결 (ESTABLISHED)"
     
     log_info "소켓 상태:"
-    docker exec "${CONTAINER_NAME}" netstat -tupn 2>/dev/null | head -10 || true
+    docker exec "${CONTAINER_NAME}" sh -c "netstat -tupn 2>/dev/null || ss -tupn 2>/dev/null" | head -10 || true
 }
 
 # Check recent logs for errors
@@ -249,7 +249,7 @@ check_logs() {
 check_gpu() {
     section "8️⃣  GPU 상태 확인"
     
-    nvidia-smi --query-gpu=index,name,driver_version,memory.total,memory.used,memory.free -format=csv 2>/dev/null || log_warn "nvidia-smi를 실행할 수 없습니다"
+    nvidia-smi --query-gpu=index,name,driver_version,memory.total,memory.used,memory.free --format=csv 2>/dev/null || log_warn "nvidia-smi를 실행할 수 없습니다"
     
     echo ""
     log_info "GPU 프로세스:"

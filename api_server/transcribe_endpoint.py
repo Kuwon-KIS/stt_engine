@@ -153,7 +153,7 @@ async def validate_and_prepare_file(file_path: str) -> tuple[Path, dict, dict]:
                 }
             )
         
-        logger.info(f"[API/Transcribe] ✓ 파일 검증 완료 (길이: {file_check['duration_sec']:.1f}초)")
+        # ✓ 파일 검증 완료 로그는 check_audio_file()에서 이미 출력됨 (중복 제거)
     except HTTPException:
         raise
     except Exception as e:
@@ -184,7 +184,7 @@ async def validate_and_prepare_file(file_path: str) -> tuple[Path, dict, dict]:
                 }
             )
         
-        logger.info(f"[API/Transcribe] ✓ 메모리 확인 완료 (사용 가능: {memory_info['available_mb']:.0f}MB)")
+        logger.debug(f"[API/Transcribe] ✓ 메모리 확인 완료 (사용 가능: {memory_info['available_mb']:.0f}MB)")
     except HTTPException:
         raise
     except Exception as e:

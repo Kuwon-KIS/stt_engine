@@ -15,6 +15,7 @@ FastAPI를 사용한 STT(Speech-to-Text) 서버
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Body, Form, Query, Depends, Request
 from fastapi.responses import JSONResponse, FileResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 from pathlib import Path
 from typing import Optional
 import tempfile
@@ -83,6 +84,42 @@ app = FastAPI(
     version="1.0.0",
     description="다중 백엔드 STT API (faster-whisper, transformers, OpenAI Whisper)"
 )
+
+# /health 엔드포인트의 반복적인 로그를 줄이기 위한 미들웨어
+class HealthCheckLoggingMiddleware(BaseHTTPMiddleware):
+    """
+    /health 엔드포인트의 로깅을 조절하는 미들웨어
+    기본값: 60초마다 한 번씩 로깅 (환경변수 HEALTH_CHECK_LOG_INTERVAL로 조절)
+    """
+    last_health_log_time = 0
+    
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path == "/health":
+            import time
+            current_time = time.time()
+            # 환경변수에서 로그 주기 읽기 (기본값: 60초)
+            health_log_interval = float(os.getenv("HEALTH_CHECK_LOG_INTERVAL", "60"))
+            
+            # 마지막 로그 이후 지정된 시간 이상 경과했으면 로그 활성화
+            if current_time - HealthCheckLoggingMiddleware.last_health_log_time >= health_log_interval:
+                HealthCheckLoggingMiddleware.last_health_log_time = current_time
+                # 로그 레벨을 INFO로 유지 (정상적으로 로깅됨)
+                response = await call_next(request)
+            else:
+                # 로그를 비활성화하기 위해 uvicorn access logger의 레벨을 높임
+                uvicorn_logger = logging.getLogger("uvicorn.access")
+                original_level = uvicorn_logger.level
+                uvicorn_logger.setLevel(logging.WARNING)
+                try:
+                    response = await call_next(request)
+                finally:
+                    uvicorn_logger.setLevel(original_level)
+            
+            return response
+        else:
+            return await call_next(request)
+
+app.add_middleware(HealthCheckLoggingMiddleware)
 
 # 모델 초기화
 # 환경변수 STT_DEVICE로 cpu/cuda 선택 가능 (기본값: cpu)
@@ -457,12 +494,12 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
     agent_url = config.get_agent_url()
     
     # DEBUG: FormData 내용 로깅
-    logger.info(f"[DEBUG] FormData Keys: {list(form_data.keys())}")
-    logger.info(f"[DEBUG] element_detection value: {repr(element_detection)} (type: {type(element_detection).__name__})")
-    logger.info(f"[DEBUG] LLM 모델 설정:")
-    logger.info(f"  - Privacy: {privacy_llm_type}/{privacy_vllm_model_name}")
-    logger.info(f"  - Classification: {classification_llm_type}/{classification_vllm_model_name}")
-    logger.info(f"  - Detection: {detection_llm_type}/{detection_vllm_model_name}")
+    logger.debug(f"[DEBUG] FormData Keys: {list(form_data.keys())}")
+    logger.debug(f"[DEBUG] element_detection value: {repr(element_detection)} (type: {type(element_detection).__name__})")
+    logger.debug(f"[DEBUG] LLM 모델 설정:")
+    logger.debug(f"  - Privacy: {privacy_llm_type}/{privacy_vllm_model_name}")
+    logger.debug(f"  - Classification: {classification_llm_type}/{classification_vllm_model_name}")
+    logger.debug(f"  - Detection: {detection_llm_type}/{detection_vllm_model_name}")
     
     # 처리 시간 측정
     start_time = time.time()
@@ -2209,4 +2246,14 @@ async def agent_health():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8003)
+    # HEALTH_CHECK_LOG_INTERVAL 환경변수 (기본값: 60초)
+    # 예: HEALTH_CHECK_LOG_INTERVAL=10 python app.py  → 10초마다 health 로그 기록
+    #     HEALTH_CHECK_LOG_INTERVAL=60 python app.py → 60초마다 health 로그 기록
+    log_interval = os.getenv("HEALTH_CHECK_LOG_INTERVAL", "60")
+    print(f"💡 Health check 로그 주기: {log_interval}초 (HEALTH_CHECK_LOG_INTERVAL 환경변수로 조절 가능)")
+    
+    uvicorn.run(
+        app, 
+        host="0.0.0.0", 
+        port=8003,
+    )

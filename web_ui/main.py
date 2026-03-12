@@ -13,6 +13,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from pathlib import Path
 import logging
+import os
 
 # 커스텀 로거 설정
 from utils.logger import get_logger
@@ -61,6 +62,40 @@ class PerformanceMiddleware(BaseHTTPMiddleware):
         return response
 
 
+# === /health 엔드포인트 로깅 조절 미들웨어 ===
+class HealthCheckLoggingMiddleware(BaseHTTPMiddleware):
+    """
+    /health 엔드포인트의 로깅을 조절하는 미들웨어
+    기본값: 60초마다 한 번씩 로깅 (환경변수 HEALTH_CHECK_LOG_INTERVAL로 조절)
+    """
+    last_health_log_time = 0
+    
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path == "/health":
+            current_time = time.time()
+            # 환경변수에서 로그 주기 읽기 (기본값: 60초)
+            health_log_interval = float(os.getenv("HEALTH_CHECK_LOG_INTERVAL", "60"))
+            
+            # 마지막 로그 이후 지정된 시간 이상 경과했으면 로그 활성화
+            if current_time - HealthCheckLoggingMiddleware.last_health_log_time >= health_log_interval:
+                HealthCheckLoggingMiddleware.last_health_log_time = current_time
+                # 로그 레벨을 INFO로 유지 (정상적으로 로깅됨)
+                response = await call_next(request)
+            else:
+                # 로그를 비활성화하기 위해 uvicorn access logger의 레벨을 높임
+                uvicorn_logger = logging.getLogger("uvicorn.access")
+                original_level = uvicorn_logger.level
+                uvicorn_logger.setLevel(logging.WARNING)
+                try:
+                    response = await call_next(request)
+                finally:
+                    uvicorn_logger.setLevel(original_level)
+            
+            return response
+        else:
+            return await call_next(request)
+
+
 # FastAPI 앱 생성
 app = FastAPI(
     title="KIS 불완전판매 예방 녹취 분석 시스템",
@@ -70,6 +105,7 @@ app = FastAPI(
 
 # === 성능 모니터링 미들웨어 추가 ===
 app.add_middleware(PerformanceMiddleware)
+app.add_middleware(HealthCheckLoggingMiddleware)
 
 # === Phase 1: SessionMiddleware 등록 (CORS 이전에 등록) ===
 app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET_KEY)
@@ -282,6 +318,12 @@ async def shutdown_event():
 
 if __name__ == "__main__":
     import uvicorn
+    # HEALTH_CHECK_LOG_INTERVAL 환경변수 (기본값: 60초)
+    # 예: HEALTH_CHECK_LOG_INTERVAL=10 python main.py  → 10초마다 health 로그 기록
+    #     HEALTH_CHECK_LOG_INTERVAL=60 python main.py → 60초마다 health 로그 기록
+    log_interval = os.getenv("HEALTH_CHECK_LOG_INTERVAL", "60")
+    print(f"💡 Health check 로그 주기: {log_interval}초 (HEALTH_CHECK_LOG_INTERVAL 환경변수로 조절 가능)")
+    
     uvicorn.run(
         "main:app",
         host=WEB_HOST,

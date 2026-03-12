@@ -986,8 +986,8 @@ class WhisperSTT:
                     # 📊 메모리 상태 모니터링 (매 3개 세그먼트마다)
                     if segment_idx % 3 == 0:  # 3개 세그먼트마다 체크
                         current_memory = check_memory_available()
-                        logger.info(f"[transformers] 세그먼트 {segment_idx} 후 메모리: "
-                                   f"{current_memory['available_mb']}MB ({current_memory['used_percent']:.1f}%)")
+                        logger.debug(f"[transformers] 세그먼트 {segment_idx} 후 메모리: "
+                                    f"{current_memory['available_mb']}MB ({current_memory['used_percent']:.1f}%)")
                         
                         # 메모리가 위험 수준이면 경고
                         if current_memory['critical']:
@@ -1010,9 +1010,7 @@ class WhisperSTT:
             end_memory = check_memory_available()
             memory_peak = start_memory['used_percent'] - end_memory['available_mb'] / start_memory['total_mb'] * 100
             
-            logger.info(f"[TRANSCRIBE] 완료 - {segment_idx}개 세그먼트, 총 {duration_seconds:.1f}초 처리")
-            logger.info(f"[TRANSCRIBE] 최종 메모리: {end_memory['available_mb']}MB ({end_memory['used_percent']:.1f}%)")
-            logger.info(f"[TRANSCRIBE] 메모리 변화: {start_memory['available_mb']}MB → {end_memory['available_mb']}MB")
+            logger.info(f"[TRANSCRIBE] 완료 - {segment_idx}개 세그먼트, {duration_seconds:.1f}초 처리 (메모리: {start_memory['available_mb']}MB → {end_memory['available_mb']}MB)")
             
             # 🔴 PATCH 07: 동시 처리 시 CPU 메모리 누수 방지
             # 문제: 루프 변수들(audio, all_texts, segment 등)이 스코프 종료 후에도

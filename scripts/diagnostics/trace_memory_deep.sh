@@ -270,11 +270,11 @@ network_analysis() {
     section "6️⃣  네트워크 연결 분석"
     
     log_info "활성 연결 (ESTABLISHED):"
-    docker exec "${CONTAINER_NAME}" netstat -tupn 2>/dev/null | grep ESTABLISHED | wc -l || echo "0"
+    docker exec "${CONTAINER_NAME}" sh -c "(netstat -tupn 2>/dev/null || ss -tupn 2>/dev/null) | grep ESTABLISHED | wc -l" || echo "0"
     
     echo ""
     log_info "연결 상태 분포:"
-    docker exec "${CONTAINER_NAME}" netstat -an 2>/dev/null | awk 'NR>2 {print $6}' | sort | uniq -c | sort -rn || true
+    docker exec "${CONTAINER_NAME}" sh -c "(netstat -an 2>/dev/null || ss -an 2>/dev/null)" | awk 'NR>2 {print $6}' | sort | uniq -c | sort -rn || true
 }
 
 # Recent activity log
