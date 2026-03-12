@@ -721,6 +721,11 @@ class WhisperSTT:
                 try:
                     audio, sr = sf.read(audio_path, dtype='float32')
                     logger.debug(f"[transformers] soundfile로 오디오 로드 완료")
+                    # ⚠️ soundfile은 스테레오를 (samples, channels)로 반환할 수 있음
+                    # Whisper processor에는 반드시 mono 1D float32를 전달해야 함
+                    if hasattr(audio, 'ndim') and audio.ndim > 1:
+                        logger.info(f"[transformers] 채널 병합(soundfile): shape={audio.shape} → mono")
+                        audio = audio.mean(axis=1)
                 except ImportError:
                     # soundfile 없으면 scipy 사용
                     sr, audio = wav_file.read(audio_path)
@@ -737,6 +742,15 @@ class WhisperSTT:
                     num_samples = int(len(audio) * 16000 / sr)
                     audio = signal.resample(audio, num_samples)
                     sr = 16000
+
+                # Whisper 입력 안정화: 1D contiguous float32 보장
+                audio = np.asarray(audio, dtype=np.float32)
+                if audio.ndim > 1:
+                    logger.warning(f"[transformers] 비정상 다차원 오디오 감지: shape={audio.shape}, mono로 변환")
+                    audio = audio.mean(axis=1)
+                if audio.ndim != 1:
+                    raise ValueError(f"지원하지 않는 오디오 shape: {audio.shape}")
+                audio = np.ascontiguousarray(audio)
                 
                 duration_seconds = len(audio) / sr
                 logger.info(f"✓ 음성 로드 완료 (길이: {duration_seconds:.1f}초, 샘플: {len(audio):,}, SR: {sr}Hz)")
