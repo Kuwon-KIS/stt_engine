@@ -36,23 +36,27 @@ LOG_DIR.mkdir(exist_ok=True)
 root_logger = logging.getLogger()
 root_logger.setLevel(getattr(logging, LOG_LEVEL))
 
-# 콘솔 핸들러 (중복 등록 방지)
-has_console_handler = any(
-    isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
-    for h in root_logger.handlers
-)
-if not has_console_handler:
+# 콘솔 핸들러 (중복 정리 + 1개만 유지)
+console_handlers = [
+    h for h in root_logger.handlers
+    if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
+]
+if len(console_handlers) == 0:
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(logging.Formatter(LOG_FORMAT))
     root_logger.addHandler(console_handler)
+else:
+    console_handlers[0].setFormatter(logging.Formatter(LOG_FORMAT))
+    for extra_handler in console_handlers[1:]:
+        root_logger.removeHandler(extra_handler)
 
-# 파일 핸들러 (RotatingFileHandler, 중복 등록 방지)
-has_stt_file_handler = any(
-    isinstance(h, logging.handlers.RotatingFileHandler)
+# 파일 핸들러 (stt_engine.log 중복 정리 + 1개만 유지)
+stt_file_handlers = [
+    h for h in root_logger.handlers
+    if isinstance(h, logging.handlers.RotatingFileHandler)
     and Path(getattr(h, "baseFilename", "")).name == "stt_engine.log"
-    for h in root_logger.handlers
-)
-if not has_stt_file_handler:
+]
+if len(stt_file_handlers) == 0:
     file_handler = logging.handlers.RotatingFileHandler(
         LOG_DIR / "stt_engine.log",
         maxBytes=10*1024*1024,  # 10MB
@@ -60,6 +64,10 @@ if not has_stt_file_handler:
     )
     file_handler.setFormatter(logging.Formatter(LOG_FORMAT))
     root_logger.addHandler(file_handler)
+else:
+    stt_file_handlers[0].setFormatter(logging.Formatter(LOG_FORMAT))
+    for extra_handler in stt_file_handlers[1:]:
+        root_logger.removeHandler(extra_handler)
 
 # 모듈 로거
 logger = logging.getLogger(__name__)
