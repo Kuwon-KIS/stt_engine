@@ -22,10 +22,12 @@ import json
 import numpy as np
 import threading
 import gc
+import os
 
-# 로깅 설정
+# 로깅 설정 (환경변수 LOG_LEVEL로 조절 가능)
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")  # 기본값: INFO
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, LOG_LEVEL),
     format='[%(asctime)s] %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
