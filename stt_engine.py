@@ -1014,10 +1014,7 @@ class WhisperSTT:
             
             logger.info(f"[TRANSCRIBE] 완료 - {segment_idx}개 세그먼트, {duration_seconds:.1f}초 처리 (메모리: {start_memory['available_mb']}MB → {end_memory['available_mb']}MB)")
             
-            # 🔴 PATCH 07: 동시 처리 시 CPU 메모리 누수 방지
-            # 문제: 루프 변수들(audio, all_texts, segment 등)이 스코프 종료 후에도
-            #      해제 대기 상태로 남음 → 동시 요청 시 누적
-            # 해결: 명시적으로 모든 로컬 변수 삭제 + 강제 GC
+            # 동시 처리 시 CPU 메모리 누수 방지: 로컬 변수 명시적 삭제 + 강제 GC
             result = {
                 "success": True,
                 "text": full_text,
@@ -1028,15 +1025,13 @@ class WhisperSTT:
             }
             
             try:
-                logger.info(f"[transformers] PATCH 07: 동시 처리 메모리 정리 시작...")
+                logger.debug(f"[transformers] 동시 처리 메모리 정리 시작...")
                 
-                # 1단계: 로컬 변수 명시적 삭제 (중요!)
+                # 1단계: 로컬 변수 명시적 삭제
                 del audio, all_texts, full_text
                 logger.debug(f"[transformers] 로컬 변수 삭제 완료")
                 
-                # 2단계: Python 메모리 강제 정리 (Lock 제거 - PATCH 08)
-                # Lock을 사용하면 동시 요청 시 hang이 발생할 수 있으므로 제거
-                logger.debug(f"[transformers] gc.collect() 실행...")
+                # 2단계: Python 메모리 강제 정리
                 gc.collect()
                 logger.debug(f"[transformers] gc.collect() 완료")
                 
@@ -1056,10 +1051,10 @@ class WhisperSTT:
                     torch.cuda.synchronize()
                     logger.debug(f"[transformers] CUDA 캐시 정리 완료")
                 
-                logger.info(f"[transformers] PATCH 07: 동시 처리 메모리 정리 완료")
+                logger.debug(f"[transformers] 동시 처리 메모리 정리 완료")
                 
             except Exception as e:
-                logger.error(f"⚠️  PATCH 07 메모리 정리 실패: {type(e).__name__}: {e}", exc_info=True)
+                logger.warning(f"⚠️  메모리 정리 실패: {type(e).__name__}: {e}")
             
             return result
         
@@ -1195,7 +1190,7 @@ class WhisperSTT:
             detected_language = result.get("language", "unknown")
             logger.info(f"  결과: {len(text)} 글자, 언어: {detected_language}")
             
-            # 🔒 메모리 정리 (Lock 제거 - PATCH 08)
+            # 메모리 정리
             gc.collect()
             if self.device == "cuda":
                 torch.cuda.empty_cache()
@@ -1209,7 +1204,7 @@ class WhisperSTT:
         except Exception as e:
             logger.error(f"❌ openai-whisper 변환 실패: {type(e).__name__}: {e}", exc_info=True)
             
-            # 🔒 메모리 정리 (Lock 제거 - PATCH 08)
+            # 메모리 정리
             gc.collect()
             if self.device == "cuda":
                 torch.cuda.empty_cache()
@@ -1511,7 +1506,7 @@ class WhisperSTT:
                 self.transformers_available = False
                 self.whisper_available = False
                 
-                # GPU 메모리 정리 (Lock 제거 - PATCH 08)
+                # GPU 메모리 정리
                 gc.collect()
                 try:
                     import torch
@@ -1876,7 +1871,7 @@ class WhisperSTT:
             logger.info(f"  결과: {len(text)} 글자, 감지된 언어: {detected_language}")
             logger.debug(f"  변환된 텍스트 (처음 200자): {text[:200]}")
             
-            # 🔒 메모리 정리 (Lock 제거 - PATCH 08)
+            # 메모리 정리
             gc.collect()
             if self.device == "cuda":
                 torch.cuda.empty_cache()
@@ -1903,7 +1898,7 @@ class WhisperSTT:
             elif "model.bin" in error_msg.lower():
                 logger.error(f"   분석: model.bin 로드 오류 - CTranslate2 변환 실패 가능")
             
-            # 🔒 메모리 정리 (Lock 제거 - PATCH 08)
+            # 메모리 정리
             gc.collect()
             if self.device == "cuda":
                 torch.cuda.empty_cache()

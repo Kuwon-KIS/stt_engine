@@ -227,12 +227,9 @@ async def perform_stt(stt_instance, file_path_obj: Path, language: str, is_strea
         raise
     
     finally:
-        # 🔴 PATCH 07-2: 요청 핸들러 메모리 정리
-        # 목적: 동시 요청 시 로컬 변수가 메모리에서 즉시 해제되도록 강제
-        logger.debug(f"[API/Transcribe] PATCH 07-2: 요청 핸들러 메모리 정리...")
+        # 요청 핸들러 메모리 정리 (동시 요청 시 즉시 해제)
         try:
             gc.collect()
-            logger.debug(f"[API/Transcribe] gc.collect() 완료")
         except Exception as e:
             logger.debug(f"[API/Transcribe] gc.collect() 오류: {e}")
 
