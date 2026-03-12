@@ -18,18 +18,39 @@ from pathlib import Path
 from typing import Optional, Dict
 import tarfile
 import logging
+import logging.handlers
 import json
 import numpy as np
 import threading
 import gc
-import os
 
 # 로깅 설정 (환경변수 LOG_LEVEL로 조절 가능)
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")  # 기본값: INFO
-logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL),
-    format='[%(asctime)s] %(levelname)s - %(message)s'
+LOG_FORMAT = '[%(asctime)s] %(levelname)s - %(message)s'
+
+# 로그 디렉토리 생성
+LOG_DIR = Path("logs")
+LOG_DIR.mkdir(exist_ok=True)
+
+# 루트 로거 설정
+root_logger = logging.getLogger()
+root_logger.setLevel(getattr(logging, LOG_LEVEL))
+
+# 콘솔 핸들러
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+root_logger.addHandler(console_handler)
+
+# 파일 핸들러 (RotatingFileHandler)
+file_handler = logging.handlers.RotatingFileHandler(
+    LOG_DIR / "stt_engine.log",
+    maxBytes=10*1024*1024,  # 10MB
+    backupCount=5
 )
+file_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+root_logger.addHandler(file_handler)
+
+# 모듈 로거
 logger = logging.getLogger(__name__)
 
 # 세 가지 백엔드 시도

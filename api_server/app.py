@@ -68,11 +68,35 @@ def _normalize_model_name(model_name: str) -> str:
 
 # 로깅 설정 (환경변수 LOG_LEVEL로 조절 가능)
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")  # 기본값: INFO
-logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL),
-    format='[%(asctime)s] %(levelname)s - %(message)s'
+LOG_FORMAT = '[%(asctime)s] %(levelname)s - %(message)s'
+
+# 로그 디렉토리 생성
+LOG_DIR = Path("logs")
+LOG_DIR.mkdir(exist_ok=True)
+
+# 루트 로거 설정
+root_logger = logging.getLogger()
+root_logger.setLevel(getattr(logging, LOG_LEVEL))
+
+# 콘솔 핸들러
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+root_logger.addHandler(console_handler)
+
+# 파일 핸들러 (RotatingFileHandler)
+file_handler = logging.handlers.RotatingFileHandler(
+    LOG_DIR / "api_server.log",
+    maxBytes=10*1024*1024,  # 10MB
+    backupCount=5
 )
+file_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+root_logger.addHandler(file_handler)
+
+# 모듈 로거
 logger = logging.getLogger(__name__)
+
+# logging.handlers 임포트 (파일 상단 임포트 섹션에서 추가됨)
+import logging.handlers
 
 # 전역 동시 처리 슬롯 제한 (세마포어)
 # 의미: 동시에 실행 가능한 transcribe 작업 수 (동시 사용자 수와 1:1 아님)
