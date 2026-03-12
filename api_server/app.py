@@ -25,6 +25,7 @@ import logging
 import time
 import json
 import wave
+import asyncio
 
 # Docker 환경에서 모듈을 찾을 수 있도록 경로 설정
 app_root = Path(__file__).parent.parent
@@ -72,6 +73,18 @@ logging.basicConfig(
     format='[%(asctime)s] %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# 전역 동시 처리 슬롯 제한 (세마포어)
+# 의미: 동시에 실행 가능한 transcribe 작업 수 (동시 사용자 수와 1:1 아님)
+MAX_CONCURRENT_SLOTS = int(os.getenv("MAX_CONCURRENT_SLOTS", "6"))  # 기본값: 6
+transcribe_semaphore = asyncio.Semaphore(MAX_CONCURRENT_SLOTS)
+logger.info(f"[Slot 제한] 최대 동시 STT 슬롯: {MAX_CONCURRENT_SLOTS}개")
+
+
+async def acquire_transcribe_slot():
+    """transcribe 계열 엔드포인트의 전역 슬롯 획득/반납"""
+    async with transcribe_semaphore:
+        yield
 
 # 스트리밍 청크 설정 (30초 청크 + 3초 overlap = 10% 중복)
 # 변경 사유: 세그멘트 경계의 중복 문제 해결 (12초 → 3초)
@@ -414,7 +427,11 @@ async def reload_backend(request_body: dict = Body(None)):
 # ============================================================================
 
 @app.post("/transcribe")
-async def transcribe(request: Request, export: Optional[str] = Query(None, description="Export format: 'txt' or 'json'")):
+async def transcribe(
+    request: Request,
+    export: Optional[str] = Query(None, description="Export format: 'txt' or 'json'"),
+    _slot: None = Depends(acquire_transcribe_slot),
+):
     """
     통합 음성인식 엔드포인트 (단건 처리)
     
@@ -805,6 +822,7 @@ async def transcribe(
     export: str = Query(None, description="Export format: 'txt' or 'json', default: None (JSON response)"),
     remove_privacy: str = Form("false", description="개인정보 제거 활성화 (true/false)"),
     privacy_prompt_type: str = Form("privacy_remover_default_v6", description="프롬프트 타입"),
+    _slot: None = Depends(acquire_transcribe_slot),
 ):
     """
     서버 로컬 파일을 음성인식으로 변환 (권장 방식)
@@ -1258,6 +1276,7 @@ async def transcribe_batch_endpoint(
     ai_agent: str = Form("false"),
     privacy_prompt_type: str = Form("privacy_remover_default_v6"),
     classification_prompt_type: str = Form("classification_default_v1"),
+    _slot: None = Depends(acquire_transcribe_slot),
 ):
     """
     배치 음성인식 처리
@@ -1640,7 +1659,8 @@ async def _transcribe_streaming(file_path: str, language: str, file_size_mb: flo
 async def transcribe_by_upload(
     file: UploadFile = File(...), 
     language: str = Form("ko"),
-    export: str = Query(None, description="Export format: 'txt' or 'json', default: None (JSON response)")
+    export: str = Query(None, description="Export format: 'txt' or 'json', default: None (JSON response)"),
+    _slot: None = Depends(acquire_transcribe_slot),
 ):
     """
     파일 업로드를 통한 음성인식 (파일 전송 필요)
