@@ -36,19 +36,30 @@ LOG_DIR.mkdir(exist_ok=True)
 root_logger = logging.getLogger()
 root_logger.setLevel(getattr(logging, LOG_LEVEL))
 
-# 콘솔 핸들러
-console_handler = logging.StreamHandler()
-console_handler.setFormatter(logging.Formatter(LOG_FORMAT))
-root_logger.addHandler(console_handler)
-
-# 파일 핸들러 (RotatingFileHandler)
-file_handler = logging.handlers.RotatingFileHandler(
-    LOG_DIR / "stt_engine.log",
-    maxBytes=10*1024*1024,  # 10MB
-    backupCount=5
+# 콘솔 핸들러 (중복 등록 방지)
+has_console_handler = any(
+    isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
+    for h in root_logger.handlers
 )
-file_handler.setFormatter(logging.Formatter(LOG_FORMAT))
-root_logger.addHandler(file_handler)
+if not has_console_handler:
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+    root_logger.addHandler(console_handler)
+
+# 파일 핸들러 (RotatingFileHandler, 중복 등록 방지)
+has_stt_file_handler = any(
+    isinstance(h, logging.handlers.RotatingFileHandler)
+    and Path(getattr(h, "baseFilename", "")).name == "stt_engine.log"
+    for h in root_logger.handlers
+)
+if not has_stt_file_handler:
+    file_handler = logging.handlers.RotatingFileHandler(
+        LOG_DIR / "stt_engine.log",
+        maxBytes=10*1024*1024,  # 10MB
+        backupCount=5
+    )
+    file_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+    root_logger.addHandler(file_handler)
 
 # 모듈 로거
 logger = logging.getLogger(__name__)
@@ -450,6 +461,11 @@ class WhisperSTT:
             # symlink 대상 경로
             parent_dir = model_path.parent
             symlink_path = parent_dir / model_base_name
+
+            # 읽기 전용 마운트/권한 이슈 시 alias 생성 스킵 (비치명적)
+            if not os.access(parent_dir, os.W_OK):
+                logger.info(f"ℹ️  Whisper alias 생성 스킵: 쓰기 권한 없음 ({parent_dir})")
+                return
             
             # 이미 존재하면 스킵
             if symlink_path.exists():
@@ -460,12 +476,17 @@ class WhisperSTT:
             try:
                 symlink_path.symlink_to(model_path)
                 print(f"✅ Whisper용 심링크 생성: {model_base_name} → {model_name}")
+            except PermissionError:
+                logger.info(f"ℹ️  Whisper alias 생성 스킵: 권한 없음 ({symlink_path})")
             except (FileExistsError, OSError) as e:
                 # symlink 실패: 복사로 대체
                 import shutil
                 print(f"⚠️  심링크 생성 실패 ({type(e).__name__}), 파일 복사로 대체...")
-                shutil.copytree(model_path, symlink_path, dirs_exist_ok=True)
-                print(f"✅ 파일 복사 완료: {model_base_name}")
+                try:
+                    shutil.copytree(model_path, symlink_path, dirs_exist_ok=True)
+                    print(f"✅ 파일 복사 완료: {model_base_name}")
+                except PermissionError:
+                    logger.info(f"ℹ️  Whisper alias 생성 스킵: 복사 권한 없음 ({symlink_path})")
         except Exception as e:
             print(f"⚠️  Whisper symlink/복사 실패: {type(e).__name__}: {e}")
             print(f"   → 계속 진행 (transformers/faster-whisper 사용 가능)")

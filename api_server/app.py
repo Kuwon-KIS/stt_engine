@@ -22,6 +22,7 @@ import tempfile
 import os
 import sys
 import logging
+import logging.handlers
 import time
 import json
 import wave
@@ -78,25 +79,33 @@ LOG_DIR.mkdir(exist_ok=True)
 root_logger = logging.getLogger()
 root_logger.setLevel(getattr(logging, LOG_LEVEL))
 
-# 콘솔 핸들러
-console_handler = logging.StreamHandler()
-console_handler.setFormatter(logging.Formatter(LOG_FORMAT))
-root_logger.addHandler(console_handler)
-
-# 파일 핸들러 (RotatingFileHandler)
-file_handler = logging.handlers.RotatingFileHandler(
-    LOG_DIR / "api_server.log",
-    maxBytes=10*1024*1024,  # 10MB
-    backupCount=5
+# 콘솔 핸들러 (중복 등록 방지)
+has_console_handler = any(
+    isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
+    for h in root_logger.handlers
 )
-file_handler.setFormatter(logging.Formatter(LOG_FORMAT))
-root_logger.addHandler(file_handler)
+if not has_console_handler:
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+    root_logger.addHandler(console_handler)
+
+# 파일 핸들러 (RotatingFileHandler, 중복 등록 방지)
+has_api_file_handler = any(
+    isinstance(h, logging.handlers.RotatingFileHandler)
+    and Path(getattr(h, "baseFilename", "")).name == "api_server.log"
+    for h in root_logger.handlers
+)
+if not has_api_file_handler:
+    file_handler = logging.handlers.RotatingFileHandler(
+        LOG_DIR / "api_server.log",
+        maxBytes=10*1024*1024,  # 10MB
+        backupCount=5
+    )
+    file_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+    root_logger.addHandler(file_handler)
 
 # 모듈 로거
 logger = logging.getLogger(__name__)
-
-# logging.handlers 임포트 (파일 상단 임포트 섹션에서 추가됨)
-import logging.handlers
 
 # 전역 동시 처리 슬롯 제한 (세마포어)
 # 의미: 동시에 실행 가능한 transcribe 작업 수 (동시 사용자 수와 1:1 아님)
