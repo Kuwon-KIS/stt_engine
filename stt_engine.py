@@ -1003,23 +1003,11 @@ class WhisperSTT:
             logger.info(f"[TRANSCRIBE] 최종 메모리: {end_memory['available_mb']}MB ({end_memory['used_percent']:.1f}%)")
             logger.info(f"[TRANSCRIBE] 메모리 변화: {start_memory['available_mb']}MB → {end_memory['available_mb']}MB")
             
-            # 최종 메모리 정리
-            del audio, all_texts
-            # 🔒 Lock으로 보호하여 동시 요청 중 GPU 메모리 정리 충돌 방지
-            with self._memory_cleanup_lock:
-                gc.collect()
-                if self.device == "cuda":
-                    # 🔴 CRITICAL: 모델을 GPU에서 내려서 다음 파일을 위한 GPU 메모리 확보
-                    try:
-                        logger.info(f"[transformers] 모델 GPU 메모리 반환: model.cpu()")
-                        self.backend.model.cpu()
-                    except Exception as e:
-                        logger.warning(f"⚠️  모델 CPU 이동 실패: {e}")
-                    torch.cuda.synchronize()
-                    torch.cuda.empty_cache()
-                    torch.cuda.synchronize()
-            
-            return {
+            # 🔴 PATCH 07: 동시 처리 시 CPU 메모리 누수 방지
+            # 문제: 루프 변수들(audio, all_texts, segment 등)이 스코프 종료 후에도
+            #      해제 대기 상태로 남음 → 동시 요청 시 누적
+            # 해결: 명시적으로 모든 로컬 변수 삭제 + 강제 GC
+            result = {
                 "success": True,
                 "text": full_text,
                 "language": language_to_use,
@@ -1027,6 +1015,42 @@ class WhisperSTT:
                 "duration": duration_seconds,
                 "segments_processed": segment_idx
             }
+            
+            try:
+                logger.info(f"[transformers] PATCH 07: 동시 처리 메모리 정리 시작...")
+                
+                # 1단계: 로컬 변수 명시적 삭제 (중요!)
+                del audio, all_texts, full_text
+                logger.debug(f"[transformers] 로컬 변수 삭제 완료")
+                
+                # 2단계: Python 메모리 강제 정리 (Lock 사용)
+                with self._memory_cleanup_lock:
+                    logger.debug(f"[transformers] gc.collect() 실행...")
+                    gc.collect()
+                    logger.debug(f"[transformers] gc.collect() 완료")
+                
+                # 3단계: GPU 메모리 정리 (model.cpu() + CUDA cache)
+                if self.device == "cuda":
+                    # ✅ model.cpu()로 GPU에서 CPU로 모델 이동
+                    try:
+                        logger.info(f"[transformers] 모델 GPU 메모리 반환: model.cpu()")
+                        self.backend.model.cpu()
+                        logger.debug(f"[transformers] model.cpu() 완료")
+                    except Exception as e:
+                        logger.warning(f"⚠️  모델 CPU 이동 실패: {e}")
+                    
+                    # ✅ CUDA 캐시 정리
+                    torch.cuda.synchronize()
+                    torch.cuda.empty_cache()
+                    torch.cuda.synchronize()
+                    logger.debug(f"[transformers] CUDA 캐시 정리 완료")
+                
+                logger.info(f"[transformers] PATCH 07: 동시 처리 메모리 정리 완료")
+                
+            except Exception as e:
+                logger.error(f"⚠️  PATCH 07 메모리 정리 실패: {type(e).__name__}: {e}", exc_info=True)
+            
+            return result
         
         except MemoryError as e:
             error_msg = f"transformers transcription failed: 메모리 부족"

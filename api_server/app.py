@@ -716,11 +716,25 @@ async def transcribe(request: Request, export: Optional[str] = Query(None, descr
                 )
         
         # 9. JSON 응답
-        return JSONResponse(
+        json_response = JSONResponse(
             content=response.dict(),
             status_code=200,
             headers={"Content-Type": "application/json; charset=utf-8"}
         )
+        
+        # 🔴 PATCH 07-3: 응답 반환 직전 메모리 정리
+        # 목적: 동시 요청 시 로컬 변수들을 명시적으로 정리
+        logger.debug(f"[API] PATCH 07-3: 응답 반환 직전 메모리 정리...")
+        try:
+            import gc
+            del response, stt_result, privacy_result, classification_result, element_result
+            del file_path_obj, file_check, memory_info, perf_metrics
+            gc.collect()
+            logger.debug(f"[API] PATCH 07-3 메모리 정리 완료")
+        except Exception as e:
+            logger.debug(f"[API] PATCH 07-3 메모리 정리 중 오류: {e}")
+        
+        return json_response
     
     except HTTPException:
         perf_monitor.stop()

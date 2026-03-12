@@ -206,6 +206,9 @@ async def perform_stt(stt_instance, file_path_obj: Path, language: str, is_strea
     Returns:
         STT 결과 딕셔너리
     """
+    import gc
+    import torch
+    
     logger.info(f"[API/Transcribe] STT 처리 시작: {file_path_obj.name}")
     
     try:
@@ -222,6 +225,17 @@ async def perform_stt(stt_instance, file_path_obj: Path, language: str, is_strea
     except Exception as e:
         logger.error(f"[API/Transcribe] STT 처리 오류: {type(e).__name__}: {e}", exc_info=True)
         raise
+    
+    finally:
+        # 🔴 PATCH 07-2: 요청 핸들러 메모리 정리
+        # 목적: 동시 요청 시 로컬 변수가 메모리에서 즉시 해제되도록 강제
+        logger.debug(f"[API/Transcribe] PATCH 07-2: 요청 핸들러 메모리 정리...")
+        try:
+            gc.collect()
+            logger.debug(f"[API/Transcribe] gc.collect() 완료")
+        except Exception as e:
+            logger.debug(f"[API/Transcribe] gc.collect() 오류: {e}")
+
 
 
 async def perform_privacy_removal(
